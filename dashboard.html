@@ -444,6 +444,7 @@
       <div class="card kpi"><div class="label">Highest day</div><div class="value" id="maxDay">–</div><div class="sub" id="maxDaySub"></div></div>
       <div class="card kpi"><div class="label">Today</div><div class="value" id="totalToday">–</div></div>
       <div class="card kpi"><div class="label">Real tokens (range)</div><div class="value" id="realTokensWin">–</div><div class="sub" id="realTokensToday"></div></div>
+      <div class="card kpi"><div class="label">Plan usage <span class="muted" style="font-weight:400;">(the real limit)</span></div><div class="value" id="planUsageVal">–</div><div class="sub" id="planUsageSub"></div></div>
     </div>
     <div class="card" id="cacheCard" style="margin-bottom: 1rem;">
       <div class="card-head"><h2>Cache efficiency</h2></div>
@@ -463,9 +464,13 @@
         </span>
       </div>
       <div class="muted" id="chartTokensNote" style="display:none; margin-bottom:0.5rem;">
-        Input and output only (excludes cache) — they're priced very differently per token (output costs several times more than input), so they're shown separately rather than summed.
+        Input, output and cache write are priced very differently per token (output costs several times more than input), so they're shown separately rather than summed. Cache read is charted on its own below — it's typically far larger than the other three combined and would otherwise make them invisible.
       </div>
       <svg id="chart"></svg>
+      <div id="cacheReadChartWrap" style="display:none; margin-top:1.2rem; padding-top:1rem; border-top:1px solid var(--border);">
+        <div class="card-head" style="margin-bottom:0.3rem;"><h2 style="font-size:0.85rem;">Cache read</h2><span class="muted" id="cacheReadChartNote"></span></div>
+        <svg id="cacheReadChart"></svg>
+      </div>
     </div>
 
     <div class="card" id="hourlyCard" style="margin-top: 1rem; display:none;">
@@ -536,6 +541,7 @@
         <thead><tr>
           <th data-k="period">Date <span class="chev">&#9662;</span></th>
           <th data-k="agents">Agents <span class="chev">&#9662;</span></th>
+          <th class="right" data-k="tokens">Tokens <span class="chev">&#9662;</span></th>
           <th class="right" data-k="totalCost">Cost <span class="chev">&#9662;</span></th>
         </tr></thead>
         <tbody></tbody>
@@ -1056,31 +1062,42 @@ function drawHourlyTokensChart(rows) {
   });
 }
 
-const TOKEN_COLORS = { input: '#7c3aed', output: '#f59e0b' };
+const TOKEN_COLORS = { input: '#7c3aed', output: '#f59e0b', cacheWrite: '#c4b5fd', cacheRead: '#10b981' };
+const TOKEN_LABELS = { input: 'Input', output: 'Output', cacheWrite: 'Cache write', cacheRead: 'Cache read' };
 
 function tokensOfDay(value) {
   return (value.modelBreakdowns || []).reduce((acc, mb) => {
     acc.input += mb.inputTokens || 0;
     acc.output += mb.outputTokens || 0;
+    acc.cacheWrite += mb.cacheCreationTokens || 0;
+    acc.cacheRead += mb.cacheReadTokens || 0;
     return acc;
-  }, { input: 0, output: 0 });
+  }, { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 });
 }
+
+// Cache read runs 100-1000x the size of input/output/cache-write (it's the
+// whole growing conversation re-read on every turn), so it's charted on its
+// own below rather than summed or stacked in with the other three — at a
+// shared scale, cache read is the only bar anyone would ever see.
+const TOKEN_MAIN_KEYS = ['input', 'output', 'cacheWrite'];
 
 function drawTokensChart(rows) {
   const svg = document.getElementById('chart');
   const chartNote = document.getElementById('chartNote');
   svg.innerHTML = '';
 
-  if (!rows.length) { chartNote.textContent = 'No data in this range'; return; }
+  if (!rows.length) { chartNote.textContent = 'No data in this range'; drawCacheReadChart(rows); return; }
 
   if (rows.length === 1) {
     chartNote.textContent = rows[0].period;
     const t = tokensOfDay(rows[0].value);
-    const total = t.input + t.output || 1;
+    const total = TOKEN_MAIN_KEYS.reduce((s, k) => s + t[k], 0) || 1;
     const ns = 'http://www.w3.org/2000/svg';
     const W = svg.clientWidth || 900, rowH = 28, pad = 10;
-    svg.setAttribute('viewBox', `0 0 ${W} ${rowH * 2 + pad * 2}`);
-    [['Input', t.input, TOKEN_COLORS.input], ['Output', t.output, TOKEN_COLORS.output]].forEach(([name, tok, color], i) => {
+    const segments = TOKEN_MAIN_KEYS.map(k => [k, t[k]]).filter(([, tok]) => tok > 0);
+    svg.setAttribute('viewBox', `0 0 ${W} ${segments.length * rowH + pad * 2}`);
+    segments.forEach(([key, tok], i) => {
+      const name = TOKEN_LABELS[key], color = TOKEN_COLORS[key];
       const y = pad + i * rowH;
       const w = Math.max((tok / total) * (W - 260), 2);
       const rect = document.createElementNS(ns, 'rect');
@@ -1103,6 +1120,7 @@ function drawTokensChart(rows) {
       tokLabel.textContent = fmtTok(tok);
       svg.appendChild(tokLabel);
     });
+    drawCacheReadChart(rows);
     return;
   }
 
@@ -1112,7 +1130,7 @@ function drawTokensChart(rows) {
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
 
   const dayTokens = rows.map(r => ({ period: r.period, ...tokensOfDay(r.value) }));
-  const max = Math.max(...dayTokens.map(d => d.input + d.output), 1);
+  const max = Math.max(...dayTokens.map(d => TOKEN_MAIN_KEYS.reduce((s, k) => s + d[k], 0)), 1);
   const niceMax = max * 1.15;
   const plotW = W - padL - 10, plotH = H - padT - padB;
   const bw = plotW / rows.length;
@@ -1134,7 +1152,7 @@ function drawTokensChart(rows) {
   dayTokens.forEach((d, i) => {
     const x = padL + i * bw;
     let yCursor = padT + plotH;
-    [['input', TOKEN_COLORS.input], ['output', TOKEN_COLORS.output]].forEach(([key, color]) => {
+    TOKEN_MAIN_KEYS.forEach(key => {
       const tok = d[key];
       if (tok <= 0) return;
       const h = (tok / niceMax) * plotH;
@@ -1144,10 +1162,10 @@ function drawTokensChart(rows) {
       rect.setAttribute('y', yCursor);
       rect.setAttribute('width', Math.max(bw * 0.76, 1));
       rect.setAttribute('height', Math.max(h, 0.5));
-      rect.style.fill = color;
+      rect.style.fill = TOKEN_COLORS[key];
       rect.setAttribute('class', 'bar-rect');
       const title = document.createElementNS(ns, 'title');
-      title.textContent = `${d.period} – ${key}: ${fmtTok(tok)}`;
+      title.textContent = `${d.period} – ${TOKEN_LABELS[key]}: ${fmtTok(tok)}`;
       rect.appendChild(title);
       svg.appendChild(rect);
     });
@@ -1155,6 +1173,92 @@ function drawTokensChart(rows) {
 
   const labelEvery = Math.max(1, Math.ceil(rows.length / 8));
   dayTokens.forEach((d, i) => {
+    if (i % labelEvery !== 0 && i !== rows.length - 1) return;
+    const x = padL + i * bw + bw / 2;
+    const text = document.createElementNS(ns, 'text');
+    text.setAttribute('x', x); text.setAttribute('y', H - 4);
+    text.setAttribute('class', 'axis-label'); text.setAttribute('text-anchor', 'middle');
+    text.textContent = d.period.slice(5);
+    svg.appendChild(text);
+  });
+
+  drawCacheReadChart(rows);
+}
+
+function drawCacheReadChart(rows) {
+  const wrap = document.getElementById('cacheReadChartWrap');
+  const svg = document.getElementById('cacheReadChart');
+  const note = document.getElementById('cacheReadChartNote');
+  svg.innerHTML = '';
+
+  const dayCacheRead = rows.map(r => ({ period: r.period, cacheRead: tokensOfDay(r.value).cacheRead }));
+  const total = dayCacheRead.reduce((s, d) => s + d.cacheRead, 0);
+  if (!total) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const W = svg.clientWidth || 900;
+
+  if (rows.length === 1) {
+    note.textContent = rows[0].period;
+    const H = 40, pad = 10;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    const w = W - 10;
+    const rect = document.createElementNS(ns, 'rect');
+    rect.setAttribute('x', 5); rect.setAttribute('y', pad);
+    rect.setAttribute('width', w); rect.setAttribute('height', 16);
+    rect.setAttribute('rx', 3);
+    rect.style.fill = TOKEN_COLORS.cacheRead;
+    svg.appendChild(rect);
+    const label = document.createElementNS(ns, 'text');
+    label.setAttribute('x', 10); label.setAttribute('y', pad + 12);
+    label.setAttribute('class', 'axis-label'); label.style.fill = '#fff';
+    label.textContent = fmtTok(dayCacheRead[0].cacheRead);
+    svg.appendChild(label);
+    return;
+  }
+
+  note.textContent = `${rows[0].period} → ${rows[rows.length - 1].period}`;
+  const H = 110, padL = 46, padB = 22, padT = 10;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const max = Math.max(...dayCacheRead.map(d => d.cacheRead), 1);
+  const niceMax = max * 1.15;
+  const plotW = W - padL - 10, plotH = H - padT - padB;
+  const bw = plotW / rows.length;
+
+  for (let i = 0; i <= 2; i++) {
+    const y = padT + plotH - (i / 2) * plotH;
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', padL); line.setAttribute('x2', W - 5);
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('class', 'gridline');
+    svg.appendChild(line);
+    const label = document.createElementNS(ns, 'text');
+    label.setAttribute('x', 4); label.setAttribute('y', y + 3);
+    label.setAttribute('class', 'axis-label');
+    label.textContent = fmtTok((i / 2) * niceMax);
+    svg.appendChild(label);
+  }
+
+  dayCacheRead.forEach((d, i) => {
+    if (d.cacheRead <= 0) return;
+    const x = padL + i * bw;
+    const h = (d.cacheRead / niceMax) * plotH;
+    const rect = document.createElementNS(ns, 'rect');
+    rect.setAttribute('x', x + bw * 0.12);
+    rect.setAttribute('y', padT + plotH - h);
+    rect.setAttribute('width', Math.max(bw * 0.76, 1));
+    rect.setAttribute('height', Math.max(h, 0.5));
+    rect.style.fill = TOKEN_COLORS.cacheRead;
+    rect.setAttribute('class', 'bar-rect');
+    const title = document.createElementNS(ns, 'title');
+    title.textContent = `${d.period} – Cache read: ${fmtTok(d.cacheRead)}`;
+    rect.appendChild(title);
+    svg.appendChild(rect);
+  });
+
+  const labelEvery = Math.max(1, Math.ceil(rows.length / 8));
+  dayCacheRead.forEach((d, i) => {
     if (i % labelEvery !== 0 && i !== rows.length - 1) return;
     const x = padL + i * bw + bw / 2;
     const text = document.createElementNS(ns, 'text');
@@ -2174,6 +2278,23 @@ function update() {
   document.getElementById('realTokensWin').textContent = fmtTok(realTokensWin);
   document.getElementById('realTokensToday').textContent = `today: ${fmtTok(realTokensOf(todayValue))}`;
 
+  // This is the real cap your subscription is bound by — a session/week usage
+  // multiplier, not a dollar figure — shown right next to the list-price
+  // numbers above precisely because those two are easy to mistake for the
+  // same thing. Follows the account filter when one Claude account is
+  // selected; otherwise the live-or-most-recent account.
+  const selectedAcctUuid = (typeof agent === 'string' && agent.startsWith('account:')) ? agent.slice('account:'.length) : null;
+  const planUsageSrc = selectedAcctUuid
+    ? (data.maxUsage || []).find(m => m.accountUuid === selectedAcctUuid)
+    : (data.maxUsage || []).find(m => m.live) || (data.maxUsage || [])[0];
+  if (planUsageSrc && planUsageSrc.session && planUsageSrc.session.percent != null) {
+    document.getElementById('planUsageVal').textContent = `${planUsageSrc.session.percent}% / ${planUsageSrc.week.percent}%`;
+    document.getElementById('planUsageSub').textContent = `session / week · ${fmtResetAt(planUsageSrc.session.resetsAt)}`;
+  } else {
+    document.getElementById('planUsageVal').textContent = '–';
+    document.getElementById('planUsageSub').textContent = 'no plan-limit data for this account';
+  }
+
   document.getElementById('chartMetricLabel').textContent = chartMetric === 'tokens' ? '(tokens)' : '';
   document.getElementById('hourlyMetricLabel').textContent = chartMetric === 'tokens' ? 'tokens' : 'spend';
   document.getElementById('chartTokensNote').style.display = chartMetric === 'tokens' ? '' : 'none';
@@ -2182,7 +2303,12 @@ function update() {
     renderCacheEfficiency(windowed);
     loadTokenSources();
     renderTokenSources();
-    if (chartMetric === 'tokens') drawTokensChart(windowed); else drawChart(windowed);
+    if (chartMetric === 'tokens') {
+      drawTokensChart(windowed);
+    } else {
+      drawChart(windowed);
+      document.getElementById('cacheReadChartWrap').style.display = 'none';
+    }
 
     const hourlyCard = document.getElementById('hourlyCard');
     if (range === 1 && !customFrom && !customTo) {
@@ -2246,16 +2372,23 @@ function update() {
 
   // ---- days ----
   if (tab === 'days') renderDayHeatmap(windowed, cutoff, windowEnd);
+  const totalTokensOf = v => (v ? v.modelBreakdowns.reduce((s, mb) => s + (mb.inputTokens || 0) + (mb.outputTokens || 0) + (mb.cacheReadTokens || 0) + (mb.cacheCreationTokens || 0), 0) : 0);
   let dailyRows = windowed
-    .map(d => ({ period: d.period, agents: d.value.agentsPresent.join(','), totalCost: d.value.totalCost, agentsPresent: d.value.agentsPresent }))
+    .map(d => ({
+      period: d.period, agents: d.value.agentsPresent.join(','), totalCost: d.value.totalCost, agentsPresent: d.value.agentsPresent,
+      tokens: realTokensOf(d.value), totalTokens: totalTokensOf(d.value),
+    }))
     .filter(r => r.period.includes(dayFilter));
   dailyRows.sort((a, b) => dailySort.dir * (a[dailySort.k] > b[dailySort.k] ? 1 : a[dailySort.k] < b[dailySort.k] ? -1 : 0));
   markSort('dailyTable', dailySort);
   document.getElementById('dayCount').textContent = `${dailyRows.length} of ${windowed.length}`;
   document.querySelector('#dailyTable tbody').innerHTML = dailyRows.map(r => {
     const pills = r.agentsPresent.map(a => `<span class="pill">${a}</span>`).join('');
-    return `<tr><td class="tnum">${r.period}</td><td>${pills}</td><td class="right tnum">${fmt(r.totalCost)}</td></tr>`;
-  }).join('') || '<tr><td colspan="3" class="muted">No matching dates.</td></tr>';
+    const tooltip = `real (input+output): ${fmtTok(r.tokens)}\ntotal incl. cache: ${fmtTok(r.totalTokens)}`;
+    return `<tr><td class="tnum">${r.period}</td><td>${pills}</td>
+      <td class="right tnum" title="${tooltip}">${fmtTok(r.tokens)}</td>
+      <td class="right tnum">${fmt(r.totalCost)}</td></tr>`;
+  }).join('') || '<tr><td colspan="4" class="muted">No matching dates.</td></tr>';
 
   // ---- settings ----
   if (tab === 'settings') {
