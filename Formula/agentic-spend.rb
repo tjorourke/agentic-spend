@@ -1,13 +1,9 @@
-# Private repo — installed via `brew tap tjorourke/agentic-spend git@github.com:tjorourke/agentic-spend.git`.
-# Uses the :git download strategy (not a tarball URL) because a plain HTTP download of a
-# private repo's release archive isn't authenticated and just 404s. Git clone uses your normal
-# SSH auth instead, the same way `git push` to this repo already does.
 class AgenticSpend < Formula
   desc "Local spend dashboard for Claude Code, Grok, Codex, OpenCode etc."
   homepage "https://github.com/tjorourke/agentic-spend"
-  url "git@github.com:tjorourke/agentic-spend.git",
-      using: :git, tag: "v0.3.0", revision: "a632255331ac5a87e03681042c140a4c98101258"
-  version "0.3.0"
+  url "https://github.com/tjorourke/agentic-spend/archive/refs/tags/v1.0.0.tar.gz"
+  sha256 "95f00b805310d4974af0502b3ea7d3621f4e29a5386eeff60fbc9e283da54836"
+  version "1.0.0"
 
   depends_on :macos
 

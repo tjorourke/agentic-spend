@@ -4,17 +4,36 @@ A local-only dashboard for Claude Code / Grok / Codex / OpenCode / etc. spend, b
 [`ccusage`](https://ccusage.com). Branded for mastertheagent.com but fully generic — no
 hardcoded personal data lives in the code, only in gitignored local data files.
 
+## Screenshots
+
+(Figures below are from a real run with the account/email placeholdered out.)
+
+**Overview** — what's actually costing money vs. covered by a subscription:
+
+![Overview](screenshots/overview.png)
+
+**Days** — a calendar heatmap, click a day to filter:
+
+![Days](screenshots/days.png)
+
+**Accounts** — real plan-limit usage per Claude account, live from the status line:
+
+![Accounts](screenshots/accounts.png)
+
+**Settings** — every source Agentic Spend found, theme toggle, live-usage setup:
+
+![Settings](screenshots/settings.png)
+
 ## Install
 
 ```bash
-brew tap tjorourke/agentic-spend git@github.com:tjorourke/agentic-spend.git
+brew tap tjorourke/agentic-spend
 brew install agentic-spend
 ```
 
-The repo is private, so the tap URL must be the SSH form (needs your own SSH access to it) —
-`brew tap tjorourke/agentic-spend` alone won't find it. If Homebrew refuses to load the formula
-("untrusted tap"), run `brew trust --formula tjorourke/agentic-spend/agentic-spend` and install
-again (same as [flightbay](https://github.com/tjorourke/flightbay)).
+If Homebrew refuses to load the formula ("untrusted tap"), run
+`brew trust --formula tjorourke/agentic-spend/agentic-spend` and install again (same as
+[flightbay](https://github.com/tjorourke/flightbay)).
 
 ## Run it
 
@@ -29,10 +48,12 @@ server.py` from this repo, then open `http://127.0.0.1:8787/`.
 ### Upgrading
 
 ```bash
-cd ~/code/agentic-spend && git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z
-# update Formula/agentic-spend.rb's tag/revision/version to match, commit, push
-brew upgrade agentic-spend
+brew update && brew upgrade agentic-spend
 ```
+
+(Maintainer only, to cut a new release: tag `vX.Y.Z`, push it, download the tagged
+`.tar.gz` from GitHub, `shasum -a 256` it, and update `Formula/agentic-spend.rb`'s
+`url`/`sha256`/`version` to match before committing and pushing the formula.)
 
 ## Files
 
