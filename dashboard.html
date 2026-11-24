@@ -317,6 +317,8 @@
   }
   .bar-cell { display: flex; align-items: center; gap: 6px; }
   .mini-bar { height: 10px; border-radius: 3px; background: var(--accent); }
+  .overview-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+  .overview-pair .card { margin-bottom: 0; }
   .cache-bar { display: flex; height: 22px; border-radius: 6px; overflow: hidden; background: var(--neutral-bg); }
   .cache-bar span { height: 100%; }
   .cache-legend { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 0.6rem; font-size: 0.8rem; }
@@ -367,6 +369,33 @@
   .breakdown-row .bd-pct { width: 36px; text-align: right; flex-shrink: 0; color: var(--muted); }
   .breakdown-row .bd-pct.bd-pct-wide { width: 150px; white-space: nowrap; }
   .breakdown-row .bd-pct.bd-pct-wide .muted { display: block; font-size: 0.72rem; }
+
+  .src-row {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.45rem 0.7rem; border-radius: 8px; margin-bottom: 0.3rem;
+    background: var(--neutral-bg); border: 1px solid var(--neutral-border);
+    font-size: 0.82rem;
+  }
+  .src-row.src-ok { background: var(--ok-bg); border-color: var(--ok-border); }
+  .src-row.src-bad { background: var(--bad-bg); border-color: var(--bad-border); }
+  .src-chip {
+    flex-shrink: 0; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.03em;
+    padding: 0.15rem 0.4rem; border-radius: 4px; text-transform: uppercase;
+    background: var(--neutral-border); color: var(--muted);
+  }
+  .src-chip.src-chip-live { background: var(--ok-border); color: var(--ok-text); }
+  .src-chip.src-chip-cached { background: var(--heavy-pill-bg); color: var(--heavy-pill-text); }
+  .src-chip.src-chip-manual { background: var(--accent-soft); color: var(--accent-soft-text); }
+  .src-label { font-weight: 600; flex-shrink: 0; white-space: nowrap; }
+  .src-extra {
+    flex: 1; display: flex; align-items: center; gap: 0.4rem;
+    color: var(--muted); font-size: 0.75rem; overflow: hidden; white-space: nowrap;
+  }
+  .src-minibar { display: inline-block; height: 6px; width: 46px; border-radius: 3px; background: var(--border); overflow: hidden; flex-shrink: 0; }
+  .src-minibar > span { display: block; height: 100%; background: var(--accent); }
+  .src-amount { flex-shrink: 0; font-weight: 700; min-width: 70px; text-align: right; }
+  .src-row.src-ok .src-amount { color: var(--ok-text); }
+  .src-row.src-bad .src-amount { color: var(--bad-text); }
   .day-heatmap { margin-bottom: 1rem; }
   .day-heatmap .dh-month { display: inline-block; vertical-align: top; margin: 0 0.7rem 0.7rem 0; }
   .day-heatmap .dh-month-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
@@ -439,20 +468,27 @@
   <section id="view-overview" class="view active">
     <div class="card" id="realCostOverview" style="display:none; margin-bottom: 1rem;"></div>
     <div class="cards">
-      <div class="card kpi"><div class="label">Spend (selected range)</div><div class="value" id="totalWin">–</div></div>
-      <div class="card kpi"><div class="label">Avg / day</div><div class="value" id="avgDay">–</div></div>
-      <div class="card kpi"><div class="label">Highest day</div><div class="value" id="maxDay">–</div><div class="sub" id="maxDaySub"></div></div>
+      <div class="card kpi"><div class="label">Spend</div><div class="value" id="totalWin">–</div></div>
+      <div class="card kpi" id="kpiAvgDay"><div class="label">Avg / day</div><div class="value" id="avgDay">–</div></div>
+      <div class="card kpi" id="kpiHighestDay"><div class="label">Peak day</div><div class="value" id="maxDay">–</div><div class="sub" id="maxDaySub"></div></div>
       <div class="card kpi"><div class="label">Today</div><div class="value" id="totalToday">–</div></div>
-      <div class="card kpi"><div class="label">Real tokens (range)</div><div class="value" id="realTokensWin">–</div><div class="sub" id="realTokensToday"></div></div>
-      <div class="card kpi"><div class="label">Plan usage <span class="muted" style="font-weight:400;">(the real limit)</span></div><div class="value" id="planUsageVal">–</div><div class="sub" id="planUsageSub"></div></div>
+      <div class="card kpi"><div class="label">Tokens</div><div class="value" id="realTokensWin">–</div><div class="sub" id="realTokensToday"></div></div>
+      <div class="card kpi"><div class="label">Plan limit</div><div class="value" id="planUsageVal">–</div><div class="sub" id="planUsageSub"></div></div>
     </div>
-    <div class="card" id="cacheCard" style="margin-bottom: 1rem;">
-      <div class="card-head"><h2>Cache efficiency</h2></div>
-      <div class="cache-bar" id="cacheBar"></div>
-      <div class="cache-legend" id="cacheLegend"></div>
-      <div class="muted" id="cacheHitRate" style="margin-top:0.5rem;"></div>
+    <div class="overview-pair">
+      <div class="card" id="cacheCard">
+        <div class="card-head"><h2>Cache efficiency</h2></div>
+        <div class="cache-bar" id="cacheBar"></div>
+        <div class="cache-legend" id="cacheLegend"></div>
+        <div class="muted" id="cacheHitRate" style="margin-top:0.5rem;"></div>
+      </div>
+      <div class="card" id="tokenSourcesCard" style="display:none;">
+        <div class="card-head"><h2>Where tokens went today</h2></div>
+        <div class="muted" style="margin-bottom:0.5rem;" title="Claude Code and Codex only — the other tools don't record enough detail locally to split this out. Tokens, not dollars: there's no per-bucket pricing to attach here.">Claude + Codex only, tokens not dollars</div>
+        <div id="tokenSourcesBody"></div>
+      </div>
     </div>
-    <div class="card">
+    <div class="card" style="margin-top: 1rem;">
       <div class="card-head">
         <h2>Daily spend <span id="chartMetricLabel" class="muted"></span></h2>
         <span style="display:flex; align-items:center; gap:0.6rem;">
@@ -463,9 +499,7 @@
           <span class="muted" id="chartNote"></span>
         </span>
       </div>
-      <div class="muted" id="chartTokensNote" style="display:none; margin-bottom:0.5rem;">
-        Input, output and cache write are priced very differently per token (output costs several times more than input), so they're shown separately rather than summed. Cache read is charted on its own below — it's typically far larger than the other three combined and would otherwise make them invisible.
-      </div>
+      <div class="muted" id="chartTokensNote" style="display:none; margin-bottom:0.5rem;" title="Input, output and cache write are priced very differently per token (output costs several times more than input), so they're shown separately rather than summed.">Cache read is charted separately below — it dwarfs the other three.</div>
       <svg id="chart"></svg>
       <div id="cacheReadChartWrap" style="display:none; margin-top:1.2rem; padding-top:1rem; border-top:1px solid var(--border);">
         <div class="card-head" style="margin-bottom:0.3rem;"><h2 style="font-size:0.85rem;">Cache read</h2><span class="muted" id="cacheReadChartNote"></span></div>
@@ -476,12 +510,6 @@
     <div class="card" id="hourlyCard" style="margin-top: 1rem; display:none;">
       <div class="card-head"><h2>Hourly <span id="hourlyMetricLabel"></span> (today)</h2><span class="muted" id="hourlyChartNote"></span></div>
       <svg id="hourlyChart"></svg>
-    </div>
-
-    <div class="card" id="tokenSourcesCard" style="margin-top: 1rem; display:none;">
-      <div class="card-head"><h2>Where tokens went today</h2></div>
-      <div class="muted" style="margin-bottom:0.6rem;">Claude Code and Codex only — the other tools don't record enough detail locally to split this out. Tokens, not dollars: there's no per-bucket pricing to attach here.</div>
-      <div id="tokenSourcesBody"></div>
     </div>
 
     <div class="card" style="margin-top: 1rem;">
@@ -1420,63 +1448,93 @@ function realCostBannerHtml(mu, compact) {
   </div>`;
 }
 
-function sourceBannerHtml(s, estimate, modelDetail, openaiCost) {
+function escAttr(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;'); }
+function srcChip(text, kind) { return `<span class="src-chip${kind ? ' src-chip-' + kind : ''}">${text}</span>`; }
+function srcMiniBar(pct) { return `<span class="src-minibar"><span style="width:${Math.min(pct ?? 0, 100)}%"></span></span>`; }
+const SRC_ROW_WEIGHT = { 'src-bad': 0, '': 1, 'src-ok': 2 };
+
+// One compact row per source: a provenance chip (live/cached/manual/estimate
+// — every cost figure has to say where it came from, same rule as the rest
+// of this app), the label, an inline mini-bar where there's a %, the amount,
+// and the full explanation moved to a hover title rather than always-on
+// prose — the row itself is the at-a-glance view, the sentence is there if
+// you want it.
+function sourceRow(s, estimate, modelDetail, openaiCost) {
   if (s.tool === 'claude') {
     if (!s.maxUsage) {
-      return `<div class="real-cost-banner">
-        <span class="real-cost-label">${s.label}</span>
-        <span class="real-cost-value tnum">${fmt(estimate)}</span>
-        <span class="muted real-cost-note">${s.note} ccusage estimate shown — not verified as real or covered.</span>
-      </div>`;
+      return { cls: '', html: `
+        ${srcChip('ESTIMATE', '')}
+        <span class="src-label">${s.label}</span>
+        <span class="src-extra"></span>
+        <span class="src-amount tnum">${fmt(estimate)}</span>
+      `, title: `${s.note} ccusage estimate shown — not verified as real or covered.` };
     }
-    return realCostBannerHtml(s.maxUsage, true);
+    const mu = s.maxUsage;
+    const c = mu.usageCredits || {};
+    const hasOverage = c.usedMinor != null;
+    const cls = hasOverage ? (c.usedMinor > 0 ? 'src-bad' : 'src-ok') : '';
+    const note = hasOverage
+      ? (c.usedMinor === 0
+          ? 'All usage so far is covered by the plan — this is the only figure here that reflects money actually spent beyond what’s already paid.'
+          : 'Drawn from purchased usage credits after plan limits were hit — this is real extra spend.')
+      : 'No usage-credit data cached for this account yet.';
+    const { stale, asOf } = snapshotAge(mu);
+    const chip = mu.live ? srcChip('LIVE', 'live') : (stale ? srcChip('CACHED', 'cached') : srcChip('CACHED', 'cached'));
+    const sessionPct = mu.session?.percent, weekPct = mu.week?.percent;
+    const extra = sessionPct == null ? '' :
+      `S ${srcMiniBar(sessionPct)} ${sessionPct}%&nbsp;&nbsp;W ${srcMiniBar(weekPct)} ${weekPct}%`;
+    return { cls, html: `
+      ${chip}
+      <span class="src-label">${mu.label}</span>
+      <span class="src-extra">${extra}</span>
+      <span class="src-amount tnum">${hasOverage ? fmtMoneyMinor(c.usedMinor, c.currency, c.exponent) : 'unknown'}</span>
+    `, title: `${note} (as of ${asOf}, ${mu.live ? 'live from the status line' : 'cached locally by Claude Code'}) — same numbers as claude.ai Settings → Usage.` };
   }
 
   if (s.tool === 'codex' && s.kind === 'official-live') {
     const cx = s.codexLive, p = cx.primary || {};
     const blocked = cx.ordinaryUsageAllowed === false;
-    const windowLabel = w => w == null ? '' : (w >= 10000 ? `${Math.round(w / 1440)}d window` : w >= 1000 ? `${Math.round(w / 60)}h window` : `${w}m window`);
+    const windowLabel = w => w == null ? '' : (w >= 10000 ? `${Math.round(w / 1440)}d` : w >= 1000 ? `${Math.round(w / 60)}h` : `${w}m`);
     const realValue = blocked && openaiCost && !openaiCost.error ? fmt(openaiCost.totalUSD) : (blocked ? 'limit reached' : '$0.00');
-    return `<div class="real-cost-banner ${blocked ? 'real-cost-bad' : 'real-cost-ok'}">
-      <span class="real-cost-label">${s.label}${planSuffix(cx.planType)}</span>
-      <span class="real-cost-value tnum">${realValue}</span>
-      <span class="muted real-cost-note">${blocked ? 'Plan limit reached — may be drawing on credits.' : 'covered by plan'}${openaiCost && !openaiCost.error ? ' — Admin-key Costs API also configured, used above once the plan limit is hit' : ''}</span>
-      <div class="real-cost-how">
-        <span>${windowLabel(p.windowMins)} <b class="tnum">${p.percent ?? '?'}%</b> used<span class="muted"> (${fmtResetAt(p.resetsAt)})</span></span>
-        <div class="progress-track" style="width:70px; display:inline-block; vertical-align:middle; margin:0 6px;"><div class="progress-fill" style="width:${Math.min(p.percent ?? 0, 100)}%"></div></div>
-        <span class="muted">— real numbers via Codex's own \`account/rateLimits/read\` (official, documented), fetched ${new Date(cx.fetchedAt).toLocaleString()}</span>
-      </div>
-    </div>`;
+    return { cls: blocked ? 'src-bad' : 'src-ok', html: `
+      ${srcChip('LIVE', 'live')}
+      <span class="src-label">${s.label}${planSuffix(cx.planType)}</span>
+      <span class="src-extra">${windowLabel(p.windowMins)} ${srcMiniBar(p.percent)} ${p.percent ?? '?'}%</span>
+      <span class="src-amount tnum">${realValue}</span>
+    `, title: `${blocked ? 'Plan limit reached — may be drawing on credits.' : 'covered by plan'}${openaiCost && !openaiCost.error ? ' — Admin-key Costs API also configured, used above once the plan limit is hit' : ''} — real numbers via Codex's own \`account/rateLimits/read\`, fetched ${new Date(cx.fetchedAt).toLocaleString()}.` };
   }
 
   if (s.tool === 'grok' && s.kind === 'unofficial-live') {
     const gb = s.grokBilling, onDemand = gb.onDemandUsedUsd ?? 0;
     const mismatch = s.manualPlan && gb.plan && s.manualPlan.toLowerCase() !== gb.plan.toLowerCase();
-    const mismatchHtml = mismatch ? `<span class="pill" style="background:var(--heavy-pill-bg); color:var(--heavy-pill-text);"
-        title="Your manual plan note says &quot;${s.manualPlan}&quot;, but this live reading from grok's own CLI (whichever account it's logged into) says &quot;${gb.plan}&quot;. Likely a different account than the one you checked in the browser, not two tier namespaces for the same account — check which account \`grok\` is logged into.">
-        plan mismatch: note says "${s.manualPlan}", API says "${gb.plan}"</span>` : '';
-    return `<div class="real-cost-banner ${onDemand > 0 ? 'real-cost-bad' : 'real-cost-ok'}">
-      <span class="real-cost-label">${s.label}${gb.plan ? ' (' + gb.plan + ' — via ' + (gb.source === 'grok-acp' ? "grok's own CLI" : 'HTTP fallback') + ')' : ''}</span>
-      <span class="real-cost-value tnum">$${onDemand.toFixed(2)}</span>
-      <span class="muted real-cost-note">on-demand/overage this ${gb.period || 'billing'} period (resets ${gb.resetsAt ? new Date(gb.resetsAt).toLocaleDateString() : '?'})${gb.prepaidBalanceUsd ? `, $${gb.prepaidBalanceUsd.toFixed(2)} prepaid credit balance` : ''}. Unofficial endpoint — fetched ${gb.fetchedAt ? new Date(gb.fetchedAt).toLocaleString() : 'never'}.</span>
-      ${mismatchHtml}
-    </div>`;
+    const mismatchHtml = mismatch ? `<span class="pill" style="background:var(--heavy-pill-bg); color:var(--heavy-pill-text); white-space:nowrap;"
+        title="Your manual plan note says &quot;${escAttr(s.manualPlan)}&quot;, but this live reading from grok's own CLI (whichever account it's logged into) says &quot;${escAttr(gb.plan)}&quot;. Likely a different account than the one you checked in the browser — check which account \`grok\` is logged into.">
+        plan mismatch</span>` : '';
+    return { cls: onDemand > 0 ? 'src-bad' : 'src-ok', html: `
+      ${srcChip('LIVE', 'live')}
+      <span class="src-label">${s.label}${gb.plan ? ' (' + gb.plan + ')' : ''}</span>
+      <span class="src-extra">${mismatchHtml}</span>
+      <span class="src-amount tnum">$${onDemand.toFixed(2)}</span>
+    `, title: `on-demand/overage this ${gb.period || 'billing'} period (resets ${gb.resetsAt ? new Date(gb.resetsAt).toLocaleDateString() : '?'})${gb.prepaidBalanceUsd ? `, $${gb.prepaidBalanceUsd.toFixed(2)} prepaid credit balance` : ''}. Unofficial endpoint (via ${gb.source === 'grok-acp' ? "grok's own CLI" : 'HTTP fallback'}) — fetched ${gb.fetchedAt ? new Date(gb.fetchedAt).toLocaleString() : 'never'}.` };
   }
 
   if (s.kind === 'manual') {
-    return `<div class="real-cost-banner ${s.coveredByPlan ? 'real-cost-ok' : 'real-cost-bad'}">
-      <span class="real-cost-label">${s.label}${planSuffix(s.plan)}</span>
-      <span class="real-cost-value tnum">${s.coveredByPlan ? '$0.00' : fmt(estimate)}</span>
-      <span class="muted real-cost-note">${s.note || ''} (checked ${s.asOf || 'unknown'}) — ccusage estimate for this range: ${fmt(estimate)}${modelDetail}</span>
-    </div>`;
+    return { cls: s.coveredByPlan ? 'src-ok' : 'src-bad', html: `
+      ${srcChip('MANUAL', 'manual')}
+      <span class="src-label">${s.label}${planSuffix(s.plan)}</span>
+      <span class="src-extra">${modelDetail ? modelDetail.replace(/^ /, '') : ''}</span>
+      <span class="src-amount tnum">${s.coveredByPlan ? '$0.00' : fmt(estimate)}</span>
+    `, title: `${s.note || ''} (checked ${s.asOf || 'unknown'}) — ccusage estimate for this range: ${fmt(estimate)}` };
   }
 
-  // kind === 'none': no automatic source, no manual note either
-  return `<div class="real-cost-banner">
-    <span class="real-cost-label">${s.label}</span>
-    <span class="real-cost-value tnum">${fmt(estimate)}</span>
-    <span class="muted real-cost-note">assumed real spend — verify this tool's own billing (subscription vs metered API key), then use Settings to record it${modelDetail}</span>
-  </div>`;
+  // kind === 'none': no automatic source, no manual note either — genuinely
+  // unknown, not asserted either way, so no ok/bad color
+  return { cls: '', html: `
+    ${srcChip('ESTIMATE', '')}
+    <span class="src-label">${s.label}</span>
+    <span class="src-extra">${modelDetail ? modelDetail.replace(/^ /, '') : ''}</span>
+    <span class="src-amount tnum">${fmt(estimate)}</span>
+  `, title: `assumed real spend — verify this tool's own billing (subscription vs metered API key), then use Settings to record it.` };
 }
 
 // Known named tiers per ccusage agent, for convenience only — the free-text
@@ -1666,7 +1724,14 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
   const estimateTotal = totalWin;
   const coveredTotal = Math.max(0, estimateTotal - realTotal);
 
-  const bannersHtml = rows.map(({ s, estimate, modelDetail }) => sourceBannerHtml(s, estimate, modelDetail, openaiCost)).join('');
+  // Red (real cost) and neutral (genuinely unknown, e.g. an unlabeled
+  // account) surface first — green (covered, nothing to act on) sinks to
+  // the bottom, so the rows worth a second look aren't buried under ones
+  // that aren't.
+  const rendered = rows
+    .map(({ s, estimate, modelDetail }) => sourceRow(s, estimate, modelDetail, openaiCost))
+    .sort((a, b) => SRC_ROW_WEIGHT[a.cls] - SRC_ROW_WEIGHT[b.cls]);
+  const bannersHtml = rendered.map(({ cls, html, title }) => `<div class="src-row ${cls}" title="${escAttr(title)}">${html}</div>`).join('');
 
   box.innerHTML = `
     <div class="card-head"><h2>What's actually costing you money</h2></div>
@@ -2293,12 +2358,18 @@ function update() {
     ? (data.maxUsage || []).find(m => m.accountUuid === selectedAcctUuid)
     : (data.maxUsage || []).find(m => m.live) || (data.maxUsage || [])[0];
   if (planUsageSrc && planUsageSrc.session && planUsageSrc.session.percent != null) {
-    document.getElementById('planUsageVal').textContent = `${planUsageSrc.session.percent}% / ${planUsageSrc.week.percent}%`;
-    document.getElementById('planUsageSub').textContent = `session / week · ${fmtResetAt(planUsageSrc.session.resetsAt)}`;
+    document.getElementById('planUsageVal').textContent = `${planUsageSrc.session.percent}% · ${planUsageSrc.week.percent}%`;
+    document.getElementById('planUsageSub').textContent = 'session · week';
   } else {
     document.getElementById('planUsageVal').textContent = '–';
-    document.getElementById('planUsageSub').textContent = 'no plan-limit data for this account';
+    document.getElementById('planUsageSub').textContent = 'no plan-limit data';
   }
+
+  // Avg/day and Peak day are redundant on a 1-day range — they'd just repeat
+  // Spend/Today back at you.
+  const isSingleDay = range === 1 && !customFrom && !customTo;
+  document.getElementById('kpiAvgDay').style.display = isSingleDay ? 'none' : '';
+  document.getElementById('kpiHighestDay').style.display = isSingleDay ? 'none' : '';
 
   document.getElementById('chartMetricLabel').textContent = chartMetric === 'tokens' ? '(tokens)' : '';
   document.getElementById('hourlyMetricLabel').textContent = chartMetric === 'tokens' ? 'tokens' : 'spend';
