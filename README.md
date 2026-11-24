@@ -68,7 +68,8 @@ python3 -m unittest discover -s tests
 
 Stdlib `unittest`, no pip installs, consistent with the rest of the project. Covers the pure
 data-transformation functions (`compute_accounts`, `build_hourly`, `build_sources`, the Grok
-billing parser) — the logic most likely to silently produce a wrong dollar figure.
+billing parser, the plan-usage-history writer/reader, and the token-source classifier) — the
+logic most likely to silently produce a wrong figure.
 
 ### Upgrading
 
@@ -125,6 +126,29 @@ in `~/.grok/auth.json` if that's unavailable. Returns weekly on-demand/overage b
 tier — **not** a weekly included-pool %, which doesn't appear to be exposed anywhere. Never
 polled automatically, only on an explicit "Refresh now" click. If the reported plan tier doesn't
 match a manual plan note you've saved, the UI flags it rather than silently preferring either one.
+
+## Other things on Overview
+
+- **Hourly spend** — Claude's bars come from `ccusage blocks -n 1`, grouped by each request's own
+  timestamp, so a past hour is final rather than drifting forward as a long session keeps running.
+  Every other tool only has a session's last-active moment to go on, so those bars can still move.
+- **Cache efficiency** — uncached input / cache write / cache read / output, straight from fields
+  ccusage already provides in `modelBreakdowns`.
+- **Where tokens went today** — main thread vs. subagents vs. compaction vs. auto-review, for
+  Claude Code and Codex (the only two tools with enough local transcript detail for this). Reads
+  the raw transcripts directly, not ccusage — tokens only, no pricing exists per-bucket.
+- **Projects** (its own tab, next to Accounts) — spend per repo, using each session's real working
+  directory as recorded in its own transcript. Claude-only, same scope as Accounts.
+- **Plan usage over time** (on the Accounts page) — a chart of the 5h/weekly/30-day window
+  percentage, not just the current reading. Claude's history accumulates going forward from the
+  status line; Codex's is backfilled for real from its own rollout files, which already carry a
+  rate-limit sample on nearly every reply.
+
+The idea for these four came from skimming
+[boristopalov/tokenspend](https://github.com/boristopalov/tokenspend) and
+[taranek/tokenspend](https://github.com/taranek/tokenspend) — no code from either was copied
+(neither repo carries a license, and the implementations here are a different language and
+structure throughout), just the observation that the data was worth showing.
 
 ## License
 

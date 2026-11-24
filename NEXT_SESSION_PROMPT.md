@@ -1,63 +1,65 @@
-# Next session: Agentic Spend is public, hardened, and verified
+# Next session: five features shipped, all verified against real data
 
 Continue work on the Agentic Spend dashboard at `~/code/agentic-spend` (`agentic-spend` to
-launch, read `README.md` first). The repo went public this session (`github.com/tjorourke/
-agentic-spend`, history squashed to one clean commit first — the old private history had a
-stray personal email in it). This pass addressed a 10-item self-review of the public-facing
-state: what's done, what was explicitly deferred, and why.
+launch, read `README.md` first). This pass was triggered by skimming two similar OSS tools
+(boristopalov/tokenspend, taranek/tokenspend) for ideas, then implementing the ones worth having
+— see the README's "Other things on Overview" section for the user-facing description of each.
 
 ## What changed this session
 
-- **Node.js dependency is now declared and handled.** `server.py` shells out to `npx ccusage`,
-  which needs Node — previously undeclared anywhere. Formula now has `depends_on "node"`; README
-  has a Prerequisites section; and if `npx` is missing anyway (e.g. running from a git clone),
-  `/api/usage` returns `{"error": ..., "errorType": "node_missing"}` and the dashboard shows a
-  specific install-Node message with a Retry button instead of a blank page or raw stack trace.
-- **A real test suite**: `tests/`, stdlib `unittest` (no pip installs, matches the project's
-  no-build-step convention), 15 tests covering the pure data-transformation functions —
-  `account_usage.compute_accounts`, `server.build_hourly`, `server.build_sources`,
-  `provider_usage._parse_grok_billing`/`_cents`. Run with `python3 -m unittest discover -s tests`.
-- **CI**: `.github/workflows/ci.yml` — import-checks every module and runs the test suite on
-  push/PR to main. Basic on purpose (no lint, no coverage gate); verify it's actually green on
-  GitHub after the next push, not just passing locally.
-- **LICENSE**: Apache 2.0, matching the author's other OSS tool (flightbay). Added to the repo,
-  the Formula's `license` field, and a README section.
-- **Empty-state UX**: a fresh install with zero ccusage data (nobody's used Claude Code/Codex/
-  Grok/OpenCode on the machine yet) now shows a plain-language banner explaining that, instead
-  of just rendering blank/zero everything with no explanation. Screenshot-verified on Overview
-  and Days with a mocked empty dataset — no crashes elsewhere either.
-- **Stale docs fixed**: README's Live Claude/Grok usage sections still said "Manage plans modal"
-  — that UI was replaced by the Settings page back in the nav redesign and the docs never caught
-  up. Fixed both references.
-- **Desktop-only, documented as a deliberate choice**, not a gap: it binds to `127.0.0.1` and
-  reads machine-local logs, so a mobile layout was explicitly scoped out (not "missing").
+- **Hourly chart no longer shifts.** It used to attribute a whole session's cost to whichever
+  hour it was last active in, so a long-running session visibly "moved" from one hour's bar to
+  the next on every refresh — a user complaint, not a cosmetic nit. Now Claude's bars come from
+  `ccusage blocks -n 1` (real per-request timing); other tools still only have a session's
+  lastActivity, documented honestly in the chart's own caption. Falls back to the old behavior if
+  the `blocks` call itself fails, rather than silently dropping Claude from the chart.
+- **Cache efficiency card** (Overview) — uncached input / cache write / cache read / output, from
+  fields ccusage's `modelBreakdowns` already provides. No new data source.
+- **Projects tab** (next to Accounts) — spend per repo, from each session's real `cwd` (captured
+  in the same transcript scan `build_session_account_map()` already did for the account map, not
+  a second pass, and not decoded from the lossy dash-encoded directory name).
+- **Plan usage over time** (Accounts page, under each Claude account and once for Codex) — a
+  chart of the 5h/weekly/30-day window percentage over time, not just the current reading.
+  Claude's history accumulates going forward via `statusline.py`; Codex's is backfilled for real
+  from its own rollout files (`event_msg`/`token_count` lines already carry a rate-limit sample
+  on nearly every reply — no forward-only wait needed for that one).
+- **"Where tokens went today"** (Overview, lazy-loaded) — main thread vs. subagents vs.
+  compaction vs. auto-review, for Claude Code and Codex only (the two tools with enough local
+  transcript detail). New module `token_sources.py`, a separate `/api/token-sources` endpoint
+  (never on the 10s `/api/usage` path — parsing a day's transcripts takes real time). Reconciled
+  against ccusage's own numbers before shipping: Codex matched exactly across 96 files; Claude's
+  per-day totals were within 0-1.5% (ccusage fills small transcript gaps from its own cost-state
+  tracking; this parser only reads what's actually logged).
 
-## Reviewed, left alone on purpose
+## A live bug, caused and fixed in the same session
 
-- **Account-billing ambiguity** ("is this account's spend genuinely metered by its org") is not
-  code-fixable — there is no local signal that answers it, by design of what's available. The UI
-  already says this plainly rather than guessing either way.
-- **A handover note's proposed generic cross-tool identity-attribution system**
-  (`~/Downloads/cc-usage-live-handover/`) was re-checked this session: opencode's local `account`
-  table is still 0 rows on this machine (`sqlite3 ~/.local/share/opencode/opencode.db "SELECT
-  COUNT(*) FROM account"`). Building against a table with no real data to verify the schema
-  against would be speculative, unverifiable code — not built, deliberately, not forgotten.
-- **Mobile responsiveness and accessibility** (`aria-*` attributes) were flagged in the same
-  review and explicitly deprioritized — this is a single-user, same-machine tool, not public-
-  facing software with an accessibility audience, and mobile isn't the intended use (see above).
-- **Data export (CSV/JSON) and budget-threshold alerts** were flagged and explicitly skipped —
-  no current need, would be speculative scope addition.
-
-## Still open from the advisor's original nav-redesign spec (unchanged, low priority)
-
-Merging Models+Days into one "Breakdown" page, a fully unified header "Source" filter across
-every page type (vs. the current tool-dropdown-plus-accounts-optgroup workaround), and
-generalizing the hourly chart beyond the literal `1d` preset. None of these are regressions —
-they didn't exist before the redesign either — just the advisor's fuller vision, scoped down
-for risk at the time.
+Adding `import data_dir` to `statusline.py` broke the status line for every Claude Code session
+on this machine for about 10 minutes — Claude Code runs it with `python3 -I`, which drops the
+script's own directory from `sys.path`, so the sibling import raised `ModuleNotFoundError` before
+anything could print. Fixed by inlining the data-dir path instead of importing it. Added a CI step
+that runs `statusline.py` under `-I` with both an empty and a real payload, since this is exactly
+the kind of failure a normal "does it import" check can't catch (it imports fine without `-I`).
+If touching `statusline.py` again: it has to work standalone, under `-I`, with no sibling imports.
 
 ## Housekeeping
 
-No known bugs. Formula is at v1.0.0 with the public HTTPS-tarball install method (no SSH/tap
-trust needed). If starting fresh work, check `git log`, confirm CI is still green, and glance at
-Overview/Settings in both themes before assuming state — screenshots age fast.
+- Fixed three more stale "Manage plans" references left over from the earlier modal-to-Settings
+  migration (two in `server.py` error/doc strings, one UI link removed from Overview).
+- `server.py`'s `PORT` now reads `AGENTIC_SPEND_PORT` (default 8787) instead of needing a file
+  edit to run a second instance for testing.
+- 51 tests now (`python3 -m unittest discover -s tests`), all passing.
+
+## Not done, and why
+
+- The advisor-specced original build order (cache split → Projects → plan history → token
+  destinations) got reordered once `ccusage blocks -n 1` turned out to solve the hourly-chart
+  complaint almost for free — that became priority one instead.
+- Token-source classification only recognises the querySource values actually observed on this
+  machine (`repl_main_thread`, `sdk`, various `agent:*`); anything else lands in "other" rather
+  than a guessed bucket. If a future Claude Code version adds a new querySource value, it'll show
+  up there rather than being silently miscategorized — check `classify_claude_query_source()` in
+  `token_sources.py` if "other" ever shows a meaningful total.
+- No screenshots of the new Projects tab or Where-tokens-went card were added to the README —
+  the existing four still roughly represent the app; add new ones (through the scrub-proxy
+  technique used for the original four, since Projects shows real local paths) if that gap starts
+  to matter.

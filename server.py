@@ -22,6 +22,7 @@ import account_usage
 import data_dir
 import provider_usage
 import statusline_setup
+import token_sources
 
 PORT = int(os.environ.get("AGENTIC_SPEND_PORT", "8787"))
 CACHE_TTL = 10  # seconds
@@ -35,6 +36,8 @@ _provider_cost_cache = {"ts": 0.0, "data": None}
 PROVIDER_COST_TTL = 300  # seconds — real API calls to OpenAI, don't hammer it every 10s
 _codex_live_cache = {"ts": 0.0, "data": None}
 CODEX_LIVE_TTL = 60  # seconds — spawning `codex app-server` has real overhead, don't do it every request
+_token_sources_cache = {"ts": 0.0, "data": None}
+TOKEN_SOURCES_TTL = 120  # seconds — parsing every transcript from today takes real time; kept off the 10s /api/usage path entirely
 GROK_BILLING_CACHE_PATH = data_dir.path("grok-billing-cache.json")
 
 
@@ -85,6 +88,24 @@ def get_codex_live(force=False):
     _codex_live_cache["data"] = snap
     _codex_live_cache["ts"] = now
     return snap
+
+
+def get_token_sources_cached():
+    """Scoped to today only (local midnight) — parsing every transcript ever
+    written takes several seconds, not something to do on every poll. Its
+    own TTL, well away from /api/usage's 10s cache, since this is genuinely
+    expensive compared to everything else this server does."""
+    now = time.time()
+    if _token_sources_cache["data"] is not None and (now - _token_sources_cache["ts"]) < TOKEN_SOURCES_TTL:
+        return _token_sources_cache["data"]
+    since = datetime.datetime.combine(datetime.date.today(), datetime.time())
+    try:
+        result = token_sources.get_token_sources(since_dt=since)
+    except Exception as e:
+        result = {"error": str(e)}
+    _token_sources_cache["data"] = result
+    _token_sources_cache["ts"] = now
+    return result
 
 
 def build_hourly(session_rows, claude_blocks):
@@ -175,7 +196,7 @@ def build_sources(account_list, max_usage_list, codex_live, grok_on, grok_billin
     not scoped to whatever date range happens to be selected in the UI (that
     was the earlier "only grok in the dropdown" bug: the old per-range
     `otherAgg` was used to build the tool list). Both the Overview card and
-    the Manage Plans modal render from this single list instead of four
+    the Settings page render from this single list instead of four
     separately hand-coded banner functions, so a source only needs fixing in
     one place when its status changes (e.g. a tool going from manual to
     automatic). `kind` is one of: official-live, official-cached,
@@ -346,6 +367,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == "/api/usage":
             force = "force=1" in self.path
             self._send_json(get_usage(force=force))
+        elif path == "/api/token-sources":
+            self._send_json(get_token_sources_cached())
         elif path in ("/", "/index.html"):
             with open(HTML_PATH, "rb") as f:
                 body = f.read()
@@ -406,7 +429,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # unless the toggle is on, so a stray request can't silently call an
         # unofficial endpoint the user hasn't opted into.
         if not provider_usage.load_unofficial_toggles().get("grok"):
-            self._send_json({"ok": False, "error": "Grok live billing is not enabled — turn it on in Manage plans first."}, code=400)
+            self._send_json({"ok": False, "error": "Grok live billing is not enabled — turn it on in Settings first."}, code=400)
             return
         result = provider_usage.fetch_grok_billing()
         _grok_billing_cache["data"] = result

@@ -472,6 +472,12 @@
       <div class="muted" style="margin-top:0.4rem;">Claude's bars are real per-hour spend (from ccusage's own hourly billing blocks) — once an hour's past, its bar is final. Other tools (Grok, Codex, OpenCode) have no finer timestamp than a session's last-active moment, so a long session there still lands as one lump in whichever hour it was last touched, and can keep moving until that session ends.</div>
     </div>
 
+    <div class="card" id="tokenSourcesCard" style="margin-top: 1rem; display:none;">
+      <div class="card-head"><h2>Where tokens went today</h2></div>
+      <div class="muted" style="margin-bottom:0.6rem;">Claude Code and Codex only — the other tools don't record enough detail locally to split this out. Tokens, not dollars: there's no per-bucket pricing to attach here.</div>
+      <div id="tokenSourcesBody"></div>
+    </div>
+
     <div class="card" style="margin-top: 1rem;">
       <div class="card-head">
         <h2>Spend by account</h2>
@@ -579,6 +585,8 @@
 
 <script>
 let data = null;
+let tokenSourcesData = null;
+let tokenSourcesFetching = false;
 let tab = 'overview';
 let range = 7;
 let agent = 'all';
@@ -1865,6 +1873,53 @@ function usageHistoryChartHtml(samples, series, title) {
   `;
 }
 
+const TOKEN_SOURCE_LABELS = { main: 'Main thread', subagent: 'Subagents', compaction: 'Compaction', review: 'Auto-review', other: 'Other (unclassified)' };
+const TOKEN_SOURCE_ORDER = ['main', 'subagent', 'compaction', 'review', 'other'];
+
+// Lazy, fetched once per page load (not on every 10s /api/usage poll) — this
+// endpoint parses transcripts directly and genuinely costs real time.
+function loadTokenSources() {
+  if (tokenSourcesFetching || tokenSourcesData) return;
+  tokenSourcesFetching = true;
+  fetch('/api/token-sources').then(r => r.json()).then(d => {
+    tokenSourcesData = d;
+    tokenSourcesFetching = false;
+    renderTokenSources();
+  }).catch(() => { tokenSourcesFetching = false; });
+}
+
+function renderTokenSources() {
+  const card = document.getElementById('tokenSourcesCard');
+  const body = document.getElementById('tokenSourcesBody');
+  if (!tokenSourcesData || tokenSourcesData.error) { card.style.display = 'none'; return; }
+
+  const summary = tokenSourcesData.summary || {};
+  const tools = ['claude', 'codex'].filter(t => summary[t] && Object.keys(summary[t]).length);
+  if (!tools.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+
+  const totalOf = row => row.uncached + row.cacheWrite + row.cacheRead + row.output + row.reasoning;
+
+  body.innerHTML = tools.map(tool => {
+    const bySource = summary[tool];
+    const grand = Object.values(bySource).reduce((s, r) => s + totalOf(r), 0) || 1;
+    const rows = TOKEN_SOURCE_ORDER.filter(src => bySource[src]).map(src => {
+      const r = bySource[src];
+      const total = totalOf(r);
+      const pct = (total / grand * 100).toFixed(1);
+      return `<div class="breakdown-row">
+        <span class="bd-label">${TOKEN_SOURCE_LABELS[src] || src}</span>
+        <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
+        <span class="bd-pct">${fmtTok(total)} <span class="muted">(${r.requests} ${tool === 'claude' ? 'requests' : 'threads'})</span></span>
+      </div>`;
+    }).join('');
+    return `<div style="margin-bottom:1rem;">
+      <div class="card-head" style="margin-bottom:0.3rem;"><h2 style="font-size:0.85rem; text-transform:capitalize;">${tool}</h2></div>
+      ${rows}
+    </div>`;
+  }).join('');
+}
+
 function renderMaxUsage(list) {
   const container = document.getElementById('maxUsageContainer');
   const intro = document.getElementById('maxUsageIntro');
@@ -2124,6 +2179,8 @@ function update() {
 
   if (tab === 'overview') {
     renderCacheEfficiency(windowed);
+    loadTokenSources();
+    renderTokenSources();
     if (chartMetric === 'tokens') drawTokensChart(windowed); else drawChart(windowed);
 
     const hourlyCard = document.getElementById('hourlyCard');
