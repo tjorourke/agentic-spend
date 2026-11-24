@@ -633,6 +633,11 @@ const fmtResetAt = iso => {
   return sameDay ? `resets ${time}` : `resets ${d.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`;
 };
 
+// " (<plan> plan)" reads fine for a short tier name ("Pro"), but a saved
+// plan value can be a full sentence (opencode's dropdown hint already ends
+// in the word "plan") — blindly appending " plan)" then doubles it.
+const planSuffix = plan => !plan ? '' : / plan$/i.test(plan.trim()) ? ` (${plan})` : ` (${plan} plan)`;
+
 function readUrlState() {
   const p = new URLSearchParams(location.search);
   tab = p.get('tab') || 'overview';
@@ -1433,7 +1438,7 @@ function sourceBannerHtml(s, estimate, modelDetail, openaiCost) {
     const windowLabel = w => w == null ? '' : (w >= 10000 ? `${Math.round(w / 1440)}d window` : w >= 1000 ? `${Math.round(w / 60)}h window` : `${w}m window`);
     const realValue = blocked && openaiCost && !openaiCost.error ? fmt(openaiCost.totalUSD) : (blocked ? 'limit reached' : '$0.00');
     return `<div class="real-cost-banner ${blocked ? 'real-cost-bad' : 'real-cost-ok'}">
-      <span class="real-cost-label">${s.label}${cx.planType ? ' (' + cx.planType + ' plan)' : ''}</span>
+      <span class="real-cost-label">${s.label}${planSuffix(cx.planType)}</span>
       <span class="real-cost-value tnum">${realValue}</span>
       <span class="muted real-cost-note">${blocked ? 'Plan limit reached — may be drawing on credits.' : 'covered by plan'}${openaiCost && !openaiCost.error ? ' — Admin-key Costs API also configured, used above once the plan limit is hit' : ''}</span>
       <div class="real-cost-how">
@@ -1460,7 +1465,7 @@ function sourceBannerHtml(s, estimate, modelDetail, openaiCost) {
 
   if (s.kind === 'manual') {
     return `<div class="real-cost-banner ${s.coveredByPlan ? 'real-cost-ok' : 'real-cost-bad'}">
-      <span class="real-cost-label">${s.label}${s.plan ? ' (' + s.plan + ' plan)' : ''}</span>
+      <span class="real-cost-label">${s.label}${planSuffix(s.plan)}</span>
       <span class="real-cost-value tnum">${s.coveredByPlan ? '$0.00' : fmt(estimate)}</span>
       <span class="muted real-cost-note">${s.note || ''} (checked ${s.asOf || 'unknown'}) — ccusage estimate for this range: ${fmt(estimate)}${modelDetail}</span>
     </div>`;
