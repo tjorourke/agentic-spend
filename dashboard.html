@@ -1,0 +1,2134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Agentic Spend</title>
+<link rel="icon" href="/favicon.png">
+<script>
+  (function () {
+    var qs = new URLSearchParams(location.search).get('theme');
+    var saved = qs || localStorage.getItem('theme');
+    var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  })();
+</script>
+<style>
+  :root {
+    --bg: #f5f4fa;
+    --card: #ffffff;
+    --border: #e6e4ec;
+    --text: #1f1b2e;
+    --muted: #767489;
+    --accent: #7c3aed;
+    --accent-soft: #ede9fe;
+    --accent-soft-text: #6d28d9;
+    --row-hover: #f6f4fd;
+    --nav-hover: #ece9f5;
+    --err-bg: #fef2f2; --err-border: #fecaca; --err-text: #b91c1c;
+    --banner-bg: #eef2ff; --banner-border: #c7d2fe; --banner-text: #3730a3;
+    --ok-bg: #ecfdf5; --ok-border: #a7f3d0; --ok-text: #047857;
+    --bad-bg: #fef2f2; --bad-border: #fecaca; --bad-text: #b91c1c;
+    --neutral-bg: #f1f5f9; --neutral-border: #e2e8f0;
+    --heavy-bg: #fef3c7; --heavy-pill-bg: #fde68a; --heavy-pill-text: #92400e;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  [data-theme="dark"] {
+    --bg: #15131f;
+    --card: #1e1b2c;
+    --border: #322e45;
+    --text: #ece9f7;
+    --muted: #9692ab;
+    --accent: #a78bfa;
+    --accent-soft: #2f2a47;
+    --accent-soft-text: #c4b5fd;
+    --row-hover: #262238;
+    --nav-hover: #262238;
+    --err-bg: #3a1d20; --err-border: #5c2a2e; --err-text: #fca5a5;
+    --banner-bg: #221f3a; --banner-border: #3a355c; --banner-text: #c7d2fe;
+    --ok-bg: #16302a; --ok-border: #1f4f41; --ok-text: #6ee7b7;
+    --bad-bg: #3a1d20; --bad-border: #5c2a2e; --bad-text: #fca5a5;
+    --neutral-bg: #221f33; --neutral-border: #322e45;
+    --heavy-bg: #3a3315; --heavy-pill-bg: #534a1d; --heavy-pill-text: #fde68a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Inter", system-ui, sans-serif;
+    font-size: 14px;
+    display: flex;
+    min-height: 100vh;
+  }
+  a { color: inherit; }
+
+  /* ---------- sidebar ---------- */
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--bg);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 1.25rem 0.9rem;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0 0.4rem 1.5rem;
+    text-decoration: none;
+    color: var(--text);
+  }
+  .brand:hover .brand-eyebrow { color: var(--accent); }
+  .brand img { width: 26px; height: 26px; border-radius: 6px; flex-shrink: 0; }
+  .brand-text { display: flex; flex-direction: column; font-weight: 700; font-size: 1.02rem; line-height: 1.25; }
+  .brand-eyebrow {
+    font-weight: 500; font-size: 0.66rem; color: var(--muted);
+    text-transform: lowercase; letter-spacing: 0.01em;
+  }
+  nav.nav { display: flex; flex-direction: column; gap: 0.15rem; }
+  .nav-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 0.5rem 0.7rem;
+    border-radius: 8px;
+    border: none;
+    background: none;
+    color: var(--text);
+    font-size: 0.88rem;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .nav-item:hover { background: var(--nav-hover); }
+  .nav-item.active { background: var(--accent-soft); color: var(--accent-soft-text); }
+  .sidebar-footer {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 0.4rem 0;
+    border-top: 1px solid var(--border);
+    font-size: 0.72rem;
+    color: var(--muted);
+  }
+  #refreshBtn, #themeBtn {
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    border-radius: 7px;
+    width: 28px; height: 28px;
+    cursor: pointer;
+    font-size: 0.95rem;
+    line-height: 1;
+  }
+  #refreshBtn:hover, #themeBtn:hover { border-color: var(--accent); color: var(--accent); }
+  #refreshBtn.spinning { animation: spin 0.7s linear; }
+  @keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+  /* ---------- content ---------- */
+  .content { flex: 1; padding: 1.75rem 2rem; max-width: 1100px; position: relative; }
+  .loading-overlay {
+    position: absolute; inset: 0; z-index: 50;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 0.9rem;
+    background: var(--bg);
+  }
+  .loading-overlay.hidden { display: none; }
+  .loading-coin {
+    width: 56px; height: 56px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.7rem; font-weight: 700; color: #fff;
+    background: linear-gradient(135deg, var(--accent), var(--accent-soft-text));
+    box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 45%, transparent);
+    animation: coinSpin 1s cubic-bezier(.4,0,.2,1) infinite;
+  }
+  @keyframes coinSpin {
+    0%   { transform: scaleX(1) rotate(0deg); }
+    50%  { transform: scaleX(0.08) rotate(180deg); }
+    100% { transform: scaleX(1) rotate(360deg); }
+  }
+  .loading-overlay .loading-text { color: var(--muted); font-size: 0.9rem; }
+  .page-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1.4rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  .page-header h1 { font-size: 1.3rem; margin: 0; }
+  .header-controls { display: flex; align-items: center; gap: 0.6rem; }
+  .segmented {
+    display: inline-flex;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 2px;
+  }
+  .segmented button {
+    border: none;
+    background: none;
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .segmented button.active { background: var(--accent); color: white; }
+  select {
+    border: 1px solid var(--border);
+    background: var(--card);
+    border-radius: 8px;
+    padding: 0.4rem 0.6rem;
+    font-size: 0.82rem;
+    color: var(--text);
+  }
+  .plan-form label { font-size: 0.75rem; color: var(--muted); font-weight: 500; }
+  .plan-form input, .plan-form textarea, .plan-form select {
+    display: block; margin-top: 0.2rem;
+    border: 1px solid var(--border); background: var(--card); color: var(--text);
+    border-radius: 7px; padding: 0.35rem 0.55rem; font-size: 0.82rem; font-family: inherit;
+  }
+  .plan-form { border-top: 1px solid var(--border); padding-top: 0.8rem; margin-top: 0.4rem; }
+  .plan-form button, #planDeleteBtn {
+    border: 1px solid var(--border); background: var(--accent); color: white;
+    border-radius: 7px; padding: 0.4rem 0.8rem; font-size: 0.8rem; cursor: pointer; font-weight: 600;
+  }
+  #planDeleteBtn { background: var(--card); color: var(--bad-text); border-color: var(--bad-border); }
+  .link-btn {
+    border: none; background: none; color: var(--accent); cursor: pointer;
+    font-size: 0.8rem; font-weight: 600; padding: 0; margin-right: 0.5rem;
+  }
+  .link-btn:hover { text-decoration: underline; }
+
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    display: flex; align-items: flex-start; justify-content: center;
+    padding: 4vh 1rem; z-index: 1000; overflow-y: auto;
+  }
+  .modal-box {
+    background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+    width: 100%; max-width: 680px; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  }
+  .modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1rem 1.2rem; border-bottom: 1px solid var(--border);
+  }
+  .modal-head h2 { font-size: 1rem; margin: 0; }
+  .modal-close {
+    border: none; background: none; color: var(--muted); font-size: 1.4rem;
+    line-height: 1; cursor: pointer; padding: 0.1rem 0.4rem; border-radius: 6px;
+  }
+  .modal-close:hover { color: var(--text); background: var(--nav-hover); }
+  .modal-body { padding: 1.2rem; }
+  #err {
+    display: none;
+    background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-border);
+    border-radius: 10px; padding: 0.7rem 1rem; margin-bottom: 1rem; font-size: 0.85rem;
+  }
+
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .cards { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.2rem; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.1rem 1.3rem;
+  }
+  .kpi { flex: 1; min-width: 150px; }
+  .kpi .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .kpi .value { font-size: 1.55rem; font-weight: 700; margin-top: 0.3rem; }
+  .kpi .sub { font-size: 0.78rem; color: var(--muted); margin-top: 0.15rem; }
+
+  .card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; }
+  .card-head h2 { font-size: 0.95rem; margin: 0; }
+  .muted { color: var(--muted); font-size: 0.8rem; }
+
+  #chart, #acctChart, #modelDetailChart, #hourlyChart { width: 100%; height: 220px; overflow: visible; display: block; }
+  #acctChart { height: 140px; }
+  #hourlyChart { height: 180px; }
+  .bar-rect { fill: var(--accent); transition: opacity 0.1s; }
+  .bar-rect:hover { opacity: 0.75; }
+  .gridline { stroke: var(--border); stroke-width: 1; }
+  .axis-label { font-size: 10px; fill: var(--muted); font-family: var(--mono); }
+  .acct-legend { display: flex; gap: 1.4rem; margin-bottom: 0.6rem; }
+  .acct-legend .item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; }
+  .acct-legend .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .acct-legend .amt { font-weight: 700; font-family: var(--mono); margin-left: 2px; }
+
+  .toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 0.9rem; gap: 0.6rem;
+  }
+  .toolbar input {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.4rem 0.7rem;
+    font-size: 0.82rem;
+    width: 220px;
+    background: var(--card);
+    color: var(--text);
+  }
+
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th, td { text-align: left; padding: 0.55rem 0.7rem; }
+  thead th {
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  thead th:hover { color: var(--text); }
+  thead th .chev { opacity: 0.4; font-size: 0.7em; margin-left: 2px; }
+  thead th.sorted .chev { opacity: 1; color: var(--accent); }
+  tbody tr { border-bottom: 1px solid var(--border); }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--row-hover); }
+  .right { text-align: right; }
+  .tnum { font-variant-numeric: tabular-nums; font-family: var(--mono); }
+  .model-name { font-family: var(--mono); color: var(--accent-soft-text); }
+  .model-name-cell { cursor: pointer; }
+  .model-name-cell:hover { text-decoration: underline; }
+  tr.selected-model { background: var(--accent-soft); }
+
+  .pill {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 500;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent-soft-text);
+    margin-right: 4px;
+  }
+  .bar-cell { display: flex; align-items: center; gap: 6px; }
+  .mini-bar { height: 10px; border-radius: 3px; background: var(--accent); }
+  .heavy-row { background: var(--heavy-bg); }
+  .pill-heavy { background: var(--heavy-pill-bg); color: var(--heavy-pill-text); }
+
+  .banner {
+    background: var(--banner-bg); border: 1px solid var(--banner-border); color: var(--banner-text);
+    border-radius: 10px; padding: 0.8rem 1.1rem; margin-bottom: 1.2rem; font-size: 0.83rem; line-height: 1.5;
+  }
+  .account-cards { display: flex; flex-direction: column; gap: 0.9rem; margin-bottom: 1.4rem; }
+  .account-card { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .account-card .acc-main { flex: 1; min-width: 220px; }
+  .account-card .acc-label { font-weight: 600; font-size: 0.95rem; }
+  .account-card .acc-uuid { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); }
+  .account-card .acc-note { font-size: 0.78rem; color: var(--muted); margin-top: 0.4rem; max-width: 520px; }
+  .account-card .acc-cost { text-align: right; min-width: 130px; }
+  .account-card .acc-cost .value { font-size: 1.3rem; font-weight: 700; }
+  .account-card .acc-cost .sub { font-size: 0.75rem; color: var(--muted); }
+  .account-card .acc-models { margin-top: 0.6rem; display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+  .real-cost-banner {
+    display: flex; align-items: baseline; gap: 0.6rem; flex-wrap: wrap;
+    border-radius: 10px; padding: 0.6rem 0.9rem; margin-bottom: 1rem;
+    background: var(--neutral-bg); border: 1px solid var(--neutral-border);
+  }
+  .real-cost-banner.real-cost-ok { background: var(--ok-bg); border-color: var(--ok-border); }
+  .real-cost-banner.real-cost-bad { background: var(--bad-bg); border-color: var(--bad-border); }
+  .real-cost-label { font-size: 0.78rem; font-weight: 600; }
+  .real-cost-value { font-size: 1.1rem; font-weight: 700; }
+  .real-cost-ok .real-cost-value { color: var(--ok-text); }
+  .real-cost-bad .real-cost-value { color: var(--bad-text); }
+  .real-cost-note { flex-basis: 100%; font-size: 0.75rem; }
+  .real-cost-how { flex-basis: 100%; font-size: 0.75rem; margin-top: 0.35rem; }
+  .usage-rows { display: flex; flex-direction: column; gap: 0.7rem; }
+  .usage-row { display: flex; align-items: center; gap: 0.8rem; }
+  .usage-row-label { width: 190px; flex-shrink: 0; font-size: 0.85rem; }
+  .usage-row-label .muted { display: block; font-size: 0.72rem; }
+  .usage-row-pct { width: 50px; text-align: right; font-size: 0.85rem; font-weight: 600; flex-shrink: 0; }
+  .progress-track { flex: 1; height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+  .breakdown-row { display: flex; align-items: center; gap: 0.6rem; font-size: 0.8rem; margin-bottom: 0.35rem; }
+  .breakdown-row .bd-label { width: 100px; flex-shrink: 0; }
+  .breakdown-row .progress-track { height: 6px; }
+  .breakdown-row .bd-pct { width: 36px; text-align: right; flex-shrink: 0; color: var(--muted); }
+  .day-heatmap { margin-bottom: 1rem; }
+  .day-heatmap .dh-month { display: inline-block; vertical-align: top; margin: 0 0.7rem 0.7rem 0; }
+  .day-heatmap .dh-month-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
+  .day-heatmap .dh-grid { display: grid; grid-template-columns: repeat(7, 13px); grid-auto-flow: column; gap: 3px; }
+  .day-heatmap .dh-cell { width: 13px; height: 13px; border-radius: 3px; background: var(--border); cursor: default; }
+  .day-heatmap .dh-cell.has-data { cursor: pointer; }
+  .day-heatmap .dh-cell.has-data:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .day-heatmap .dh-cell.selected { outline: 2px solid var(--text); outline-offset: 1px; }
+  .day-heatmap .dh-legend { display: flex; align-items: center; gap: 0.3rem; font-size: 0.75rem; color: var(--muted); margin-top: 0.4rem; }
+  .day-heatmap .dh-legend .dh-cell { width: 11px; height: 11px; cursor: default; }
+  .custom-range { display: flex; align-items: center; gap: 0.3rem; }
+  .custom-range input[type="date"] { padding: 0.35rem 0.4rem; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; }
+  .custom-range button { padding: 0.3rem 0.5rem; }
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <a class="brand" href="https://mastertheagent.com" target="_blank" rel="noopener" title="mastertheagent.com">
+    <img src="/favicon.png" alt="">
+    <span class="brand-text"><span class="brand-eyebrow">mastertheagent.com</span>Agentic Spend</span>
+  </a>
+  <nav class="nav" id="nav">
+    <button class="nav-item active" data-tab="overview">Overview</button>
+    <button class="nav-item" data-tab="models">Models</button>
+    <button class="nav-item" data-tab="days">Days</button>
+    <button class="nav-item" data-tab="accounts">Accounts</button>
+    <button class="nav-item" data-tab="settings">Settings</button>
+  </nav>
+  <div class="sidebar-footer">
+    <span id="updatedAt">loading…</span>
+    <button id="refreshBtn" title="Refresh">&#8635;</button>
+  </div>
+</aside>
+
+<main class="content">
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="loading-coin">$</div>
+    <div class="loading-text">Loading your spend…</div>
+  </div>
+  <div class="page-header">
+    <h1 id="pageTitle">Overview</h1>
+    <div class="header-controls" id="headerControls">
+      <div class="segmented" id="rangeSeg">
+        <button data-range="1">1d</button>
+        <button data-range="7" class="active">7d</button>
+        <button data-range="30">30d</button>
+        <button data-range="9999">All</button>
+      </div>
+      <span class="custom-range" id="customRange">
+        <input type="date" id="customFrom" title="From">
+        <span class="muted">–</span>
+        <input type="date" id="customTo" title="To">
+        <button id="customRangeClear" title="Clear custom range, back to the preset above" style="display:none;">&times;</button>
+      </span>
+      <select id="agentSel"><option value="all">All agents</option></select>
+    </div>
+  </div>
+
+  <div id="err"></div>
+
+  <section id="view-overview" class="view active">
+    <div class="card" id="realCostOverview" style="display:none; margin-bottom: 1rem;"></div>
+    <div class="cards">
+      <div class="card kpi"><div class="label">Spend (selected range)</div><div class="value" id="totalWin">–</div></div>
+      <div class="card kpi"><div class="label">Avg / day</div><div class="value" id="avgDay">–</div></div>
+      <div class="card kpi"><div class="label">Highest day</div><div class="value" id="maxDay">–</div><div class="sub" id="maxDaySub"></div></div>
+      <div class="card kpi"><div class="label">Today</div><div class="value" id="totalToday">–</div></div>
+      <div class="card kpi"><div class="label">Real tokens (range)</div><div class="value" id="realTokensWin">–</div><div class="sub" id="realTokensToday"></div></div>
+    </div>
+    <div class="card">
+      <div class="card-head">
+        <h2>Daily spend <span id="chartMetricLabel" class="muted"></span></h2>
+        <span style="display:flex; align-items:center; gap:0.6rem;">
+          <span class="segmented" id="chartMetricSeg">
+            <button data-metric="cost" class="active">$ Spend</button>
+            <button data-metric="tokens">Tokens</button>
+          </span>
+          <span class="muted" id="chartNote"></span>
+        </span>
+      </div>
+      <div class="muted" id="chartTokensNote" style="display:none; margin-bottom:0.5rem;">
+        Input and output only (excludes cache) — they're priced very differently per token (output costs several times more than input), so they're shown separately rather than summed.
+      </div>
+      <svg id="chart"></svg>
+    </div>
+
+    <div class="card" id="hourlyCard" style="margin-top: 1rem; display:none;">
+      <div class="card-head"><h2>Hourly <span id="hourlyMetricLabel"></span> (today)</h2><span class="muted" id="hourlyChartNote"></span></div>
+      <svg id="hourlyChart"></svg>
+      <div class="muted" style="margin-top:0.4rem;">Each session's full cost/tokens are attributed to the hour it was last active, not spread across the hours it actually ran — a long session can make one hour look heavier than it was.</div>
+    </div>
+
+    <div class="card" style="margin-top: 1rem;">
+      <div class="card-head">
+        <h2>Spend by account</h2>
+        <span class="muted" id="acctChartNote"></span>
+      </div>
+      <div class="acct-legend" id="acctLegend"></div>
+      <svg id="acctChart"></svg>
+    </div>
+  </section>
+
+  <section id="view-models" class="view">
+    <div class="card">
+      <div class="toolbar">
+        <input id="modelSearch" placeholder="Search models…">
+        <span class="muted" id="modelCount"></span>
+      </div>
+      <table id="modelTable">
+        <thead><tr>
+          <th data-k="model">Model <span class="chev">&#9662;</span></th>
+          <th class="right" data-k="cost">Cost <span class="chev">&#9662;</span></th>
+          <th class="right" data-k="input" title="Prompt/context tokens sent to the model, excluding cache.">Input <span class="chev">&#9662;</span></th>
+          <th class="right" data-k="output" title="Tokens the model generated — priced several times higher per-token than input.">Output <span class="chev">&#9662;</span></th>
+          <th class="right" data-k="tokens" title="Input + output only — excludes cache read/create. Hover a row for the full cache breakdown.">Real total <span class="chev">&#9662;</span></th>
+          <th>Share</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="card" id="modelDetailCard" style="display:none; margin-top: 1rem;">
+      <div class="card-head">
+        <h2>Daily spend — <span class="model-name" id="modelDetailTitle"></span></h2>
+        <button id="modelDetailClose" class="pill" style="cursor:pointer; border:none; background:var(--border); color:var(--text);">Close &times;</button>
+      </div>
+      <div class="muted" style="margin-bottom:0.5rem;">Heaviest days highlighted in amber; table defaults to costliest day first.</div>
+      <svg id="modelDetailChart"></svg>
+      <table id="modelDetailTable" style="margin-top:0.8rem;">
+        <thead><tr>
+          <th data-k="period">Date <span class="chev">&#9662;</span></th>
+          <th class="right" data-k="cost">Cost <span class="chev">&#9662;</span></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="view-days" class="view">
+    <div class="card">
+      <div id="dayHeatmap" class="day-heatmap"></div>
+      <div class="toolbar">
+        <input id="daySearch" placeholder="Search dates… (or click a day above)">
+        <span class="muted" id="dayCount"></span>
+      </div>
+      <table id="dailyTable">
+        <thead><tr>
+          <th data-k="period">Date <span class="chev">&#9662;</span></th>
+          <th data-k="agents">Agents <span class="chev">&#9662;</span></th>
+          <th class="right" data-k="totalCost">Cost <span class="chev">&#9662;</span></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="view-accounts" class="view">
+    <div class="banner">
+      This splits spend by the Claude account that incurred it, using the <code>accountUuid</code>
+      each Claude Code session transcript already carries. Other CLI agents (Codex, Grok, OpenCode)
+      don't record an account in their logs, so their spend is listed separately below, not attributed.
+      Claude sessions are attributed to their last-active day, so the range picker above matches the
+      other tabs but is approximate for sessions spanning midnight.
+    </div>
+    <div class="muted" style="margin-bottom: 0.8rem;" id="maxUsageIntro"></div>
+    <div id="maxUsageContainer" style="display:flex; flex-direction:column; gap:1rem; margin-bottom:1rem;"></div>
+    <div class="muted" id="acctRangeNote" style="margin-bottom: 0.8rem;"></div>
+    <div class="account-cards" id="accountCards"></div>
+    <div class="card">
+      <div class="card-head"><h2>No account data (other CLIs)</h2></div>
+      <table id="noAccountTable">
+        <thead><tr><th>Agent</th><th class="right">Cost</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="view-settings" class="view">
+    <div class="card" id="settingsBody"></div>
+  </section>
+</main>
+
+<script>
+let data = null;
+let tab = 'overview';
+let range = 7;
+let agent = 'all';
+let customFrom = null;
+let customTo = null;
+let chartMetric = 'cost';
+let modelSort = { k: 'cost', dir: -1 };
+let dailySort = { k: 'period', dir: -1 };
+let modelFilter = '';
+let dayFilter = '';
+let selectedModel = null;
+let modelDetailSort = { k: 'cost', dir: -1 };
+
+const fmt = n => '$' + (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtTok = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : String(n);
+const todayStr = () => {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+};
+const addDays = (dateStr, delta) => {
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + delta);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+};
+const CURRENCY_SYMBOLS = { USD: '$', GBP: '£', EUR: '€' };
+const fmtMoneyMinor = (minor, currency, exponent) => {
+  if (minor == null) return '–';
+  const symbol = CURRENCY_SYMBOLS[currency] || (currency ? currency + ' ' : '$');
+  return symbol + (minor / Math.pow(10, exponent ?? 2)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+const fmtResetAt = iso => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  return sameDay ? `resets ${time}` : `resets ${d.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`;
+};
+
+function readUrlState() {
+  const p = new URLSearchParams(location.search);
+  tab = p.get('tab') || 'overview';
+  range = parseInt(p.get('range') || '7', 10);
+  agent = p.get('agent') || 'all';
+  selectedModel = p.get('model') || null;
+  customFrom = p.get('from') || null;
+  customTo = p.get('to') || null;
+}
+function syncUrl() {
+  const p = new URLSearchParams();
+  p.set('tab', tab); p.set('range', range); p.set('agent', agent);
+  if (selectedModel) p.set('model', selectedModel);
+  if (customFrom) p.set('from', customFrom);
+  if (customTo) p.set('to', customTo);
+  history.replaceState(null, '', '?' + p.toString());
+}
+
+async function load(force) {
+  const btn = document.getElementById('refreshBtn');
+  btn.classList.add('spinning');
+  document.getElementById('err').style.display = 'none';
+  try {
+    const res = await fetch('/api/usage' + (force ? '?force=1' : ''), { cache: 'no-store' });
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+    data = json;
+    document.getElementById('updatedAt').textContent = 'updated ' + new Date().toLocaleTimeString();
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    update();
+  } catch (e) {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    document.getElementById('err').textContent = 'Could not load usage data: ' + e.message;
+    document.getElementById('err').style.display = 'block';
+  } finally {
+    setTimeout(() => btn.classList.remove('spinning'), 400);
+  }
+}
+
+function setTab(t) {
+  tab = t;
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + t));
+  document.getElementById('pageTitle').textContent = { overview: 'Overview', models: 'Spend by model', days: 'Spend by day', accounts: 'Spend by account', settings: 'Settings' }[t];
+  document.getElementById('agentSel').style.display = (t === 'accounts' || t === 'settings') ? 'none' : '';
+  document.getElementById('rangeSeg').style.display = t === 'settings' ? 'none' : '';
+  document.getElementById('customRange').style.display = t === 'settings' ? 'none' : '';
+  syncUrl();
+  update();
+}
+
+document.querySelectorAll('.nav-item').forEach(b => b.onclick = () => setTab(b.dataset.tab));
+document.getElementById('refreshBtn').onclick = () => load(true);
+
+function setTheme(theme) {
+  if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  else document.documentElement.removeAttribute('data-theme');
+  localStorage.setItem('theme', theme);
+}
+setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+// No auto-refresh — the ↻ button is the only trigger, and it force-refreshes every
+// data source (ccusage, OpenAI Costs, Codex rate limits), not just a lightweight re-render.
+document.querySelectorAll('#rangeSeg button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  range = parseInt(b.dataset.range, 10);
+  customFrom = null; customTo = null;
+  document.getElementById('customFrom').value = '';
+  document.getElementById('customTo').value = '';
+  document.getElementById('customRangeClear').style.display = 'none';
+  syncUrl();
+  update();
+});
+document.getElementById('agentSel').onchange = e => { agent = e.target.value; syncUrl(); update(); };
+
+function applyCustomRange() {
+  const from = document.getElementById('customFrom').value;
+  const to = document.getElementById('customTo').value;
+  if (!from && !to) return;
+  customFrom = from || to;
+  customTo = to || from;
+  if (customFrom > customTo) { const t = customFrom; customFrom = customTo; customTo = t; }
+  document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
+  document.getElementById('customRangeClear').style.display = '';
+  syncUrl();
+  update();
+}
+document.getElementById('customFrom').onchange = applyCustomRange;
+document.getElementById('customTo').onchange = applyCustomRange;
+document.getElementById('customRangeClear').onclick = () => {
+  customFrom = null; customTo = null;
+  document.getElementById('customFrom').value = '';
+  document.getElementById('customTo').value = '';
+  document.getElementById('customRangeClear').style.display = 'none';
+  document.querySelector('#rangeSeg button[data-range="7"]').classList.add('active');
+  range = 7;
+  syncUrl();
+  update();
+};
+document.querySelectorAll('#chartMetricSeg button').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#chartMetricSeg button').forEach(x => x.classList.remove('active'));
+  b.classList.add('active');
+  chartMetric = b.dataset.metric;
+  update();
+});
+document.getElementById('modelSearch').oninput = e => { modelFilter = e.target.value.toLowerCase(); update(); };
+document.getElementById('daySearch').oninput = e => { dayFilter = e.target.value.toLowerCase(); update(); };
+
+function attachSort(tableId, state) {
+  document.querySelectorAll(`#${tableId} th`).forEach(th => {
+    th.onclick = () => {
+      const k = th.dataset.k;
+      if (!k) return;
+      if (state.k === k) state.dir *= -1; else { state.k = k; state.dir = 1; }
+      update();
+    };
+  });
+}
+function markSort(tableId, state) {
+  document.querySelectorAll(`#${tableId} th`).forEach(th => th.classList.toggle('sorted', th.dataset.k === state.k));
+}
+attachSort('modelTable', modelSort);
+attachSort('dailyTable', dailySort);
+attachSort('modelDetailTable', modelDetailSort);
+
+document.querySelector('#modelTable tbody').addEventListener('click', e => {
+  const cell = e.target.closest('.model-name-cell');
+  if (!cell) return;
+  const m = cell.dataset.model;
+  selectedModel = selectedModel === m ? null : m;
+  syncUrl();
+  update();
+});
+document.getElementById('modelDetailClose').onclick = () => { selectedModel = null; syncUrl(); update(); };
+
+// returns the agent-scoped view of a day row: {totalCost, modelBreakdowns, agentsPresent}, or null if that agent wasn't used that day
+function dayForAgent(day, agentFilter) {
+  const agentsPresent = (day.metadata && day.metadata.agents) || (day.agent !== 'all' ? [day.agent] : []);
+  if (agentFilter === 'all') {
+    return { totalCost: day.totalCost, modelBreakdowns: day.modelBreakdowns || [], agentsPresent };
+  }
+  const sub = (day.agents || []).find(a => a.agent === agentFilter);
+  if (!sub) return null;
+  return { totalCost: sub.totalCost, modelBreakdowns: sub.modelBreakdowns || [], agentsPresent };
+}
+
+// Same {period, value:{totalCost, modelBreakdowns, agentsPresent}} shape as the
+// tool filter below, so every existing render (chart, models table, days table/
+// heatmap) works unchanged whether filtering by tool or by one Claude account —
+// this is what brings Accounts data into the rest of the pages.
+function rowsForFilter(days, accountSessions, filterValue) {
+  if (typeof filterValue === 'string' && filterValue.startsWith('account:')) {
+    // accountSessions is session-level (several rows can share a period, e.g.
+    // more than one session active the same day), unlike days/dayForAgent's
+    // already-daily-rolled-up rows — group and sum so each period appears once.
+    const uuid = filterValue.slice('account:'.length);
+    const byPeriod = {};
+    (accountSessions || []).filter(s => s.accountUuid === uuid).forEach(s => {
+      const bucket = byPeriod[s.period] || (byPeriod[s.period] = { totalCost: 0, modelMap: {} });
+      bucket.totalCost += s.totalCost;
+      (s.modelBreakdowns || []).forEach(mb => {
+        const m = bucket.modelMap[mb.modelName] || (bucket.modelMap[mb.modelName] = { modelName: mb.modelName, cost: 0, inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 });
+        m.cost += mb.cost || 0;
+        m.inputTokens += mb.inputTokens || 0;
+        m.outputTokens += mb.outputTokens || 0;
+        m.cacheCreationTokens += mb.cacheCreationTokens || 0;
+        m.cacheReadTokens += mb.cacheReadTokens || 0;
+      });
+    });
+    return Object.entries(byPeriod).map(([period, b]) => ({
+      period, value: { totalCost: b.totalCost, modelBreakdowns: Object.values(b.modelMap), agentsPresent: ['claude'] }
+    }));
+  }
+  return days
+    .map(d => ({ period: d.period, value: dayForAgent(d, filterValue) }))
+    .filter(d => d.value !== null);
+}
+
+function drawChart(rows) {
+  const svg = document.getElementById('chart');
+  const chartNote = document.getElementById('chartNote');
+  svg.innerHTML = '';
+
+  if (!rows.length) {
+    chartNote.textContent = 'No data in this range';
+    return;
+  }
+
+  if (rows.length === 1) {
+    chartNote.textContent = rows[0].period;
+    const v = rows[0].value;
+    const models = Object.entries(v.modelBreakdowns.reduce((acc, mb) => {
+      acc[mb.modelName] = (acc[mb.modelName] || 0) + mb.cost; return acc;
+    }, {})).sort((a, b) => b[1] - a[1]);
+    const total = models.reduce((s, m) => s + m[1], 0) || 1;
+    const ns = 'http://www.w3.org/2000/svg';
+    const W = svg.clientWidth || 900, rowH = 28, pad = 10;
+    svg.setAttribute('viewBox', `0 0 ${W} ${models.length * rowH + pad * 2}`);
+    models.forEach(([name, cost], i) => {
+      const y = pad + i * rowH;
+      const w = Math.max((cost / total) * (W - 260), 2);
+      const rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', 220); rect.setAttribute('y', y);
+      rect.setAttribute('width', w); rect.setAttribute('height', 14);
+      rect.setAttribute('rx', 3);
+      rect.setAttribute('class', 'bar-rect');
+      const title = document.createElementNS(ns, 'title');
+      title.textContent = `${name}: ${fmt(cost)}`;
+      rect.appendChild(title);
+      svg.appendChild(rect);
+      const label = document.createElementNS(ns, 'text');
+      label.setAttribute('x', 0); label.setAttribute('y', y + 11);
+      label.setAttribute('class', 'axis-label');
+      label.textContent = name.length > 26 ? name.slice(0, 25) + '…' : name;
+      svg.appendChild(label);
+      const costLabel = document.createElementNS(ns, 'text');
+      costLabel.setAttribute('x', 226 + w); costLabel.setAttribute('y', y + 11);
+      costLabel.setAttribute('class', 'axis-label');
+      costLabel.textContent = fmt(cost);
+      svg.appendChild(costLabel);
+    });
+    return;
+  }
+
+  chartNote.textContent = `${rows[0].period} → ${rows[rows.length - 1].period}`;
+  const ns = 'http://www.w3.org/2000/svg';
+  const W = svg.clientWidth || 900, H = 220, padL = 46, padB = 22, padT = 10;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  // top models across the window, rest bucketed as "Other"
+  const modelTotals = {};
+  rows.forEach(r => r.value.modelBreakdowns.forEach(mb => { modelTotals[mb.modelName] = (modelTotals[mb.modelName] || 0) + mb.cost; }));
+  const topModels = Object.entries(modelTotals).sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]);
+  const palette = ['#7c3aed', '#a78bfa', '#c4b5fd', '#f0abfc', '#fbcfe8', '#e5e7eb'];
+
+  const max = Math.max(...rows.map(r => r.value.totalCost), 0.01);
+  const niceMax = max * 1.15;
+  const plotW = W - padL - 10, plotH = H - padT - padB;
+  const bw = plotW / rows.length;
+
+  // gridlines + y labels
+  for (let i = 0; i <= 3; i++) {
+    const y = padT + plotH - (i / 3) * plotH;
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', padL); line.setAttribute('x2', W - 5);
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('class', 'gridline');
+    svg.appendChild(line);
+    const label = document.createElementNS(ns, 'text');
+    label.setAttribute('x', 4); label.setAttribute('y', y + 3);
+    label.setAttribute('class', 'axis-label');
+    label.textContent = '$' + Math.round((i / 3) * niceMax);
+    svg.appendChild(label);
+  }
+
+  rows.forEach((r, i) => {
+    const modelCosts = {};
+    r.value.modelBreakdowns.forEach(mb => { modelCosts[mb.modelName] = (modelCosts[mb.modelName] || 0) + mb.cost; });
+    let stackCost = 0;
+    const segs = [];
+    topModels.forEach((m, mi) => { if (modelCosts[m]) { segs.push([modelCosts[m], palette[mi]]); stackCost += modelCosts[m]; } });
+    const other = r.value.totalCost - stackCost;
+    if (other > 0.001) segs.push([other, palette[5]]);
+
+    const x = padL + i * bw;
+    let yCursor = padT + plotH;
+    segs.forEach(([cost, color]) => {
+      const h = (cost / niceMax) * plotH;
+      yCursor -= h;
+      const rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', x + bw * 0.12);
+      rect.setAttribute('y', yCursor);
+      rect.setAttribute('width', Math.max(bw * 0.76, 1));
+      rect.setAttribute('height', Math.max(h, 0.5));
+      rect.setAttribute('fill', color);
+      rect.setAttribute('class', 'bar-rect');
+      rect.style.fill = color;
+      const title = document.createElementNS(ns, 'title');
+      title.textContent = `${r.period}: ${fmt(r.value.totalCost)}`;
+      rect.appendChild(title);
+      svg.appendChild(rect);
+    });
+  });
+
+  const labelEvery = Math.max(1, Math.ceil(rows.length / 8));
+  rows.forEach((r, i) => {
+    if (i % labelEvery !== 0 && i !== rows.length - 1) return;
+    const x = padL + i * bw + bw / 2;
+    const text = document.createElementNS(ns, 'text');
+    text.setAttribute('x', x); text.setAttribute('y', H - 4);
+    text.setAttribute('class', 'axis-label'); text.setAttribute('text-anchor', 'middle');
+    text.textContent = r.period.slice(5);
+    svg.appendChild(text);
+  });
+}
+
+function drawHourlyChart(rows) {
+  const svg = document.getElementById('hourlyChart');
+  const note = document.getElementById('hourlyChartNote');
+  svg.innerHTML = '';
+  if (!rows.length) { note.textContent = 'No data for today yet'; return; }
+  note.textContent = `${rows[0].hourLabel} → ${rows[rows.length - 1].hourLabel}`;
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const W = svg.clientWidth || 900, H = 180, padL = 46, padB = 22, padT = 10;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  const max = Math.max(...rows.map(r => r.cost), 0.01);
+  const niceMax = max * 1.15;
+  const plotW = W - padL - 10, plotH = H - padT - padB;
+  const bw = plotW / rows.length;
+
+  for (let i = 0; i <= 3; i++) {
+    const y = padT + plotH - (i / 3) * plotH;
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', padL); line.setAttribute('x2', W - 5);
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('class', 'gridline');
+    svg.appendChild(line);
+    const label = document.createElementNS(ns, 'text');
+    label.setAttribute('x', 4); label.setAttribute('y', y + 3);
+    label.setAttribute('class', 'axis-label');
+    label.textContent = '$' + Math.round((i / 3) * niceMax);
+    svg.appendChild(label);
+  }
+
+  rows.forEach((r, i) => {
+    const x = padL + i * bw;
+    const h = (r.cost / niceMax) * plotH;
+    const rect = document.createElementNS(ns, 'rect');
+    rect.setAttribute('x', x + bw * 0.12);
+    rect.setAttribute('y', padT + plotH - h);
+    rect.setAttribute('width', Math.max(bw * 0.76, 1));
+    rect.setAttribute('height', Math.max(h, 0.5));
+    rect.setAttribute('class', 'bar-rect');
+    rect.style.fill = '#7c3aed';
+    const title = document.createElementNS(ns, 'title');
+    title.textContent = `${r.hourLabel}: ${fmt(r.cost)}`;
+    rect.appendChild(title);
+    svg.appendChild(rect);
+  });
+
+  const labelEvery = Math.max(1, Math.ceil(rows.length / 12));
+  rows.forEach((r, i) => {
+    if (i % labelEvery !== 0 && i !== rows.length - 1) return;
+    const x = padL + i * bw + bw / 2;
+    const text = document.createElementNS(ns, 'text');
+    text.setAttribute('x', x); text.setAttribute('y', H - 4);
+    text.setAttribute('class', 'axis-label'); text.setAttribute('text-anchor', 'middle');
+    text.textContent = r.hourLabel;
+    svg.appendChild(text);
+  });
+}
+
+function drawHourlyTokensChart(rows) {
+  const svg = document.getElementById('hourlyChart');
+  const note = document.getElementById('hourlyChartNote');
+  svg.innerHTML = '';
+  if (!rows.length) { note.textContent = 'No data for today yet'; return; }
+  note.textContent = `${rows[0].hourLabel} → ${rows[rows.length - 1].hourLabel}`;
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const W = svg.clientWidth || 900, H = 180, padL = 46, padB = 22, padT = 10;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  const max = Math.max(...rows.map(r => (r.input || 0) + (r.output || 0)), 1);
+  const niceMax = max * 1.15;
+  const plotW = W - padL - 10, plotH = H - padT - padB;
+  const bw = plotW / rows.length;
+
+  for (let i = 0; i <= 3; i++) {
+    const y = padT + plotH - (i / 3) * plotH;
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', padL); line.setAttribute('x2', W - 5);
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('class', 'gridline');
+    svg.appendChild(line);
+    const label = document.createElementNS(ns, 'text');
+    label.setAttribute('x', 4); label.setAttribute('y', y + 3);
+    label.setAttribute('class', 'axis-label');
+    label.textContent = fmtTok((i / 3) * niceMax);
+    svg.appendChild(label);
+  }
+
+  rows.forEach((r, i) => {
+    const x = padL + i * bw;
+    let yCursor = padT + plotH;
+    [['input', TOKEN_COLORS.input], ['output', TOKEN_COLORS.output]].forEach(([key, color]) => {
+      const tok = r[key] || 0;
+      if (tok <= 0) return;
+      const h = (tok / niceMax) * plotH;
+      yCursor -= h;
+      const rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', x + bw * 0.12);
+      rect.setAttribute('y', yCursor);
+      rect.setAttribute('width', Math.max(bw * 0.76, 1));
+      rect.setAttribute('height', Math.max(h, 0.5));
+      rect.style.fill = color;
+      rect.setAttribute('class', 'bar-rect');
+      const title = document.createElementNS(ns, 'title');
+      title.textContent = `${r.hourLabel} – ${key}: ${fmtTok(tok)}`;
+      rect.appendChild(title);
+      svg.appendChild(rect);
+    });
+  });
+
+  const labelEvery = Math.max(1, Math.ceil(rows.length / 12));
+  rows.forEach((r, i) => {
+    if (i % labelEvery !== 0 && i !== rows.length - 1) return;
+    const x = padL + i * bw + bw / 2;
+    const text = document.createElementNS(ns, 'text');
+    text.setAttribute('x', x); text.setAttribute('y', H - 4);
+    text.setAttribute('class', 'axis-label'); text.setAttribute('text-anchor', 'middle');
+    text.textContent = r.hourLabel;
+    svg.appendChild(text);
+  });
+}
+
+const TOKEN_COLORS = { input: '#7c3aed', output: '#f59e0b' };
+
+function tokensOfDay(value) {
+  return (value.modelBreakdowns || []).reduce((acc, mb) => {
+    acc.input += mb.inputTokens || 0;
+    acc.output += mb.outputTokens || 0;
+    return acc;
+  }, { input: 0, output: 0 });
+}
+
+function drawTokensChart(rows) {
+  const svg = document.getElementById('chart');
+  const chartNote = document.getElementById('chartNote');
+  svg.innerHTML = '';
+
+  if (!rows.length) { chartNote.textContent = 'No data in this range'; return; }
+
+  if (rows.length === 1) {
+    chartNote.textContent = rows[0].period;
+    const t = tokensOfDay(rows[0].value);
+    const total = t.input + t.output || 1;
+    const ns = 'http://www.w3.org/2000/svg';
+    const W = svg.clientWidth || 900, rowH = 28, pad = 10;
+    svg.setAttribute('viewBox', `0 0 ${W} ${rowH * 2 + pad * 2}`);
+    [['Input', t.input, TOKEN_COLORS.input], ['Output', t.output, TOKEN_COLORS.output]].forEach(([name, tok, color], i) => {
+      const y = pad + i * rowH;
+      const w = Math.max((tok / total) * (W - 260), 2);
+      const rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', 220); rect.setAttribute('y', y);
+      rect.setAttribute('width', w); rect.setAttribute('height', 14);
+      rect.setAttribute('rx', 3);
+      rect.style.fill = color;
+      const title = document.createElementNS(ns, 'title');
+      title.textContent = `${name}: ${fmtTok(tok)}`;
+      rect.appendChild(title);
+      svg.appendChild(rect);
+      const label = document.createElementNS(ns, 'text');
+      label.setAttribute('x', 0); label.setAttribute('y', y + 11);
+      label.setAttribute('class', 'axis-label');
+      label.textContent = name;
+      svg.appendChild(label);
+      const tokLabel = document.createElementNS(ns, 'text');
+      tokLabel.setAttribute('x', 226 + w); tokLabel.setAttribute('y', y + 11);
+      tokLabel.setAttribute('class', 'axis-label');
+      tokLabel.textContent = fmtTok(tok);
+      svg.appendChild(tokLabel);
+    });
+    return;
+  }
+
+  chartNote.textContent = `${rows[0].period} → ${rows[rows.length - 1].period}`;
+  const ns = 'http://www.w3.org/2000/svg';
+  const W = svg.clientWidth || 900, H = 220, padL = 46, padB = 22, padT = 10;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+
+  const dayTokens = rows.map(r => ({ period: r.period, ...tokensOfDay(r.value) }));
+  const max = Math.max(...dayTokens.map(d => d.input + d.output), 1);
+  const niceMax = max * 1.15;
+  const plotW = W - padL - 10, plotH = H - padT - padB;
+  const bw = plotW / rows.length;
+
+  for (let i = 0; i <= 3; i++) {
+    const y = padT + plotH - (i / 3) * plotH;
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', padL); line.setAttribute('x2', W - 5);
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('class', 'gridline');
+    svg.appendChild(line);
+    const label = document.createElementNS(ns, 'text');
+    label.setAttribute('x', 4); label.setAttribute('y', y + 3);
+    label.setAttribute('class', 'axis-label');
+    label.textContent = fmtTok((i / 3) * niceMax);
+    svg.appendChild(label);
+  }
+
+  dayTokens.forEach((d, i) => {
+    const x = padL + i * bw;
+    let yCursor = padT + plotH;
+    [['input', TOKEN_COLORS.input], ['output', TOKEN_COLORS.output]].forEach(([key, color]) => {
+      const tok = d[key];
+      if (tok <= 0) return;
+      const h = (tok / niceMax) * plotH;
+      yCursor -= h;
+      const rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', x + bw * 0.12);
+      rect.setAttribute('y', yCursor);
+      rect.setAttribute('width', Math.max(bw * 0.76, 1));
+      rect.setAttribute('height', Math.max(h, 0.5));
+      rect.style.fill = color;
+      rect.setAttribute('class', 'bar-rect');
+      const title = document.createElementNS(ns, 'title');
+      title.textContent = `${d.period} – ${key}: ${fmtTok(tok)}`;
+      rect.appendChild(title);
+      svg.appendChild(rect);
+    });
+  });
+
+  const labelEvery = Math.max(1, Math.ceil(rows.length / 8));
+  dayTokens.forEach((d, i) => {
+    if (i % labelEvery !== 0 && i !== rows.length - 1) return;
+    const x = padL + i * bw + bw / 2;
+    const text = document.createElementNS(ns, 'text');
+    text.setAttribute('x', x); text.setAttribute('y', H - 4);
+    text.setAttribute('class', 'axis-label'); text.setAttribute('text-anchor', 'middle');
+    text.textContent = d.period.slice(5);
+    svg.appendChild(text);
+  });
+}
+
+const ACCOUNT_PALETTE = ['#7c3aed', '#14b8a6', '#f59e0b', '#ef4444', '#3b82f6', '#ec4899', '#84cc16', '#8b5cf6'];
+
+function drawAccountChart(rows) {
+  const svg = document.getElementById('acctChart');
+  const note = document.getElementById('acctChartNote');
+  const legend = document.getElementById('acctLegend');
+  svg.innerHTML = '';
+
+  // every bucket key seen anywhere in the window — these are whatever real
+  // identities (emails) or "<agent> (no account data)" labels the server found,
+  // not a fixed set, so this adapts automatically to however many accounts/tools
+  // are actually in use.
+  const totals = {};
+  rows.forEach(r => Object.entries(r).forEach(([k, v]) => { if (k !== 'period') totals[k] = (totals[k] || 0) + v; }));
+  const buckets = Object.keys(totals).sort((a, b) => totals[b] - totals[a]);
+  const colorOf = {};
+  buckets.forEach((b, i) => { colorOf[b] = ACCOUNT_PALETTE[i % ACCOUNT_PALETTE.length]; });
+
+  legend.innerHTML = buckets.map(b =>
+    `<span class="item"><span class="swatch" style="background:${colorOf[b]}"></span>${b} <span class="amt tnum">${fmt(totals[b])}</span></span>`
+  ).join('');
+
+  if (!rows.length || !buckets.length) { note.textContent = 'No data in this range'; return; }
+  note.textContent = `${rows[0].period} → ${rows[rows.length - 1].period} · attributed by each session's last-active day`;
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const W = svg.clientWidth || 900, H = 140, padL = 46, padB = 20, padT = 6;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const max = Math.max(...rows.map(r => buckets.reduce((s, b) => s + (r[b] || 0), 0)), 0.01);
+  const niceMax = max * 1.15;
+  const plotW = W - padL - 10, plotH = H - padT - padB;
+  const bw = plotW / rows.length;
+
+  for (let i = 0; i <= 2; i++) {
+    const y = padT + plotH - (i / 2) * plotH;
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', padL); line.setAttribute('x2', W - 5);
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('class', 'gridline');
+    svg.appendChild(line);
+    const label = document.createElementNS(ns, 'text');
+    label.setAttribute('x', 4); label.setAttribute('y', y + 3);
+    label.setAttribute('class', 'axis-label');
+    label.textContent = '$' + Math.round((i / 2) * niceMax);
+    svg.appendChild(label);
+  }
+
+  rows.forEach((r, i) => {
+    const x = padL + i * bw;
+    let yCursor = padT + plotH;
+    buckets.forEach(name => {
+      const cost = r[name] || 0;
+      if (cost <= 0) return;
+      const h = (cost / niceMax) * plotH;
+      yCursor -= h;
+      const rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', x + bw * 0.12);
+      rect.setAttribute('y', yCursor);
+      rect.setAttribute('width', Math.max(bw * 0.76, 1));
+      rect.setAttribute('height', Math.max(h, 0.5));
+      rect.setAttribute('fill', colorOf[name]);
+      rect.setAttribute('class', 'bar-rect');
+      rect.style.fill = colorOf[name];
+      const title = document.createElementNS(ns, 'title');
+      title.textContent = `${r.period} – ${name}: ${fmt(cost)}`;
+      rect.appendChild(title);
+      svg.appendChild(rect);
+    });
+  });
+
+  const labelEvery = Math.max(1, Math.ceil(rows.length / 8));
+  rows.forEach((r, i) => {
+    if (i % labelEvery !== 0 && i !== rows.length - 1) return;
+    const x = padL + i * bw + bw / 2;
+    const text = document.createElementNS(ns, 'text');
+    text.setAttribute('x', x); text.setAttribute('y', H - 4);
+    text.setAttribute('class', 'axis-label'); text.setAttribute('text-anchor', 'middle');
+    text.textContent = r.period.slice(5);
+    svg.appendChild(text);
+  });
+}
+
+// Claude Code only refreshes its local usage cache opportunistically (on its
+// own schedule), NOT on every request the way claude.ai's own Settings page
+// does when you open it — so even the *currently logged-in* account's cached
+// % can already be meaningfully behind reality within an hour, not just
+// after switching accounts. 60 min is deliberately tight because of that.
+const STALE_SNAPSHOT_MS = 1000 * 60 * 60;
+
+function snapshotAge(mu) {
+  const ageMs = mu.fetchedAt ? Date.now() - new Date(mu.fetchedAt).getTime() : null;
+  return {
+    stale: ageMs !== null && ageMs > STALE_SNAPSHOT_MS,
+    asOf: mu.fetchedAt ? new Date(mu.fetchedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'unknown',
+  };
+}
+
+// Session/week %-bar markup shared by any source that has that shape (today
+// just Claude, from s.maxUsage).
+function usageWindowsHtml(mu, asOf, liveLabel) {
+  const sessionPct = mu.session?.percent;
+  const weekPct = mu.week?.percent;
+  if (sessionPct == null) return '';
+  return `<div class="real-cost-how">
+    <span>session <b class="tnum">${sessionPct}%</b> used<span class="muted"> (${fmtResetAt(mu.session?.resetsAt)})</span></span>
+    <div class="progress-track" style="width:70px; display:inline-block; vertical-align:middle; margin:0 6px;"><div class="progress-fill" style="width:${Math.min(sessionPct, 100)}%"></div></div>
+    <span>week <b class="tnum">${weekPct}%</b> used<span class="muted"> (${fmtResetAt(mu.week?.resetsAt)})</span></span>
+    <div class="progress-track" style="width:70px; display:inline-block; vertical-align:middle; margin:0 6px;"><div class="progress-fill" style="width:${Math.min(weekPct, 100)}%"></div></div>
+    <span class="muted">— same numbers claude.ai Settings → Usage shows, ${liveLabel} as of ${asOf}</span>
+  </div>`;
+}
+
+function staleBadgeHtml(mu, asOf) {
+  if (mu.live) return `<span class="pill" style="background:var(--ok-bg); color:var(--ok-text);" title="From the status line script — a real server-reported rate_limits reading as of your last message in that account's session, not Claude Code's own internal cache.">live, as of ${asOf}</span>`;
+  const { stale } = snapshotAge(mu);
+  return stale ? `<span class="pill" style="background:var(--heavy-pill-bg); color:var(--heavy-pill-text);" title="Claude Code refreshes this cache on its own schedule, not on every request — this reading can already be behind the live number on claude.ai's own Settings page. Enable the status line (Manage plans) for a live reading instead.">cached ${asOf}</span>` : '';
+}
+
+// One render path for every discovered source (see server.py's build_sources) —
+// Claude/Codex/Grok/manual-note/no-data all go through here instead of four
+// separately hand-coded banner functions, so a source only needs handling in
+// one place. `estimate` is this source's ccusage $ for the currently selected
+// range; `modelDetail` is an optional "today's models: x $0.30, y $0.09" line
+// built from data already fetched (no new API call) for sources with no
+// account/plan concept of their own (opencode etc).
+// Full claude account banner, used both inline (compact) and on the
+// Accounts tab's per-account card (compact=false, no label override).
+function realCostBannerHtml(mu, compact) {
+  const c = mu.usageCredits || {};
+  const hasOverage = c.usedMinor != null;
+  const cls = hasOverage && c.usedMinor > 0 ? 'real-cost-bad' : 'real-cost-ok';
+  const note = hasOverage
+    ? (c.usedMinor === 0
+        ? (compact ? 'covered by plan' : 'All usage so far is covered by the plan — this is the only figure here that reflects money actually spent beyond what’s already paid.')
+        : (compact ? 'real extra spend' : 'Drawn from purchased usage credits after plan limits were hit — this is real extra spend.'))
+    : (compact ? 'no usage-credit data cached yet' : 'No usage-credit data cached for this account yet.');
+  const { asOf } = snapshotAge(mu);
+  return `<div class="real-cost-banner ${hasOverage ? cls : ''}">
+    <span class="real-cost-label">${compact ? mu.label : 'Real cost beyond the subscription fee'}</span>
+    ${staleBadgeHtml(mu, asOf)}
+    <span class="real-cost-value tnum">${hasOverage ? fmtMoneyMinor(c.usedMinor, c.currency, c.exponent) : 'unknown'}</span>
+    <span class="muted real-cost-note">${note}</span>
+    ${compact ? usageWindowsHtml(mu, asOf, mu.live ? 'live from the status line' : 'cached locally by Claude Code') : ''}
+  </div>`;
+}
+
+function sourceBannerHtml(s, estimate, modelDetail, openaiCost) {
+  if (s.tool === 'claude') {
+    if (!s.maxUsage) {
+      return `<div class="real-cost-banner">
+        <span class="real-cost-label">${s.label}</span>
+        <span class="real-cost-value tnum">${fmt(estimate)}</span>
+        <span class="muted real-cost-note">${s.note} ccusage estimate shown — not verified as real or covered.</span>
+      </div>`;
+    }
+    return realCostBannerHtml(s.maxUsage, true);
+  }
+
+  if (s.tool === 'codex' && s.kind === 'official-live') {
+    const cx = s.codexLive, p = cx.primary || {};
+    const blocked = cx.ordinaryUsageAllowed === false;
+    const windowLabel = w => w == null ? '' : (w >= 10000 ? `${Math.round(w / 1440)}d window` : w >= 1000 ? `${Math.round(w / 60)}h window` : `${w}m window`);
+    const realValue = blocked && openaiCost && !openaiCost.error ? fmt(openaiCost.totalUSD) : (blocked ? 'limit reached' : '$0.00');
+    return `<div class="real-cost-banner ${blocked ? 'real-cost-bad' : 'real-cost-ok'}">
+      <span class="real-cost-label">${s.label}${cx.planType ? ' (' + cx.planType + ' plan)' : ''}</span>
+      <span class="real-cost-value tnum">${realValue}</span>
+      <span class="muted real-cost-note">${blocked ? 'Plan limit reached — may be drawing on credits.' : 'covered by plan'}${openaiCost && !openaiCost.error ? ' — Admin-key Costs API also configured, used above once the plan limit is hit' : ''}</span>
+      <div class="real-cost-how">
+        <span>${windowLabel(p.windowMins)} <b class="tnum">${p.percent ?? '?'}%</b> used<span class="muted"> (${fmtResetAt(p.resetsAt)})</span></span>
+        <div class="progress-track" style="width:70px; display:inline-block; vertical-align:middle; margin:0 6px;"><div class="progress-fill" style="width:${Math.min(p.percent ?? 0, 100)}%"></div></div>
+        <span class="muted">— real numbers via Codex's own \`account/rateLimits/read\` (official, documented), fetched ${new Date(cx.fetchedAt).toLocaleString()}</span>
+      </div>
+    </div>`;
+  }
+
+  if (s.tool === 'grok' && s.kind === 'unofficial-live') {
+    const gb = s.grokBilling, onDemand = gb.onDemandUsedUsd ?? 0;
+    const mismatch = s.manualPlan && gb.plan && s.manualPlan.toLowerCase() !== gb.plan.toLowerCase();
+    const mismatchHtml = mismatch ? `<span class="pill" style="background:var(--heavy-pill-bg); color:var(--heavy-pill-text);"
+        title="Your manual plan note says &quot;${s.manualPlan}&quot;, but this live reading from grok's own CLI (whichever account it's logged into) says &quot;${gb.plan}&quot;. Likely a different account than the one you checked in the browser, not two tier namespaces for the same account — check which account \`grok\` is logged into.">
+        plan mismatch: note says "${s.manualPlan}", API says "${gb.plan}"</span>` : '';
+    return `<div class="real-cost-banner ${onDemand > 0 ? 'real-cost-bad' : 'real-cost-ok'}">
+      <span class="real-cost-label">${s.label}${gb.plan ? ' (' + gb.plan + ' — via ' + (gb.source === 'grok-acp' ? "grok's own CLI" : 'HTTP fallback') + ')' : ''}</span>
+      <span class="real-cost-value tnum">$${onDemand.toFixed(2)}</span>
+      <span class="muted real-cost-note">on-demand/overage this ${gb.period || 'billing'} period (resets ${gb.resetsAt ? new Date(gb.resetsAt).toLocaleDateString() : '?'})${gb.prepaidBalanceUsd ? `, $${gb.prepaidBalanceUsd.toFixed(2)} prepaid credit balance` : ''}. Unofficial endpoint — fetched ${gb.fetchedAt ? new Date(gb.fetchedAt).toLocaleString() : 'never'}.</span>
+      ${mismatchHtml}
+    </div>`;
+  }
+
+  if (s.kind === 'manual') {
+    return `<div class="real-cost-banner ${s.coveredByPlan ? 'real-cost-ok' : 'real-cost-bad'}">
+      <span class="real-cost-label">${s.label}${s.plan ? ' (' + s.plan + ' plan)' : ''}</span>
+      <span class="real-cost-value tnum">${s.coveredByPlan ? '$0.00' : fmt(estimate)}</span>
+      <span class="muted real-cost-note">${s.note || ''} (checked ${s.asOf || 'unknown'}) — ccusage estimate for this range: ${fmt(estimate)}${modelDetail}</span>
+    </div>`;
+  }
+
+  // kind === 'none': no automatic source, no manual note either
+  return `<div class="real-cost-banner">
+    <span class="real-cost-label">${s.label}</span>
+    <span class="real-cost-value tnum">${fmt(estimate)}</span>
+    <span class="muted real-cost-note">assumed real spend — verify this tool's own billing (subscription vs metered API key), then use "Manage plans" above to record it${modelDetail}</span>
+  </div>`;
+}
+
+// Known named tiers per ccusage agent, for convenience only — the free-text
+// "Custom…" option always covers anything not listed (and new/renamed tiers).
+const AGENT_PLAN_TIERS = {
+  grok: ['Free', 'SuperGrok', 'SuperGrok Heavy'],
+  codex: ['Free', 'Plus', 'Pro', 'Team', 'Enterprise', 'API (pay-as-you-go org)'],
+  gemini: ['Free', 'Google AI Pro', 'Google AI Ultra', 'API (pay-as-you-go)'],
+  opencode: ['Routes to multiple backends — check the backend model\'s own plan'],
+};
+
+function planAgentOptionsHtml(sources) {
+  // Only tools with no automatic (official-live/official-cached) source of
+  // their own — those get a row in the summary table above instead.
+  const all = (sources || [])
+    .filter(s => s.tool !== 'claude' && s.kind !== 'official-live' && s.kind !== 'official-cached')
+    .map(s => s.tool);
+  return [...new Set(all)].sort().map(a => `<option value="${a}">${a}</option>`).join('');
+}
+
+function planTierOptionsHtml(agent, currentValue) {
+  const tiers = AGENT_PLAN_TIERS[agent] || [];
+  const opts = tiers.map(t => `<option value="${t}" ${t === currentValue ? 'selected' : ''}>${t}</option>`);
+  const isCustom = currentValue && !tiers.includes(currentValue);
+  opts.push(`<option value="__custom__" ${isCustom ? 'selected' : ''}>Custom…</option>`);
+  return opts.join('');
+}
+
+function fillPlanForm(agent, plans) {
+  const p = (plans || {})[agent] || {};
+  const tierSel = document.getElementById('planTierSelect');
+  tierSel.innerHTML = planTierOptionsHtml(agent, p.plan || '');
+  const isCustom = tierSel.value === '__custom__';
+  document.getElementById('planNameCustom').style.display = isCustom ? '' : 'none';
+  document.getElementById('planNameCustom').value = isCustom ? (p.plan || '') : '';
+  document.getElementById('planCovered').checked = !!p.coveredByPlan;
+  document.getElementById('planNote').value = p.note || '';
+  document.getElementById('planAsOf').value = p.asOf || todayStr();
+  document.getElementById('planDeleteBtn').style.display = plans && plans[agent] ? '' : 'none';
+}
+
+function currentPlanName() {
+  const tierSel = document.getElementById('planTierSelect');
+  return tierSel.value === '__custom__' ? document.getElementById('planNameCustom').value : tierSel.value;
+}
+
+async function savePlanForm() {
+  const agent = document.getElementById('planAgentSelect').value;
+  const status = document.getElementById('planFormStatus');
+  status.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/plans', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agent,
+        plan: currentPlanName(),
+        coveredByPlan: document.getElementById('planCovered').checked,
+        note: document.getElementById('planNote').value,
+        asOf: document.getElementById('planAsOf').value,
+      }),
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    status.textContent = 'Saved.';
+    load(true);
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function deletePlanForm() {
+  const agent = document.getElementById('planAgentSelect').value;
+  const status = document.getElementById('planFormStatus');
+  status.textContent = 'Removing…';
+  try {
+    const res = await fetch('/api/plans', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agent }),
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    status.textContent = 'Removed.';
+    load(true);
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function saveProviderKeyForm() {
+  const provider = 'openai'; // only provider with a real-cost API wired up so far
+  const apiKey = document.getElementById('providerApiKey').value;
+  const status = document.getElementById('providerKeyStatus');
+  status.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/provider-keys', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider, apiKey }),
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    document.getElementById('providerApiKey').value = '';
+    load(true);
+    if (json.warning) setTimeout(() => alert(json.warning), 300);
+    else setTimeout(() => alert('Key saved and verified against OpenAI\'s Costs API.'), 300);
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function removeProviderKeyForm() {
+  const provider = 'openai';
+  const status = document.getElementById('providerKeyStatus');
+  status.textContent = 'Removing…';
+  try {
+    const res = await fetch('/api/provider-keys', {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider }),
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    status.textContent = 'Removed.';
+    load(true);
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+let lastPlansCtx = null;
+
+// Range-filtered ccusage $ estimate for one catalog source — Claude accounts
+// join accountSessions by accountUuid, everything else joins the per-agent
+// daily breakdown by tool name. Also returns a "today's models: x $0.30, ..."
+// detail line built from data already fetched, for sources with no
+// account/plan concept of their own (the fix for "opencode has no detail").
+function sourceRangeEstimate(s, accountSessions, days, cutoff, today) {
+  if (s.tool === 'claude') {
+    const cost = (accountSessions || [])
+      .filter(r => r.accountUuid === s.id && r.period >= cutoff && r.period <= today)
+      .reduce((sum, r) => sum + r.totalCost, 0);
+    return { estimate: cost, modelDetail: '' };
+  }
+  const modelTotals = {};
+  let cost = 0;
+  days.filter(d => d.period >= cutoff && d.period <= today).forEach(d => {
+    (d.agents || []).forEach(sub => {
+      if (sub.agent !== s.tool) return;
+      cost += sub.totalCost;
+      (sub.modelBreakdowns || []).forEach(mb => { modelTotals[mb.modelName] = (modelTotals[mb.modelName] || 0) + mb.cost; });
+    });
+  });
+  const models = Object.entries(modelTotals).sort((a, b) => b[1] - a[1]);
+  const modelDetail = models.length ? ' Models in range: ' + models.map(([m, c]) => `${m} ${fmt(c)}`).join(', ') + '.' : '';
+  return { estimate: cost, modelDetail };
+}
+
+function renderRealCostOverview(sources, accountSessions, days, cutoff, today, plans, providerStatus, providerCosts, liveUsageSetup, unofficialToggles, totalWin) {
+  const box = document.getElementById('realCostOverview');
+  const openaiCost = (providerCosts || {}).openai;
+
+  // every source with any spend in the selected range, or any live/manual
+  // reading at all (so a $0-but-covered source like Claude still shows)
+  const rows = (sources || []).map(s => ({ s, ...sourceRangeEstimate(s, accountSessions, days, cutoff, today) }))
+    .filter(r => r.estimate > 0 || r.s.kind !== 'none');
+
+  lastPlansCtx = { sources, plans, providerStatus, liveUsageSetup, unofficialToggles };
+  if (!rows.length) { box.style.display = 'none'; return; }
+  box.style.display = '';
+
+  // estimate -> covered -> real/unverified, so "covered by plan" visibly
+  // offsets the total shown elsewhere instead of looking disconnected from it.
+  // real is summed directly from the non-covered rows (so it always matches
+  // what those banners actually show, e.g. opencode's "$0.44 assumed real"
+  // row always lands on the real/unverified side) — covered is then the
+  // KPI total minus that, so the session-vs-daily attribution drift (sources
+  // sum from accountSessions, the KPI from the daily rollup — can differ a
+  // few % for sessions spanning midnight) lands on the $0 "covered" side
+  // instead of silently zeroing out real money that's actually unverified.
+  let realTotal = 0;
+  rows.forEach(({ s, estimate }) => {
+    const covered =
+      (s.tool === 'claude' && s.maxUsage && (s.maxUsage.usageCredits || {}).usedMinor === 0) ||
+      (s.tool === 'codex' && s.kind === 'official-live' && s.codexLive.ordinaryUsageAllowed !== false) ||
+      (s.tool === 'grok' && s.kind === 'unofficial-live' && (s.grokBilling.onDemandUsedUsd ?? 0) === 0) ||
+      (s.kind === 'manual' && s.coveredByPlan);
+    if (!covered) realTotal += estimate;
+  });
+  const estimateTotal = totalWin;
+  const coveredTotal = Math.max(0, estimateTotal - realTotal);
+
+  const bannersHtml = rows.map(({ s, estimate, modelDetail }) => sourceBannerHtml(s, estimate, modelDetail, openaiCost)).join('');
+
+  box.innerHTML = `
+    <div class="card-head"><h2>What's actually costing you money</h2>
+      <span class="muted">
+        <button id="managePlansBtn" class="link-btn">Manage plans</button>
+        for the range selected above
+      </span>
+    </div>
+    ${bannersHtml}
+    <div class="muted" style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid var(--border);">
+      List-price estimate <b class="tnum" style="color:var(--text);">${fmt(estimateTotal)}</b>
+      &nbsp;−&nbsp; covered by subscriptions <b class="tnum" style="color:var(--ok-text);">${fmt(coveredTotal)}</b>
+      &nbsp;=&nbsp; real / unverified <b class="tnum" style="color:${realTotal > 0.005 ? 'var(--bad-text)' : 'var(--ok-text)'};">${fmt(realTotal)}</b>
+    </div>
+  `;
+
+  document.getElementById('managePlansBtn').onclick = () => setTab('settings');
+}
+
+async function enableLiveUsage() {
+  const status = document.getElementById('liveUsageStatus');
+  status.textContent = 'Enabling…';
+  try {
+    const res = await fetch('/api/live-usage/enable', { method: 'POST' });
+    const json = await res.json();
+    if (!json.ok) throw new Error('setup failed');
+    load(true);
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function disableLiveUsage() {
+  const status = document.getElementById('liveUsageStatus');
+  status.textContent = 'Disabling…';
+  try {
+    const res = await fetch('/api/live-usage/disable', { method: 'POST' });
+    const json = await res.json();
+    if (!json.ok) throw new Error('teardown failed');
+    load(true);
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+function liveUsageSectionHtml(setup) {
+  const state = (setup || {}).state || 'none';
+  const stateText = {
+    none: '<span>not set up</span>',
+    other: '<span style="color:var(--bad-text); font-weight:600;">a different status line is configured — click Enable to wrap it (your existing one keeps showing, nothing is lost)</span>',
+    ours: '<span style="color:var(--ok-text); font-weight:600;">enabled</span>',
+    wraps_other: '<span style="color:var(--ok-text); font-weight:600;">enabled (wrapping your existing status line — it still shows normally)</span>',
+  }[state];
+  const canEnable = state === 'none' || state === 'other';
+  return `
+    <div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem;">Live Claude usage (optional)</div>
+    <div class="muted" style="margin-bottom:0.4rem;">
+      Adds a status line to Claude Code (global — every session, not just this project) that
+      reports real server-side session/week % on every reply, instead of waiting on Claude
+      Code's own cache. Reads no credentials, makes no network calls. Status: ${stateText}
+    </div>
+    <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.9rem;">
+      ${canEnable ? '<button id="liveUsageEnableBtn">Enable</button>' : '<button id="liveUsageDisableBtn">Disable</button>'}
+      <span class="muted" id="liveUsageStatus"></span>
+    </div>
+  `;
+}
+
+async function toggleGrokLive(enabled) {
+  const status = document.getElementById('grokToggleStatus');
+  status.textContent = enabled ? 'Enabling…' : 'Disabling…';
+  try {
+    const res = await fetch('/api/unofficial-toggles', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'grok', enabled }),
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    load(true);
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+async function refreshGrokBilling() {
+  const status = document.getElementById('grokToggleStatus');
+  status.textContent = 'Fetching…';
+  try {
+    const res = await fetch('/api/grok-billing/refresh', { method: 'POST' });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error || 'fetch failed');
+    status.textContent = 'Fetched.';
+    load(true);
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+}
+
+const KIND_BADGE = {
+  'official-live': { bg: 'var(--ok-bg)', fg: 'var(--ok-text)', text: 'live' },
+  'official-cached': { bg: 'var(--heavy-pill-bg)', fg: 'var(--heavy-pill-text)', text: 'cached' },
+  'unofficial-live': { bg: 'var(--ok-bg)', fg: 'var(--ok-text)', text: 'unofficial live' },
+  'manual': { bg: 'var(--neutral-bg)', fg: 'var(--text)', text: 'manual note' },
+  'none': { bg: 'var(--neutral-bg)', fg: 'var(--muted)', text: 'no data' },
+};
+
+function sourcesSummaryTableHtml(sources) {
+  const rows = (sources || []).map(s => {
+    const b = KIND_BADGE[s.kind] || KIND_BADGE.none;
+    return `<tr>
+      <td>${s.label}</td>
+      <td class="muted">${s.tool}${s.provider ? ' · ' + s.provider : ''}</td>
+      <td><span class="pill" style="background:${b.bg}; color:${b.fg};">${b.text}</span></td>
+      <td class="muted">${s.asOf ? new Date(s.asOf).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}</td>
+    </tr>`;
+  }).join('');
+  return `<table style="margin-bottom:0.9rem;">
+    <thead><tr><th>Source</th><th>Tool</th><th>Status</th><th>As of</th></tr></thead>
+    <tbody>${rows || '<tr><td colspan="4" class="muted">Nothing discovered yet.</td></tr>'}</tbody>
+  </table>`;
+}
+
+function themeSectionHtml() {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  return `
+    <div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem; border-top:1px solid var(--border); padding-top:0.9rem;">Appearance</div>
+    <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.9rem;">
+      <button id="themeBtnSettings">${dark ? '☾ Dark' : '☀ Light'} — switch to ${dark ? 'light' : 'dark'}</button>
+    </div>
+  `;
+}
+
+function renderSettingsPage() {
+  if (!lastPlansCtx) return;
+  const { sources, plans, providerStatus, liveUsageSetup, unofficialToggles } = lastPlansCtx;
+  const openaiOn = (providerStatus || {}).openai;
+  const grokOn = (unofficialToggles || {}).grok;
+  const grokSource = (sources || []).find(s => s.tool === 'grok');
+  const grokBilling = grokSource ? grokSource.grokBilling : null;
+
+  document.getElementById('settingsBody').innerHTML = `
+    <div class="plan-form" style="border-top:none; padding-top:0; margin-top:0;">
+      <div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem;">Everything found, all-time</div>
+      ${sourcesSummaryTableHtml(sources)}
+
+      ${themeSectionHtml()}
+
+      ${liveUsageSectionHtml(liveUsageSetup)}
+
+      <div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem; border-top:1px solid var(--border); padding-top:0.9rem;">
+        Manual note <span class="muted" title="A sticky note, not a fetch — type what a tool's own billing page told you. Only shown for tools with no automatic source above (Codex/Claude are automatic, so they're not in this list).">(?)</span>
+      </div>
+      <div style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:flex-end;">
+        <label>Tool<br><select id="planAgentSelect">${planAgentOptionsHtml(sources)}</select></label>
+        <label>Plan tier<br><select id="planTierSelect"></select></label>
+        <label>Custom name<br><input id="planNameCustom" placeholder="e.g. SuperHeavy" style="display:none;"></label>
+        <label style="display:flex; align-items:center; gap:0.3rem; padding-bottom:0.4rem;"><input type="checkbox" id="planCovered"> covered by plan ($0 real cost)</label>
+        <label>Checked on<br><input type="date" id="planAsOf"></label>
+      </div>
+      <label style="display:block; margin-top:0.5rem;">Note<br>
+        <textarea id="planNote" rows="2" style="width:100%;" placeholder="e.g. tool's own usage page shows $0 additional usage this month"></textarea>
+      </label>
+      <div style="display:flex; align-items:center; gap:0.6rem; margin-top:0.5rem;">
+        <button id="planSaveBtn" class="segmented-btn">Save</button>
+        <button id="planDeleteBtn" style="display:none;">Remove entry</button>
+        <span class="muted" id="planFormStatus"></span>
+      </div>
+
+      <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">
+        OpenAI Admin key <span class="muted" title="Pulls a real $ figure live from OpenAI's own Costs API (org/API billing only, not a ChatGPT subscription's weekly cap). Generate one under Organization → API keys → Admin keys — a regular project key won't work.">(?)</span>
+        — ${openaiOn ? '<span style="color:var(--ok-text); font-weight:600;">configured</span>' : '<span class="muted">not configured</span>'}
+      </div>
+      <div style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:flex-end;">
+        <label>Admin API key<br><input id="providerApiKey" type="password" placeholder="${openaiOn ? '•••••••• (set — enter a new one to replace)' : 'sk-admin-…'}" style="width:260px;"></label>
+        <button id="providerSaveBtn">Save key</button>
+        ${openaiOn ? '<button id="providerRemoveBtn">Remove key</button>' : ''}
+        <span class="muted" id="providerKeyStatus"></span>
+      </div>
+
+      <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">
+        Grok billing <span style="color:var(--bad-text);">(unofficial)</span>
+        <span class="muted" title="Off by default, never polled automatically. Tries grok's own CLI first (no token read by this code), falls back to a direct call with the token in ~/.grok/auth.json. Could break with any Grok release — it's not a documented API.">(?)</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
+        <label style="display:flex; align-items:center; gap:0.4rem;">
+          <input type="checkbox" id="grokToggle" ${grokOn ? 'checked' : ''}> enable
+        </label>
+        ${grokOn ? '<button id="grokRefreshBtn">Refresh now</button>' : ''}
+        <span class="muted" id="grokToggleStatus">${grokOn && grokBilling ? 'last fetched ' + (grokBilling.fetchedAt ? new Date(grokBilling.fetchedAt).toLocaleString() : 'never') : ''}</span>
+      </div>
+    </div>
+  `;
+
+  const liveEnableBtn = document.getElementById('liveUsageEnableBtn');
+  if (liveEnableBtn) liveEnableBtn.onclick = enableLiveUsage;
+  const liveDisableBtn = document.getElementById('liveUsageDisableBtn');
+  if (liveDisableBtn) liveDisableBtn.onclick = disableLiveUsage;
+
+  document.getElementById('providerSaveBtn').onclick = saveProviderKeyForm;
+  const removeBtn = document.getElementById('providerRemoveBtn');
+  if (removeBtn) removeBtn.onclick = removeProviderKeyForm;
+  const sel = document.getElementById('planAgentSelect');
+  sel.onchange = () => fillPlanForm(sel.value, plans);
+  fillPlanForm(sel.value, plans);
+  document.getElementById('planTierSelect').onchange = e => {
+    document.getElementById('planNameCustom').style.display = e.target.value === '__custom__' ? '' : 'none';
+  };
+  document.getElementById('planSaveBtn').onclick = savePlanForm;
+  document.getElementById('planDeleteBtn').onclick = deletePlanForm;
+
+  document.getElementById('grokToggle').onchange = e => toggleGrokLive(e.target.checked);
+  const grokRefreshBtn = document.getElementById('grokRefreshBtn');
+  if (grokRefreshBtn) grokRefreshBtn.onclick = refreshGrokBilling;
+
+  document.getElementById('themeBtnSettings').onclick = () => {
+    setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    renderSettingsPage();
+  };
+}
+
+const DH_WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+const DH_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function renderDayHeatmap(windowed, cutoff, today) {
+  const box = document.getElementById('dayHeatmap');
+  const byPeriod = {};
+  windowed.forEach(d => { byPeriod[d.period] = d.value.totalCost; });
+  const maxCost = Math.max(0, ...Object.values(byPeriod));
+
+  // One calendar block per month touched by the range, each a GitHub-style
+  // week-column grid (Sun top row). Capped so an "All time" range with years
+  // of history doesn't render thousands of cells — the table below still
+  // covers the full range either way, this is a visual aid, not the only view.
+  const months = [];
+  let cursor = cutoff;
+  while (cursor <= today && months.length < 24) {
+    const monthKey = cursor.slice(0, 7);
+    if (!months.length || months[months.length - 1].key !== monthKey) {
+      const [y, m] = monthKey.split('-').map(Number);
+      months.push({ key: monthKey, label: DH_MONTHS[m - 1] + ' ' + y, days: [] });
+    }
+    months[months.length - 1].days.push(cursor);
+    cursor = addDays(cursor, 1);
+  }
+
+  const colorFor = cost => {
+    if (!cost) return '';
+    const t = maxCost > 0 ? Math.min(1, cost / maxCost) : 0;
+    return `background: color-mix(in srgb, var(--accent) ${Math.round(10 + t * 80)}%, var(--border));`;
+  };
+
+  box.innerHTML = months.map(month => {
+    const first = new Date(month.days[0] + 'T00:00:00');
+    const leadBlanks = first.getDay();
+    const cells = Array(leadBlanks).fill('<div class="dh-cell"></div>').concat(
+      month.days.map(period => {
+        const cost = byPeriod[period] || 0;
+        const has = cost > 0;
+        const selected = dayFilter && period.includes(dayFilter) ? ' selected' : '';
+        return `<div class="dh-cell${has ? ' has-data' : ''}${selected}" style="${colorFor(cost)}" data-period="${period}" title="${period}: ${fmt(cost)}"></div>`;
+      })
+    );
+    return `<div class="dh-month"><div class="dh-month-label">${month.label}</div><div class="dh-grid">${cells.join('')}</div></div>`;
+  }).join('') + `
+    <div class="dh-legend">less
+      <div class="dh-cell" style="background: var(--border);"></div>
+      <div class="dh-cell" style="${colorFor(maxCost * 0.33)}"></div>
+      <div class="dh-cell" style="${colorFor(maxCost * 0.66)}"></div>
+      <div class="dh-cell" style="${colorFor(maxCost)}"></div>
+    more &middot; click a day to filter the table below
+    </div>`;
+
+  box.querySelectorAll('.dh-cell.has-data').forEach(cell => {
+    cell.onclick = () => {
+      const period = cell.dataset.period;
+      const search = document.getElementById('daySearch');
+      search.value = search.value === period ? '' : period;
+      dayFilter = search.value;
+      update();
+    };
+  });
+}
+
+function renderMaxUsage(list) {
+  const container = document.getElementById('maxUsageContainer');
+  const intro = document.getElementById('maxUsageIntro');
+  if (!list || !list.length) {
+    container.innerHTML = '';
+    intro.textContent = '';
+    return;
+  }
+
+  intro.textContent = list.length > 1
+    ? 'Real plan-limit data from claude.ai’s own Settings → Usage page — not an estimate. Each account is only refreshed while Claude Code is actually logged into it, so a switched-away account shows its last-known snapshot.'
+    : 'This is the real plan-limit data from claude.ai’s own Settings → Usage page — not an estimate. It’s cached locally by Claude Code, refreshed only while this account is the one logged in.';
+
+  container.innerHTML = list.map(mu => {
+    const { stale, asOf } = snapshotAge(mu);
+
+    const sessionPct = mu.session?.percent ?? 0;
+    const weekPct = mu.week?.percent ?? 0;
+    const rows = (mu.weekBreakdown || []).filter(r => r.percentOfLimit !== null);
+
+    return `<div class="card">
+      <div class="card-head">
+        <h2>Claude usage — ${mu.label}</h2>
+        <span class="muted">${mu.live ? 'live, ' : stale ? 'last known, ' : ''}as of ${asOf}</span>
+      </div>
+      ${realCostBannerHtml(mu, false)}
+      <div class="usage-rows">
+        <div class="usage-row">
+          <div class="usage-row-label">Current session <span class="muted">${fmtResetAt(mu.session?.resetsAt)}</span></div>
+          <div class="progress-track"><div class="progress-fill" style="width:${Math.min(sessionPct, 100)}%"></div></div>
+          <div class="usage-row-pct tnum">${sessionPct}%</div>
+        </div>
+        <div class="usage-row">
+          <div class="usage-row-label">This week <span class="muted">${fmtResetAt(mu.week?.resetsAt)}</span></div>
+          <div class="progress-track"><div class="progress-fill" style="width:${Math.min(weekPct, 100)}%"></div></div>
+          <div class="usage-row-pct tnum">${weekPct}%</div>
+        </div>
+      </div>
+      <div class="card-head" style="margin-top: 1.1rem;"><h2 style="font-size:0.85rem;">This week's usage, by surface</h2></div>
+      ${rows.length ? rows.map(r => `
+        <div class="breakdown-row">
+          <span class="bd-label">${r.label || r.key}</span>
+          <div class="progress-track"><div class="progress-fill" style="width:${Math.min(r.percentOfLimit, 100)}%"></div></div>
+          <span class="bd-pct">${r.percentOfLimit}%</span>
+        </div>`).join('') : '<div class="muted">No breakdown available.</div>'}
+      <div class="card-head" style="margin-top: 1.1rem;"><h2 style="font-size:0.85rem;">Usage credits</h2></div>
+      <div class="muted">${(mu.usageCredits || {}).limitMinor != null
+        ? `${fmtMoneyMinor(mu.usageCredits.remainingMinor, mu.usageCredits.currency, mu.usageCredits.exponent)} remaining of ${fmtMoneyMinor(mu.usageCredits.limitMinor, mu.usageCredits.currency, mu.usageCredits.exponent)} purchased — covers you if you hit the plan limits above.`
+        : 'Not enabled.'}</div>
+    </div>`;
+  }).join('');
+}
+
+function drawModelDetailChart(rows, heavySet) {
+  const svg = document.getElementById('modelDetailChart');
+  svg.innerHTML = '';
+  if (!rows.length) return;
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const W = svg.clientWidth || 900, H = 180, padL = 46, padB = 20, padT = 8;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const max = Math.max(...rows.map(r => r.cost), 0.01);
+  const niceMax = max * 1.15;
+  const plotW = W - padL - 10, plotH = H - padT - padB;
+  const bw = plotW / rows.length;
+
+  for (let i = 0; i <= 3; i++) {
+    const y = padT + plotH - (i / 3) * plotH;
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', padL); line.setAttribute('x2', W - 5);
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('class', 'gridline');
+    svg.appendChild(line);
+    const label = document.createElementNS(ns, 'text');
+    label.setAttribute('x', 4); label.setAttribute('y', y + 3);
+    label.setAttribute('class', 'axis-label');
+    label.textContent = '$' + Math.round((i / 3) * niceMax);
+    svg.appendChild(label);
+  }
+
+  rows.forEach((r, i) => {
+    if (r.cost <= 0) return;
+    const h = (r.cost / niceMax) * plotH;
+    const x = padL + i * bw;
+    const y = padT + plotH - h;
+    const rect = document.createElementNS(ns, 'rect');
+    rect.setAttribute('x', x + bw * 0.12);
+    rect.setAttribute('y', y);
+    rect.setAttribute('width', Math.max(bw * 0.76, 1));
+    rect.setAttribute('height', Math.max(h, 0.5));
+    const heavy = heavySet.has(r.period);
+    const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+    rect.setAttribute('fill', heavy ? '#f59e0b' : accentColor);
+    rect.style.fill = heavy ? '#f59e0b' : accentColor;
+    rect.setAttribute('class', 'bar-rect');
+    const title = document.createElementNS(ns, 'title');
+    title.textContent = `${r.period}: ${fmt(r.cost)}${heavy ? ' — heavy day' : ''}`;
+    rect.appendChild(title);
+    svg.appendChild(rect);
+  });
+
+  const labelEvery = Math.max(1, Math.ceil(rows.length / 8));
+  rows.forEach((r, i) => {
+    if (i % labelEvery !== 0 && i !== rows.length - 1) return;
+    const x = padL + i * bw + bw / 2;
+    const text = document.createElementNS(ns, 'text');
+    text.setAttribute('x', x); text.setAttribute('y', H - 4);
+    text.setAttribute('class', 'axis-label'); text.setAttribute('text-anchor', 'middle');
+    text.textContent = r.period.slice(5);
+    svg.appendChild(text);
+  });
+}
+
+function renderModelDetail(windowed) {
+  const card = document.getElementById('modelDetailCard');
+  if (!selectedModel) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  document.getElementById('modelDetailTitle').textContent = selectedModel;
+
+  const rows = windowed.map(d => {
+    const cost = (d.value.modelBreakdowns || [])
+      .filter(mb => mb.modelName === selectedModel)
+      .reduce((s, mb) => s + mb.cost, 0);
+    return { period: d.period, cost };
+  });
+
+  const nonZero = rows.filter(r => r.cost > 0).sort((a, b) => b.cost - a.cost);
+  const heavySet = new Set(nonZero.slice(0, 3).map(r => r.period));
+
+  drawModelDetailChart(rows, heavySet);
+
+  let tableRows = rows.filter(r => r.cost > 0);
+  tableRows.sort((a, b) => modelDetailSort.dir * (a[modelDetailSort.k] > b[modelDetailSort.k] ? 1 : a[modelDetailSort.k] < b[modelDetailSort.k] ? -1 : 0));
+  markSort('modelDetailTable', modelDetailSort);
+  document.querySelector('#modelDetailTable tbody').innerHTML = tableRows.map(r => `
+    <tr${heavySet.has(r.period) ? ' class="heavy-row"' : ''}>
+      <td class="tnum">${r.period}${heavySet.has(r.period) ? ' <span class="pill pill-heavy">heavy</span>' : ''}</td>
+      <td class="right tnum">${fmt(r.cost)}</td>
+    </tr>`).join('') || '<tr><td colspan="2" class="muted">No spend on this model in range.</td></tr>';
+}
+
+function update() {
+  if (!data) return;
+  const days = [...data.daily].sort((a, b) => a.period.localeCompare(b.period));
+  const today = todayStr();
+
+  const agents = new Set();
+  days.forEach(d => (d.metadata && d.metadata.agents || []).forEach(a => agents.add(a)));
+  const claudeAccounts = (data.sources || []).filter(s => s.tool === 'claude');
+  const sel = document.getElementById('agentSel');
+  const builtKey = [...agents].join(',') + '|' + claudeAccounts.map(a => a.id).join(',');
+  if (sel.options.length <= 1 || sel.dataset.built !== builtKey) {
+    const prev = agent;
+    const toolOptions = [...agents].sort().map(a => `<option value="${a}">${a}</option>`).join('');
+    const acctOptions = claudeAccounts.map(a => `<option value="account:${a.id}">${a.label}</option>`).join('');
+    sel.innerHTML = '<option value="all">All agents</option>'
+      + toolOptions
+      + (acctOptions ? `<optgroup label="Claude accounts">${acctOptions}</optgroup>` : '');
+    sel.dataset.built = builtKey;
+    const validValues = new Set(['all', ...agents, ...claudeAccounts.map(a => 'account:' + a.id)]);
+    sel.value = validValues.has(prev) ? prev : 'all';
+    agent = sel.value;
+  }
+  sel.value = agent;
+
+  // windowEnd is the end of the SELECTED range (custom `to`, or today for every
+  // preset); `today` itself stays the real calendar date, for the "Today" KPI
+  // and the hourly chart below, neither of which make sense for a past range.
+  const cutoff = customFrom || (range >= 9999 ? (days[0] ? days[0].period : today) : addDays(today, -(range - 1)));
+  const windowEnd = customTo || today;
+  const windowed = rowsForFilter(days, data.accountSessions, agent)
+    .filter(d => d.period >= cutoff && d.period <= windowEnd);
+
+  const sum = arr => arr.reduce((s, d) => s + d.value.totalCost, 0);
+  const totalWin = sum(windowed);
+  document.getElementById('totalWin').textContent = fmt(totalWin);
+  document.getElementById('avgDay').textContent = fmt(windowed.length ? totalWin / windowed.length : 0);
+  const maxEntry = windowed.reduce((m, d) => (d.value.totalCost > (m ? m.value.totalCost : -1) ? d : m), null);
+  document.getElementById('maxDay').textContent = maxEntry ? fmt(maxEntry.value.totalCost) : '–';
+  document.getElementById('maxDaySub').textContent = maxEntry ? maxEntry.period : '';
+
+  const todayRow = days.find(d => d.period === today);
+  const todayValue = todayRow ? dayForAgent(todayRow, agent) : null;
+  document.getElementById('totalToday').textContent = fmt(todayValue ? todayValue.totalCost : 0);
+
+  const realTokensOf = v => (v ? v.modelBreakdowns.reduce((s, mb) => s + (mb.inputTokens || 0) + (mb.outputTokens || 0), 0) : 0);
+  const realTokensWin = windowed.reduce((s, d) => s + realTokensOf(d.value), 0);
+  document.getElementById('realTokensWin').textContent = fmtTok(realTokensWin);
+  document.getElementById('realTokensToday').textContent = `today: ${fmtTok(realTokensOf(todayValue))}`;
+
+  document.getElementById('chartMetricLabel').textContent = chartMetric === 'tokens' ? '(tokens)' : '';
+  document.getElementById('hourlyMetricLabel').textContent = chartMetric === 'tokens' ? 'tokens' : 'spend';
+  document.getElementById('chartTokensNote').style.display = chartMetric === 'tokens' ? '' : 'none';
+
+  if (tab === 'overview') {
+    if (chartMetric === 'tokens') drawTokensChart(windowed); else drawChart(windowed);
+
+    const hourlyCard = document.getElementById('hourlyCard');
+    if (range === 1 && !customFrom && !customTo) {
+      hourlyCard.style.display = '';
+      const byHour = {};
+      (data.hourly || []).forEach(h => {
+        if (h.period.slice(0, 10) === today) byHour[h.period.slice(11, 13)] = h;
+      });
+      const nowHour = new Date().getHours();
+      const hourRows = [];
+      for (let hr = 0; hr <= nowHour; hr++) {
+        const hh = String(hr).padStart(2, '0');
+        const h = byHour[hh];
+        hourRows.push({ hourLabel: hh + ':00', cost: (h && h.cost) || 0, input: (h && h.inputTokens) || 0, output: (h && h.outputTokens) || 0 });
+      }
+      if (chartMetric === 'tokens') drawHourlyTokensChart(hourRows); else drawHourlyChart(hourRows);
+    } else {
+      hourlyCard.style.display = 'none';
+    }
+
+    const bucketRows = (data.dailyByBucket || []).filter(d => d.period >= cutoff && d.period <= windowEnd);
+    drawAccountChart(bucketRows);
+  }
+
+  // Always runs (not just on the overview tab) — it's also what populates
+  // lastPlansCtx, which the Settings page needs even if you land there directly.
+  renderRealCostOverview(data.sources, data.accountSessions, days, cutoff, windowEnd, data.plans, data.providerStatus, data.providerCosts, data.liveUsageSetup, data.unofficialToggles, totalWin);
+
+  // ---- models ----
+  const modelAgg = {};
+  windowed.forEach(d => d.value.modelBreakdowns.forEach(mb => {
+    if (!modelAgg[mb.modelName]) modelAgg[mb.modelName] = { cost: 0, tokens: 0, input: 0, output: 0, cacheRead: 0, cacheCreate: 0 };
+    const a = modelAgg[mb.modelName];
+    a.cost += mb.cost;
+    a.input += mb.inputTokens || 0;
+    a.output += mb.outputTokens || 0;
+    a.cacheRead += mb.cacheReadTokens || 0;
+    a.cacheCreate += mb.cacheCreationTokens || 0;
+    a.tokens += (mb.inputTokens || 0) + (mb.outputTokens || 0) + (mb.cacheReadTokens || 0) + (mb.cacheCreationTokens || 0);
+  }));
+  const modelTotal = Object.values(modelAgg).reduce((a, b) => a + b.cost, 0) || 1;
+  let modelRows = Object.entries(modelAgg)
+    .map(([model, v]) => ({ model, cost: v.cost, share: v.cost / modelTotal,
+      tokens: v.input + v.output, totalTokens: v.tokens, input: v.input, output: v.output, cacheRead: v.cacheRead, cacheCreate: v.cacheCreate }))
+    .filter(r => r.model.toLowerCase().includes(modelFilter));
+  modelRows.sort((a, b) => modelSort.dir * (a[modelSort.k] > b[modelSort.k] ? 1 : a[modelSort.k] < b[modelSort.k] ? -1 : 0));
+  markSort('modelTable', modelSort);
+  document.getElementById('modelCount').textContent = `${modelRows.length} of ${Object.keys(modelAgg).length}`;
+  document.querySelector('#modelTable tbody').innerHTML = modelRows.map(r => {
+    const pct = r.share * 100;
+    const selected = r.model === selectedModel ? ' selected-model' : '';
+    const breakdown = `real (input+output): ${fmtTok(r.tokens)}  (in ${fmtTok(r.input)} / out ${fmtTok(r.output)})\ncache read: ${fmtTok(r.cacheRead)}\ncache create: ${fmtTok(r.cacheCreate)}\ntotal incl. cache: ${fmtTok(r.totalTokens)}`;
+    return `<tr class="${selected}"><td class="model-name model-name-cell" data-model="${r.model}">${r.model}</td><td class="right tnum">${fmt(r.cost)}</td>
+      <td class="right tnum" title="${breakdown}">${fmtTok(r.input)}</td>
+      <td class="right tnum" title="${breakdown}">${fmtTok(r.output)}</td>
+      <td class="right tnum" title="${breakdown}">${fmtTok(r.tokens)} <span class="muted" style="font-size:0.75em;">(${fmtTok(r.totalTokens)} incl. cache)</span></td>
+      <td><div class="bar-cell"><div class="mini-bar" style="width:${Math.max(pct * 1.1, 2)}px"></div><span class="muted">${pct.toFixed(1)}%</span></div></td></tr>`;
+  }).join('') || '<tr><td colspan="6" class="muted">No matching models.</td></tr>';
+
+  renderModelDetail(windowed);
+
+  // ---- days ----
+  if (tab === 'days') renderDayHeatmap(windowed, cutoff, windowEnd);
+  let dailyRows = windowed
+    .map(d => ({ period: d.period, agents: d.value.agentsPresent.join(','), totalCost: d.value.totalCost, agentsPresent: d.value.agentsPresent }))
+    .filter(r => r.period.includes(dayFilter));
+  dailyRows.sort((a, b) => dailySort.dir * (a[dailySort.k] > b[dailySort.k] ? 1 : a[dailySort.k] < b[dailySort.k] ? -1 : 0));
+  markSort('dailyTable', dailySort);
+  document.getElementById('dayCount').textContent = `${dailyRows.length} of ${windowed.length}`;
+  document.querySelector('#dailyTable tbody').innerHTML = dailyRows.map(r => {
+    const pills = r.agentsPresent.map(a => `<span class="pill">${a}</span>`).join('');
+    return `<tr><td class="tnum">${r.period}</td><td>${pills}</td><td class="right tnum">${fmt(r.totalCost)}</td></tr>`;
+  }).join('') || '<tr><td colspan="3" class="muted">No matching dates.</td></tr>';
+
+  // ---- settings ----
+  if (tab === 'settings') {
+    renderSettingsPage();
+  }
+
+  // ---- accounts (uses the same range picker as every other tab) ----
+  if (tab === 'accounts') {
+    renderMaxUsage(data.maxUsage);
+    document.getElementById('acctRangeNote').textContent =
+      (range >= 9999 && !customFrom && !customTo) ? 'All time' : `${cutoff} → ${windowEnd}`;
+
+    const sessionsInRange = (data.accountSessions || []).filter(s => s.period >= cutoff && s.period <= windowEnd);
+    const acctAgg = {};
+    sessionsInRange.forEach(s => {
+      const bucket = acctAgg[s.accountUuid] || (acctAgg[s.accountUuid] = {
+        accountUuid: s.accountUuid, label: s.label, note: s.note,
+        cost: 0, sessions: 0, tokens: 0, first: null, last: null, models: {},
+      });
+      bucket.cost += s.totalCost;
+      bucket.sessions += 1;
+      bucket.tokens += s.totalTokens || 0;
+      if (s.period) {
+        if (!bucket.first || s.period < bucket.first) bucket.first = s.period;
+        if (!bucket.last || s.period > bucket.last) bucket.last = s.period;
+      }
+      (s.modelBreakdowns || []).forEach(mb => { bucket.models[mb.modelName] = (bucket.models[mb.modelName] || 0) + mb.cost; });
+    });
+    const accountRows = Object.values(acctAgg).sort((a, b) => b.cost - a.cost);
+
+    document.getElementById('accountCards').innerHTML = accountRows.map(a => {
+      const topModels = Object.entries(a.models || {}).sort((x, y) => y[1] - x[1]).slice(0, 4);
+      return `<div class="card account-card">
+        <div class="acc-main">
+          <div class="acc-label">${a.label}</div>
+          <div class="acc-uuid">${a.accountUuid}</div>
+          ${a.note ? `<div class="acc-note">${a.note}</div>` : ''}
+          <div class="acc-models">${topModels.map(([m, c]) => `<span class="pill model-name">${m}: ${fmt(c)}</span>`).join('')}</div>
+        </div>
+        <div class="acc-cost">
+          <div class="value tnum">${fmt(a.cost)}</div>
+          <div class="sub">${a.sessions} sessions</div>
+          <div class="sub">${a.first || '?'} → ${a.last || '?'}</div>
+        </div>
+      </div>`;
+    }).join('') || '<div class="muted">No Claude sessions in this range.</div>';
+
+    // non-Claude spend, filtered the same way, read straight from the daily per-agent breakdown
+    const otherAgg = {};
+    days.filter(d => d.period >= cutoff && d.period <= windowEnd).forEach(d => {
+      (d.agents || []).forEach(sub => {
+        if (sub.agent === 'claude') return;
+        otherAgg[sub.agent] = (otherAgg[sub.agent] || 0) + sub.totalCost;
+      });
+    });
+    document.querySelector('#noAccountTable tbody').innerHTML = Object.entries(otherAgg)
+      .sort((a, b) => b[1] - a[1])
+      .map(([a, c]) => `<tr><td><span class="pill">${a}</span></td><td class="right tnum">${fmt(c)}</td></tr>`)
+      .join('') || '<tr><td colspan="2" class="muted">None in this range.</td></tr>';
+  }
+}
+
+readUrlState();
+document.querySelectorAll('#rangeSeg button').forEach(b => b.classList.toggle('active', parseInt(b.dataset.range, 10) === range));
+if (customFrom || customTo) {
+  document.getElementById('customFrom').value = customFrom || '';
+  document.getElementById('customTo').value = customTo || '';
+  document.getElementById('customRangeClear').style.display = '';
+  document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
+}
+setTab(tab);
+load(false);
+window.addEventListener('resize', () => update());
+</script>
+
+</body>
+</html>

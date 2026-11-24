@@ -1,0 +1,14 @@
+# Personal, per-machine runtime data lives in ~/.agentic-spend/ by default (see data_dir.py),
+# not in this repo — these entries are just a defensive catch-all in case AGENTIC_SPEND_DATA_DIR
+# is ever pointed back at the repo, or during local dev. Never commit any of these.
+account-labels.json
+usage-snapshots.json
+plans.json
+provider-keys.json
+.statusline-backup.json
+
+# Server runtime
+.server.pid
+.server.log
+__pycache__/
+*.pyc

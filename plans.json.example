@@ -1,0 +1,9 @@
+{
+  "_readme": "Copy this to plans.json (gitignored) and edit for your own accounts. Keyed by ccusage's agent name (grok/codex/opencode/droid/...). Claude Code needs no entry here — its real plan-limit usage is read automatically from ~/.claude.json. coveredByPlan:true shows the account as $0 real cost (green); false or omitted shows the ccusage cost estimate as the real-cost figure (neutral/red). There's no local API for most of these, so check each tool's own usage/billing page by hand and update asOf when you do.",
+  "grok": {
+    "plan": "example plan name, e.g. Super",
+    "coveredByPlan": true,
+    "note": "Why you believe this is covered — e.g. 'X tokens included this month, $0 additional usage on the tool's own dashboard'.",
+    "asOf": "YYYY-MM-DD"
+  }
+}
