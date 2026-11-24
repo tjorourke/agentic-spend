@@ -5,7 +5,10 @@ class AgenticSpend < Formula
   sha256 "95f00b805310d4974af0502b3ea7d3621f4e29a5386eeff60fbc9e283da54836"
   version "1.0.0"
 
+  license "Apache-2.0"
+
   depends_on :macos
+  depends_on "node"
 
   def install
     libexec.install Dir["*"] - ["Formula"]

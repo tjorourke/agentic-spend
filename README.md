@@ -4,6 +4,10 @@ A local-only dashboard for Claude Code / Grok / Codex / OpenCode / etc. spend, b
 [`ccusage`](https://ccusage.com). Branded for mastertheagent.com but fully generic — no
 hardcoded personal data lives in the code, only in gitignored local data files.
 
+Desktop-only by design: it binds to `127.0.0.1` and reads logs that only exist on the machine
+you're running these CLI tools from, so it's meant to be opened on that same laptop/desktop, not
+browsed from a phone — there's no mobile layout, and none is planned.
+
 ## Screenshots
 
 (Figures below are from a real run with the account/email placeholdered out.)
@@ -24,6 +28,16 @@ hardcoded personal data lives in the code, only in gitignored local data files.
 
 ![Settings](screenshots/settings.png)
 
+## Prerequisites
+
+- **macOS** (the Homebrew formula and the `agentic-spend` launcher script are macOS-only).
+- **Node.js**, for `npx` — Agentic Spend shells out to [`ccusage`](https://ccusage.com) via
+  `npx` to read your local tool-usage logs. Installing via Homebrew pulls Node in automatically
+  (the formula declares `depends_on "node"`); running from a git clone (`python3 server.py`)
+  needs it on your PATH already: `brew install node`, or get it from
+  [nodejs.org](https://nodejs.org). If it's missing, the dashboard shows exactly this with a
+  Retry button rather than a blank page.
+
 ## Install
 
 ```bash
@@ -42,8 +56,19 @@ agentic-spend          # starts the server (if not already running) and opens th
 ```
 
 Binds to `127.0.0.1:8787` only — nothing here leaves the machine except the optional OpenAI
-Costs API call (see below). For local development instead of the brew install: `python3
-server.py` from this repo, then open `http://127.0.0.1:8787/`.
+Costs API call (see below) and `npx` fetching `ccusage` itself on first run. For local
+development instead of the brew install: `python3 server.py` from this repo, then open
+`http://127.0.0.1:8787/`.
+
+### Tests
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+Stdlib `unittest`, no pip installs, consistent with the rest of the project. Covers the pure
+data-transformation functions (`compute_accounts`, `build_hourly`, `build_sources`, the Grok
+billing parser) — the logic most likely to silently produce a wrong dollar figure.
 
 ### Upgrading
 
@@ -57,7 +82,7 @@ brew update && brew upgrade agentic-spend
 
 ## Live Claude usage (optional, recommended)
 
-Self-service from the UI: Overview → "Manage plans" → "Live Claude usage" → **Enable**. No file
+Self-service from the UI: Settings → "Live Claude usage" → **Enable**. No file
 editing needed. Under the hood it's Anthropic's own documented status line mechanism
 (https://code.claude.com/docs/en/statusline): `statusline.py` (in this repo) gets wired into
 `~/.claude/settings.json`'s `"statusLine"` — this is global, every Claude Code session on the
@@ -92,7 +117,7 @@ cross-referencing OpenAI's docs, some third-party write-ups get this wrong.
 
 ## Live Grok usage (optional, unofficial)
 
-Off by default — enable from the same "Manage plans" modal, Section 3. Unlike Claude/Codex, no
+Off by default — enable from the same Settings page. Unlike Claude/Codex, no
 documented API exists for Grok's SuperGrok plan at all. `provider_usage.fetch_grok_billing()`
 tries `grok agent stdio`'s undocumented `_x.ai/billing` method first (the `grok` CLI handles its
 own login, so this code never reads a token), falling back to a direct HTTP call using the token
@@ -100,3 +125,7 @@ in `~/.grok/auth.json` if that's unavailable. Returns weekly on-demand/overage b
 tier — **not** a weekly included-pool %, which doesn't appear to be exposed anywhere. Never
 polled automatically, only on an explicit "Refresh now" click. If the reported plan tier doesn't
 match a manual plan note you've saved, the UI flags it rather than silently preferring either one.
+
+## License
+
+Apache License 2.0 — see [`LICENSE`](LICENSE).

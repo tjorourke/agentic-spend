@@ -1,56 +1,63 @@
-# Next session: Agentic Spend is in a good, verified state — no urgent task queued
+# Next session: Agentic Spend is public, hardened, and verified
 
 Continue work on the Agentic Spend dashboard at `~/code/agentic-spend` (`agentic-spend` to
-launch, read `README.md` first). The previous task — a full navigation/UX redesign, reviewed and
-specced by the advisor tool after three separate rounds of "the modal is too complex" / "Days is
-boring" / "bring Accounts into the rest of the pages" feedback — is **done, released as v0.3.0,
-and verified**: ~15 headless-Chrome screenshots across every tab in both light and dark mode, no
-console errors, numbers reconcile across pages. Homebrew is upgraded and confirmed serving the
-new code live from the Cellar.
+launch, read `README.md` first). The repo went public this session (`github.com/tjorourke/
+agentic-spend`, history squashed to one clean commit first — the old private history had a
+stray personal email in it). This pass addressed a 10-item self-review of the public-facing
+state: what's done, what was explicitly deferred, and why.
 
-## What changed, if picking this up cold
+## What changed this session
 
-- **Settings is a real sidebar page now, not a modal.** The old "Manage plans" button opened a
-  hand-rolled modal (backdrop/escape-key/click-outside plumbing) — that's gone. Settings renders
-  the same content (`renderSettingsPage()` → `#settingsBody`) plus the theme toggle, which used to
-  live in the sidebar footer and now lives at the top of this page instead.
-- **Days has a calendar heatmap**, not just a flat sortable table. Built from `windowed` (the same
-  data the table already uses, no new API call) — one GitHub-style month block per month in the
-  selected range, click a day to filter the table below it (reuses the existing `#daySearch`
-  mechanism). `renderDayHeatmap()` in `dashboard.html`.
-- **The header's tool dropdown also lists every discovered Claude account**, under a "Claude
-  accounts" optgroup, sourced from `data.sources`. Picking one filters Models/Days/the chart to
-  just that account — `rowsForFilter()` is the adapter: for a tool it's the old `dayForAgent()`
-  path unchanged, for an account (`account:<uuid>`) it groups `accountSessions` (session-level —
-  several rows can share a period) by period and sums into the same row shape everything else
-  already expects.
-- **A custom date-range picker** sits next to the 1d/7d/30d/All buttons — two `<input
-  type="date">`, synced to the URL as `from`/`to`. Introduced `windowEnd` (custom `to`, or today
-  for a preset) as distinct from `today` (the real calendar date) — `today` still drives the
-  "Today" KPI and the hourly-today chart, which only make sense for the actual current day.
-  Deliberate scoping decision: the hourly chart only shows for the exact `1d` preset, not
-  generalized to "any single custom day" — that's a possible future enhancement, not a dropped
-  feature (it didn't exist before this pass either).
+- **Node.js dependency is now declared and handled.** `server.py` shells out to `npx ccusage`,
+  which needs Node — previously undeclared anywhere. Formula now has `depends_on "node"`; README
+  has a Prerequisites section; and if `npx` is missing anyway (e.g. running from a git clone),
+  `/api/usage` returns `{"error": ..., "errorType": "node_missing"}` and the dashboard shows a
+  specific install-Node message with a Retry button instead of a blank page or raw stack trace.
+- **A real test suite**: `tests/`, stdlib `unittest` (no pip installs, matches the project's
+  no-build-step convention), 15 tests covering the pure data-transformation functions —
+  `account_usage.compute_accounts`, `server.build_hourly`, `server.build_sources`,
+  `provider_usage._parse_grok_billing`/`_cents`. Run with `python3 -m unittest discover -s tests`.
+- **CI**: `.github/workflows/ci.yml` — import-checks every module and runs the test suite on
+  push/PR to main. Basic on purpose (no lint, no coverage gate); verify it's actually green on
+  GitHub after the next push, not just passing locally.
+- **LICENSE**: Apache 2.0, matching the author's other OSS tool (flightbay). Added to the repo,
+  the Formula's `license` field, and a README section.
+- **Empty-state UX**: a fresh install with zero ccusage data (nobody's used Claude Code/Codex/
+  Grok/OpenCode on the machine yet) now shows a plain-language banner explaining that, instead
+  of just rendering blank/zero everything with no explanation. Screenshot-verified on Overview
+  and Days with a mocked empty dataset — no crashes elsewhere either.
+- **Stale docs fixed**: README's Live Claude/Grok usage sections still said "Manage plans modal"
+  — that UI was replaced by the Settings page back in the nav redesign and the docs never caught
+  up. Fixed both references.
+- **Desktop-only, documented as a deliberate choice**, not a gap: it binds to `127.0.0.1` and
+  reads machine-local logs, so a mobile layout was explicitly scoped out (not "missing").
 
-Real bugs found and fixed along the way (all screenshot-verified before/after):
-- The footer's `real/unverified` figure could show `$0.00` while a banner right above it showed
-  real spend — the clamp approach computed `covered` first and clamped `real` to never go
-  negative, silently hiding small non-zero real-spend sources. Flipped the order: `real` sums
-  directly from the non-covered rows now, `covered` is the remainder against the KPI total.
-- The accounts-in-dropdown adapter's first version didn't group `accountSessions` by period,
-  so a day with several sessions showed as several duplicate date rows instead of one summed row.
+## Reviewed, left alone on purpose
 
-## Open, not acted on (flagged, not a bug)
+- **Account-billing ambiguity** ("is this account's spend genuinely metered by its org") is not
+  code-fixable — there is no local signal that answers it, by design of what's available. The UI
+  already says this plainly rather than guessing either way.
+- **A handover note's proposed generic cross-tool identity-attribution system**
+  (`~/Downloads/cc-usage-live-handover/`) was re-checked this session: opencode's local `account`
+  table is still 0 rows on this machine (`sqlite3 ~/.local/share/opencode/opencode.db "SELECT
+  COUNT(*) FROM account"`). Building against a table with no real data to verify the schema
+  against would be speculative, unverifiable code — not built, deliberately, not forgotten.
+- **Mobile responsiveness and accessibility** (`aria-*` attributes) were flagged in the same
+  review and explicitly deprioritized — this is a single-user, same-machine tool, not public-
+  facing software with an accessibility audience, and mobile isn't the intended use (see above).
+- **Data export (CSV/JSON) and budget-threshold alerts** were flagged and explicitly skipped —
+  no current need, would be speculative scope addition.
 
-- **Whether a given account's spend is genuinely metered/billed by its organization** (vs. just
-  "unknown") remains unresolved on purpose — no way to tell from local data alone. The row says
-  "No plan-limit data ever captured for this account" rather than asserting either way.
-- A handover note from another AI session (`~/Downloads/cc-usage-live-handover/`) proposed a
-  generic cross-tool identity-attribution system. Not built: opencode's local `account` table (the
-  main thing it would have used) is empty — 0 rows — on this machine.
+## Still open from the advisor's original nav-redesign spec (unchanged, low priority)
+
+Merging Models+Days into one "Breakdown" page, a fully unified header "Source" filter across
+every page type (vs. the current tool-dropdown-plus-accounts-optgroup workaround), and
+generalizing the hourly chart beyond the literal `1d` preset. None of these are regressions —
+they didn't exist before the redesign either — just the advisor's fuller vision, scoped down
+for risk at the time.
 
 ## Housekeeping
 
-No known bugs, no pending fixes. If starting fresh work, check `git log` for anything since this
-note was written, and glance at the Overview and Settings pages in both light and dark mode before
-assuming state — a lot changed in the last few sessions and screenshots age fast.
+No known bugs. Formula is at v1.0.0 with the public HTTPS-tarball install method (no SSH/tap
+trust needed). If starting fresh work, check `git log`, confirm CI is still green, and glance at
+Overview/Settings in both themes before assuming state — screenshots age fast.

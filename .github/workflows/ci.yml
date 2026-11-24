@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Import check (catches syntax/import errors in every module)
+        run: |
+          python3 -c "import server, account_usage, provider_usage, statusline_setup, data_dir"
+
+      - name: Run tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: Check dashboard.html is valid UTF-8 and has no leftover merge markers
+        run: |
+          python3 -c "open('dashboard.html', encoding='utf-8').read()"
+          ! grep -nE '^(<<<<<<<|=======|>>>>>>>)' dashboard.html

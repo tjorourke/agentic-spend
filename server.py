@@ -244,6 +244,13 @@ def refresh_usage(force=False):
                 grok_billing, plans, no_account_data, agent_provider,
             ),
         }
+    except FileNotFoundError as e:
+        if getattr(e, "filename", None) == "npx":
+            return {
+                "error": "Node.js (npx) is required to run ccusage and wasn't found on PATH.",
+                "errorType": "node_missing",
+            }
+        return {"error": str(e)}
     except Exception as e:
         return {"error": str(e)}
 

@@ -419,6 +419,13 @@
   </div>
 
   <div id="err"></div>
+  <div class="card" id="emptyState" style="display:none; margin-bottom: 1rem;">
+    <strong>No usage data found yet.</strong> Agentic Spend reads local logs from Claude Code,
+    Codex, Grok and OpenCode — it looks like none of them have been used on this machine yet, or
+    their logs haven't synced. Run one of those tools for a bit, then hit refresh
+    (<span style="display:inline-block; transform:translateY(2px);">&#8635;</span>) in the
+    sidebar. Figures below will stay at zero until then.
+  </div>
 
   <section id="view-overview" class="view active">
     <div class="card" id="realCostOverview" style="display:none; margin-bottom: 1rem;"></div>
@@ -608,15 +615,26 @@ async function load(force) {
   try {
     const res = await fetch('/api/usage' + (force ? '?force=1' : ''), { cache: 'no-store' });
     const json = await res.json();
-    if (json.error) throw new Error(json.error);
+    if (json.error) { const err = new Error(json.error); err.errorType = json.errorType; throw err; }
     data = json;
     document.getElementById('updatedAt').textContent = 'updated ' + new Date().toLocaleTimeString();
     document.getElementById('loadingOverlay').classList.add('hidden');
     update();
   } catch (e) {
     document.getElementById('loadingOverlay').classList.add('hidden');
-    document.getElementById('err').textContent = 'Could not load usage data: ' + e.message;
-    document.getElementById('err').style.display = 'block';
+    const errEl = document.getElementById('err');
+    if (e.errorType === 'node_missing') {
+      errEl.innerHTML =
+        '<strong>Node.js is required but wasn\'t found.</strong> Agentic Spend runs <code>ccusage</code> via ' +
+        '<code>npx</code>, which needs Node.js on your PATH.' +
+        '<div style="margin-top:0.5rem;">Install it with Homebrew: <code>brew install node</code>, or from ' +
+        '<a href="https://nodejs.org" target="_blank" rel="noopener">nodejs.org</a>, then retry below.</div>' +
+        '<button id="errRetryBtn" style="margin-top:0.6rem; border:1px solid var(--border); background:var(--accent); color:white; border-radius:7px; padding:0.35rem 0.8rem; font-size:0.82rem; font-weight:600; cursor:pointer;">Retry</button>';
+      document.getElementById('errRetryBtn').onclick = () => load(true);
+    } else {
+      errEl.textContent = 'Could not load usage data: ' + e.message;
+    }
+    errEl.style.display = 'block';
   } finally {
     setTimeout(() => btn.classList.remove('spinning'), 400);
   }
@@ -1931,6 +1949,8 @@ function update() {
   if (!data) return;
   const days = [...data.daily].sort((a, b) => a.period.localeCompare(b.period));
   const today = todayStr();
+
+  document.getElementById('emptyState').style.display = days.length === 0 ? '' : 'none';
 
   const agents = new Set();
   days.forEach(d => (d.metadata && d.metadata.agents || []).forEach(a => agents.add(a)));
