@@ -23,7 +23,7 @@ import data_dir
 import provider_usage
 import statusline_setup
 
-PORT = 8787
+PORT = int(os.environ.get("AGENTIC_SPEND_PORT", "8787"))
 CACHE_TTL = 10  # seconds
 CCUSAGE_VERSION = "20.1.1"  # pinned so refresh doesn't hit the npm registry every time
 HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
@@ -87,14 +87,24 @@ def get_codex_live(force=False):
     return snap
 
 
-def build_hourly(session_rows):
-    """Bucket each session's full cost into the local hour of its lastActivity
-    timestamp — ccusage has no finer-grained (per-message) timestamp to split a
-    session's cost across the hours it actually ran in, so like the existing
-    daily-by-account view, a long session's cost lands in a single hour rather
-    than being spread across the hours it was open."""
-    buckets = {}
+def build_hourly(session_rows, claude_blocks):
+    """Hour-by-hour spend for today. Claude's hours come from
+    build_hourly_from_blocks() (below) — real per-request timing, so a past
+    hour is final once it's past. Every other agent has no finer timestamp
+    than its session's lastActivity, so its whole session still lands in a
+    single hour bucket; those bars can keep changing until the session ends,
+    same as before. Fine print belongs in the UI, not silently hidden here.
+
+    claude_blocks is None when the `ccusage blocks` call itself failed (as
+    opposed to an empty list, which genuinely means no Claude activity
+    today) — in that case Claude falls back to the same lastActivity
+    bucketing as every other agent, rather than silently vanishing from the
+    chart because its own data source came back empty."""
+    blocks_available = claude_blocks is not None
+    buckets = {b["period"]: dict(b) for b in (claude_blocks or [])}
     for row in session_rows:
+        if blocks_available and row.get("agent") == "claude":
+            continue  # claude_blocks already covers this agent, with real per-hour timing
         iso = (row.get("metadata") or {}).get("lastActivity")
         if not iso:
             continue
@@ -112,6 +122,47 @@ def build_hourly(session_rows):
             bucket["inputTokens"] += mb.get("inputTokens", 0)
             bucket["outputTokens"] += mb.get("outputTokens", 0)
     return [buckets[k] for k in sorted(buckets)]
+
+
+def build_hourly_from_blocks(blocks_json):
+    """Claude's own 5-hour billing blocks, asked for at 1-hour granularity —
+    `ccusage blocks` groups by each request's own timestamp, not a session's
+    lastActivity, so a heavy session's cost lands in every hour it actually
+    ran in rather than all piling into whichever hour it last touched. A past
+    hour's bar is therefore final; only the current hour still grows."""
+    buckets = []
+    for block in blocks_json.get("blocks", []):
+        if block.get("isGap"):
+            continue
+        try:
+            dt = datetime.datetime.fromisoformat(block["startTime"].replace("Z", "+00:00")).astimezone()
+        except (ValueError, KeyError):
+            continue
+        tokens = block.get("tokenCounts", {})
+        buckets.append({
+            "period": dt.strftime("%Y-%m-%dT%H:00"),
+            "cost": block.get("costUSD", 0.0),
+            "agents": {"claude": block.get("costUSD", 0.0)},
+            "inputTokens": tokens.get("inputTokens", 0),
+            "outputTokens": tokens.get("outputTokens", 0),
+        })
+    return buckets
+
+
+def fetch_claude_hourly_blocks(since_date):
+    """since_date: a date.isoformat()-style 'YYYYMMDD' string, local time.
+    Returns None on any failure — distinct from a real empty result — so
+    build_hourly() can tell "ccusage found nothing" apart from "this call
+    didn't work" and fall back instead of just dropping Claude."""
+    try:
+        result = subprocess.run(
+            ["npx", "--yes", f"ccusage@{CCUSAGE_VERSION}", "blocks", "--json",
+             "-n", "1", "--since", since_date],
+            capture_output=True, text=True, timeout=60, check=True,
+        )
+        return json.loads(result.stdout)
+    except Exception:
+        return None
 
 
 def _build_provider_costs(force=False):
@@ -209,9 +260,9 @@ def refresh_usage(force=False):
             account_usage.seed_labels_from_current_account(account_usage.load_labels())
         )
         account_usage.save_labels(labels)
-        session_account_map = account_usage.build_session_account_map()
+        session_account_map, session_project_map = account_usage.build_session_account_map()
         account_list, no_account_data, daily_by_bucket, account_sessions = account_usage.compute_accounts(
-            raw.get("session", []), session_account_map, labels,
+            raw.get("session", []), session_account_map, labels, session_project_map,
         )
 
         max_usage = account_usage.get_max_usage_snapshots()
@@ -220,6 +271,10 @@ def refresh_usage(force=False):
         codex_live = get_codex_live(force=force)
         unofficial_toggles = provider_usage.load_unofficial_toggles()
         grok_billing = _grok_billing_cache["data"]
+
+        today_local = datetime.datetime.now().strftime("%Y%m%d")
+        blocks_json = fetch_claude_hourly_blocks(today_local)
+        claude_blocks = build_hourly_from_blocks(blocks_json) if blocks_json is not None else None
 
         return {
             "generatedAt": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -230,7 +285,7 @@ def refresh_usage(force=False):
             "dailyByBucket": daily_by_bucket,
             "accountSessions": account_sessions,
             "maxUsage": max_usage,
-            "hourly": build_hourly(raw.get("session", [])),
+            "hourly": build_hourly(raw.get("session", []), claude_blocks),
             "plans": plans,
             "providerStatus": provider_usage.get_provider_statuses(),
             "agentProvider": agent_provider,
@@ -239,6 +294,10 @@ def refresh_usage(force=False):
             "codexLive": codex_live,
             "unofficialToggles": unofficial_toggles,
             "grokBilling": grok_billing,
+            "usageHistory": {
+                "claude": account_usage.get_usage_history(),
+                "codex": provider_usage.get_codex_rate_limit_history(),
+            },
             "sources": build_sources(
                 account_list, max_usage, codex_live, unofficial_toggles.get("grok"),
                 grok_billing, plans, no_account_data, agent_provider,

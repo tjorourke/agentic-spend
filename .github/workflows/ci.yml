@@ -20,6 +20,16 @@ jobs:
         run: |
           python3 -c "import server, account_usage, provider_usage, statusline_setup, data_dir"
 
+      - name: statusline.py smoke test under -I (how Claude Code actually invokes it)
+        run: |
+          echo '{}' | python3 -I statusline.py
+          echo '{"rate_limits": {"five_hour": {"used_percentage": 1, "resets_at": 1}, "seven_day": {"used_percentage": 1, "resets_at": 1}}}' \
+            | AGENTIC_SPEND_DATA_DIR="$RUNNER_TEMP/as-statusline-ci" python3 -I statusline.py
+        # python3 -I drops the script's own directory from sys.path, unlike every
+        # other way this codebase runs its scripts — a sibling `import` here passes
+        # locally and in a plain `python3 statusline.py` smoke test, then breaks the
+        # live status line in every Claude Code session on the machine.
+
       - name: Run tests
         run: python3 -m unittest discover -s tests -v
 

@@ -30,6 +30,17 @@ import datetime
 LIVE_DIR = os.path.expanduser("~/.claude/cc-usage-live")
 CLAUDE_CONFIG = os.path.expanduser("~/.claude.json")
 WRAP_COMMAND = os.environ.get("AGENTIC_SPEND_WRAP_STATUSLINE")
+# Inlined rather than `import data_dir`: Claude Code runs this script with
+# `python3 -I` (isolated mode), which leaves the script's own directory off
+# sys.path, so a sibling import fails here even though it works everywhere
+# else in this codebase.
+_DATA_DIR = os.environ.get("AGENTIC_SPEND_DATA_DIR") or os.path.expanduser("~/.agentic-spend")
+try:
+    os.makedirs(_DATA_DIR, exist_ok=True)
+except OSError:
+    pass
+HISTORY_PATH = os.path.join(_DATA_DIR, "usage-history.jsonl")
+HISTORY_MAX_LINES = 20000  # ~a year of 5-per-hour reads for one account; cheap to keep
 
 
 def current_account():
@@ -42,6 +53,63 @@ def current_account():
         return oauth.get("accountUuid"), oauth.get("emailAddress")
     except Exception:
         return None, None
+
+
+def _last_history_sample(acct_uuid):
+    """The most recent recorded sample for this account, so record_usage_history
+    can skip writing one more line when nothing has actually changed. Several
+    accounts can be interleaved in the file (every Claude Code session on the
+    machine writes here), so this has to scan backward for a matching one,
+    not just check the last line."""
+    try:
+        with open(HISTORY_PATH, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            size = f.tell()
+            f.seek(max(0, size - 8192))
+            chunk = f.read().decode("utf-8", errors="ignore")
+    except OSError:
+        return None
+    for line in reversed(chunk.splitlines()):
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if rec.get("accountUuid") == acct_uuid:
+            return rec
+    return None
+
+
+def record_usage_history(acct_uuid, five_hour, seven_day):
+    """Append one plan-usage sample, only when the reading actually moved —
+    this script runs on every Claude Code reply on the machine, so writing
+    unconditionally would make the file grow far faster than the data is
+    worth. Lets the dashboard chart plan usage over time instead of showing
+    only the current percentage. Best-effort: never allowed to break the
+    status line itself."""
+    try:
+        sample = {
+            "time": datetime.datetime.now(tz=datetime.timezone.utc).isoformat(timespec="seconds"),
+            "accountUuid": acct_uuid,
+            "fiveHourPercent": five_hour.get("used_percentage"),
+            "fiveHourResetsAt": five_hour.get("resets_at"),
+            "sevenDayPercent": seven_day.get("used_percentage"),
+            "sevenDayResetsAt": seven_day.get("resets_at"),
+        }
+        last = _last_history_sample(acct_uuid)
+        unchanged = last and all(last.get(k) == sample[k] for k in
+                                  ("fiveHourPercent", "fiveHourResetsAt", "sevenDayPercent", "sevenDayResetsAt"))
+        if unchanged:
+            return
+        with open(HISTORY_PATH, "a") as f:
+            f.write(json.dumps(sample) + "\n")
+        if os.path.getsize(HISTORY_PATH) > 4_000_000:  # ~ worst case for HISTORY_MAX_LINES
+            with open(HISTORY_PATH) as f:
+                lines = f.readlines()
+            if len(lines) > HISTORY_MAX_LINES:
+                with open(HISTORY_PATH, "w") as f:
+                    f.writelines(lines[-HISTORY_MAX_LINES:])
+    except Exception:
+        pass
 
 
 def main():
@@ -75,6 +143,7 @@ def main():
                 os.chmod(out_path, 0o600)
             except Exception:
                 pass  # never break the status line over a write failure
+            record_usage_history(acct_uuid, five_hour, seven_day)
 
     # --- what actually shows in the terminal ---
     if WRAP_COMMAND:

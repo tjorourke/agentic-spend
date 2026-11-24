@@ -253,6 +253,35 @@ def get_max_usage_snapshots():
     return result
 
 
+def get_usage_history():
+    """Plan-usage samples statusline.py has been appending to
+    usage-history.jsonl (data_dir.path) since this feature shipped — there's
+    no retroactive data before that, only what's been recorded since. One
+    flat, time-sorted list; the dashboard groups it by account itself, same
+    pattern as account_sessions, rather than this function pre-grouping it."""
+    path = data_dir.path("usage-history.jsonl")
+    labels = seed_labels_from_current_account(load_labels())
+    samples = []
+    try:
+        with open(path, "r", errors="ignore") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                uuid = rec.get("accountUuid")
+                meta = labels.get(uuid) or {}
+                rec["label"] = meta.get("label") or (f"Unlabeled ({uuid[:8]}…)" if uuid else "unknown")
+                samples.append(rec)
+    except OSError:
+        pass
+    samples.sort(key=lambda s: s.get("time") or "")
+    return samples
+
+
 def _capture_current_max_usage():
     """Read the real plan-limit usage Claude Code already caches locally, for
     whichever account is currently logged in.
@@ -317,31 +346,40 @@ def _capture_current_max_usage():
 
 
 def build_session_account_map():
-    """Scan Claude Code transcripts for session-owner records -> {sessionId: accountUuid}."""
-    mapping = {}
+    """Scan Claude Code transcripts for session-owner records and each
+    session's working directory -> ({sessionId: accountUuid}, {sessionId: cwd}).
+    Both show up in the same early lines of the same files, so one pass
+    covers both instead of opening every transcript twice."""
+    accounts = {}
+    projects = {}
     pattern = os.path.join(CLAUDE_PROJECTS, "*", "*.jsonl")
     for path in glob.glob(pattern):
         session_id = os.path.splitext(os.path.basename(path))[0]
-        if session_id in mapping:
+        have_account = session_id in accounts
+        have_project = session_id in projects
+        if have_account and have_project:
             continue
         try:
             with open(path, "r", errors="ignore") as f:
                 for i, line in enumerate(f):
-                    if i > 50:  # session-owner is always near the top
+                    if i > 50 or (have_account and have_project):  # both show up near the top
                         break
                     line = line.strip()
-                    if not line or '"session-owner"' not in line:
+                    if not line or ('"session-owner"' not in line and '"cwd"' not in line):
                         continue
                     try:
                         rec = json.loads(line)
                     except Exception:
                         continue
-                    if rec.get("type") == "session-owner":
-                        mapping[session_id] = rec.get("accountUuid") or "unknown"
-                        break
+                    if not have_account and rec.get("type") == "session-owner":
+                        accounts[session_id] = rec.get("accountUuid") or "unknown"
+                        have_account = True
+                    if not have_project and rec.get("cwd"):
+                        projects[session_id] = rec["cwd"]
+                        have_project = True
         except OSError:
             continue
-    return mapping
+    return accounts, projects
 
 
 def run_ccusage_sessions(since=None, version="20.1.1"):
@@ -352,16 +390,18 @@ def run_ccusage_sessions(since=None, version="20.1.1"):
     return json.loads(result.stdout)["session"]
 
 
-def compute_accounts(session_rows, session_account_map=None, labels=None):
+def compute_accounts(session_rows, session_account_map=None, labels=None, session_project_map=None):
     """Pure aggregation: session rows (from `ccusage session --json`) -> per-account totals.
 
     Does not call ccusage or re-scan disk itself — pass in session_account_map
-    (from build_session_account_map()) and labels (from load_labels()) so
-    callers that already have them (e.g. the dashboard server) don't repeat
-    that work on every request.
+    and session_project_map (both from build_session_account_map()) and
+    labels (from load_labels()) so callers that already have them (e.g. the
+    dashboard server) don't repeat that work on every request.
     """
     if session_account_map is None:
-        session_account_map = build_session_account_map()
+        session_account_map, session_project_map = build_session_account_map()
+    if session_project_map is None:
+        session_project_map = {}
     if labels is None:
         labels = seed_labels_from_current_account(load_labels())
 
@@ -408,6 +448,7 @@ def compute_accounts(session_rows, session_account_map=None, labels=None):
             "accountUuid": acct,
             "label": bucket_label,
             "note": meta.get("note"),
+            "project": session_project_map.get(session_id) or "Unattributed (no cwd recorded)",
             "totalCost": row.get("totalCost", 0.0),
             "totalTokens": row.get("totalTokens", 0),
             "modelBreakdowns": row.get("modelBreakdowns", []),
@@ -451,7 +492,7 @@ def main():
     labels = seed_labels_from_snapshots(seed_labels_from_current_account(load_labels()))
     save_labels(labels)
 
-    session_account = build_session_account_map()
+    session_account, _ = build_session_account_map()
     session_rows = run_ccusage_sessions(since=args.since)
     account_list, no_account_data, daily_by_bucket, _account_sessions = compute_accounts(session_rows, session_account, labels)
 

@@ -97,6 +97,25 @@ class ComputeAccountsTests(unittest.TestCase):
         self.assertEqual(len(account_sessions), 2)
         self.assertAlmostEqual(daily_by_bucket[0]["you@example.com"], 12.0)
 
+    def test_session_project_comes_from_the_real_cwd_not_a_guess(self):
+        rows = [
+            {
+                "agent": "claude", "period": "sess-1", "totalCost": 1.0, "totalTokens": 10,
+                "metadata": {"lastActivity": "2026-11-20T08:00:00Z"}, "modelBreakdowns": [],
+            },
+            {
+                "agent": "claude", "period": "sess-2", "totalCost": 2.0, "totalTokens": 20,
+                "metadata": {"lastActivity": "2026-11-20T09:00:00Z"}, "modelBreakdowns": [],
+            },
+        ]
+        _accounts, _no_account, _daily, account_sessions = account_usage.compute_accounts(
+            rows, {}, {}, session_project_map={"sess-1": "/Users/tom/code/agentic-spend"},
+        )
+        found_known = [s for s in account_sessions if s["totalCost"] == 1.0][0]
+        found_unknown = [s for s in account_sessions if s["totalCost"] == 2.0][0]
+        self.assertEqual(found_known["project"], "/Users/tom/code/agentic-spend")
+        self.assertEqual(found_unknown["project"], "Unattributed (no cwd recorded)")
+
 
 if __name__ == "__main__":
     unittest.main()

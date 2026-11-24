@@ -12,6 +12,7 @@ ships with a default/example key, and no key is read from this module's own
 code.
 """
 import datetime
+import glob
 import json
 import os
 import shutil
@@ -214,6 +215,94 @@ def get_codex_live_snapshot():
         "hasCredits": credits.get("hasCredits"),
         "fetchedAt": datetime.datetime.now(tz=datetime.timezone.utc).isoformat(timespec="seconds"),
     }
+
+
+CODEX_SESSIONS_DIR = os.path.expanduser("~/.codex/sessions")
+_codex_history_file_cache = {}  # path -> ((mtime, size), [samples from that file])
+
+
+def get_codex_rate_limit_history():
+    """Unlike the live app-server RPC above (current reading only), Codex's
+    own rollout transcripts carry a rate_limits sample on nearly every reply
+    (an event_msg/token_count line) — real history already sitting on disk,
+    not something that has to be accumulated going forward. Cached per file
+    by (mtime, size) so a refresh only re-parses rollouts that changed since
+    the last call, not all of them."""
+    samples = []
+    try:
+        paths = glob.glob(os.path.join(CODEX_SESSIONS_DIR, "**", "rollout-*.jsonl"), recursive=True)
+    except OSError:
+        return samples
+    for path in paths:
+        try:
+            st = os.stat(path)
+        except OSError:
+            continue
+        cache_key = (st.st_mtime, st.st_size)
+        cached = _codex_history_file_cache.get(path)
+        if cached and cached[0] == cache_key:
+            samples.extend(cached[1])
+            continue
+        file_samples = _parse_codex_rollout_rate_limits(path)
+        _codex_history_file_cache[path] = (cache_key, file_samples)
+        samples.extend(file_samples)
+    samples.sort(key=lambda s: s["time"] or "")
+
+    # Codex's own "primary" window definition isn't stable over time on this
+    # machine (seen: 10080 min / 7 days, and 43200 min / 30 days) — charting
+    # both as one line would zig-zag between two unrelated percentages, so
+    # only the window type the most recent sample actually used is kept.
+    if samples:
+        current_window = samples[-1]["windowMins"]
+        samples = [s for s in samples if s["windowMins"] == current_window]
+
+    # Many identical consecutive readings (the percent hasn't moved between
+    # replies) add points without adding information — collapse runs of them
+    # to first-and-last so the chart stays a few points instead of thousands.
+    deduped = []
+    for s in samples:
+        if deduped and deduped[-1]["percent"] == s["percent"] and len(deduped) >= 2 and deduped[-2]["percent"] == s["percent"]:
+            deduped[-1] = s  # extend the run's end instead of growing it
+        else:
+            deduped.append(s)
+    return deduped
+
+
+def _parse_codex_rollout_rate_limits(path):
+    out = []
+    try:
+        with open(path, "r", errors="ignore") as f:
+            for line in f:
+                if '"token_count"' not in line or '"used_percent"' not in line:
+                    continue  # cheap substring check before the real parse
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                payload = rec.get("payload") or {}
+                if payload.get("type") != "token_count":
+                    continue
+                primary = (payload.get("rate_limits") or {}).get("primary")
+                if not primary or primary.get("used_percent") is None:
+                    continue
+                out.append({
+                    "time": rec.get("timestamp"),
+                    "percent": primary.get("used_percent"),
+                    "windowMins": primary.get("window_minutes"),
+                    "resetsAt": _codex_epoch_to_iso(primary.get("resets_at")),
+                })
+    except OSError:
+        pass
+    return out
+
+
+def _codex_epoch_to_iso(ts):
+    if ts is None:
+        return None
+    try:
+        return datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc).isoformat(timespec="seconds")
+    except (TypeError, ValueError, OSError):
+        return None
 
 
 # ---------------------------------------------------------------------------
