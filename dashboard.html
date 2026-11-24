@@ -365,6 +365,8 @@
   .breakdown-row .bd-label { width: 100px; flex-shrink: 0; }
   .breakdown-row .progress-track { height: 6px; }
   .breakdown-row .bd-pct { width: 36px; text-align: right; flex-shrink: 0; color: var(--muted); }
+  .breakdown-row .bd-pct.bd-pct-wide { width: 150px; white-space: nowrap; }
+  .breakdown-row .bd-pct.bd-pct-wide .muted { display: block; font-size: 0.72rem; }
   .day-heatmap { margin-bottom: 1rem; }
   .day-heatmap .dh-month { display: inline-block; vertical-align: top; margin: 0 0.7rem 0.7rem 0; }
   .day-heatmap .dh-month-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
@@ -469,7 +471,6 @@
     <div class="card" id="hourlyCard" style="margin-top: 1rem; display:none;">
       <div class="card-head"><h2>Hourly <span id="hourlyMetricLabel"></span> (today)</h2><span class="muted" id="hourlyChartNote"></span></div>
       <svg id="hourlyChart"></svg>
-      <div class="muted" style="margin-top:0.4rem;">Claude's bars are real per-hour spend (from ccusage's own hourly billing blocks) — once an hour's past, its bar is final. Other tools (Grok, Codex, OpenCode) have no finer timestamp than a session's last-active moment, so a long session there still lands as one lump in whichever hour it was last touched, and can keep moving until that session ends.</div>
     </div>
 
     <div class="card" id="tokenSourcesCard" style="margin-top: 1rem; display:none;">
@@ -528,7 +529,7 @@
     <div class="card">
       <div id="dayHeatmap" class="day-heatmap"></div>
       <div class="toolbar">
-        <input id="daySearch" placeholder="Search dates… (or click a day above)">
+        <input id="daySearch" type="date" placeholder="Pick a date…">
         <span class="muted" id="dayCount"></span>
       </div>
       <table id="dailyTable">
@@ -1910,7 +1911,7 @@ function renderTokenSources() {
       return `<div class="breakdown-row">
         <span class="bd-label">${TOKEN_SOURCE_LABELS[src] || src}</span>
         <div class="progress-track"><div class="progress-fill" style="width:${pct}%"></div></div>
-        <span class="bd-pct">${fmtTok(total)} <span class="muted">(${r.requests} ${tool === 'claude' ? 'requests' : 'threads'})</span></span>
+        <span class="bd-pct bd-pct-wide">${fmtTok(total)}<span class="muted">${r.requests} ${tool === 'claude' ? 'requests' : 'threads'}</span></span>
       </div>`;
     }).join('');
     return `<div style="margin-bottom:1rem;">
