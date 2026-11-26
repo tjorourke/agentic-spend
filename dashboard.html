@@ -672,6 +672,15 @@
       other tabs but is approximate for sessions spanning midnight.
       Dollar figures on this page are USD list price. Usage credits further down use the account's
       own currency and include the currency code.
+      Grok CLI sessions do not record the account. A session updated after this app last looked
+      is tagged with whoever is signed in to the grok CLI then. Older sessions stay
+      "Unattributed Grok account" until you name them here.
+    </div>
+    <div class="card" id="grokBotCard" style="margin-bottom:1rem;">
+      <div class="card-head"><h2>Grok Bot</h2></div>
+      <p class="muted">There is no token or cost feed for Grok Bot. The figures above are the Grok CLI only.</p>
+      <p>Check usage in the Grok Bot app (Settings &gt; Usage &amp; Billing).</p>
+      <p class="muted" id="grokBotSaved"></p>
     </div>
     <div class="muted" style="margin-bottom: 0.8rem;" id="maxUsageIntro"></div>
     <div id="maxUsageContainer" style="display:flex; flex-direction:column; gap:1rem; margin-bottom:1rem;"></div>
@@ -688,8 +697,9 @@
 
   <section id="view-projects" class="view">
     <div class="banner">
-      Spend per repo for Claude Code, using the working directory each session transcript records.
-      Claude-only, same as Accounts — the other CLI agents don't record a project path in their logs.
+      Spend per repo for Claude Code and the Grok CLI. Claude uses the working directory in the
+      transcript. Grok uses the folder name under ~/.grok/sessions, which is the project path.
+      Other CLI agents still do not record a project path.
       Sessions whose directory wasn't captured land in "Unattributed" rather than silently dropping.
       The account menu above filters these rows. Long paths are shortened; the full path is on the row tooltip.
     </div>
@@ -2050,6 +2060,29 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
     `, title: `${blocked ? 'Plan limit reached — may be drawing on credits.' : 'covered by plan'}${openaiCost && !openaiCost.error ? ' — Admin-key Costs API also configured, used above once the plan limit is hit' : ''} — real numbers via Codex's own \`account/rateLimits/read\`, fetched ${new Date(cx.fetchedAt).toLocaleString()}.` };
   }
 
+  if (s.kind === 'local-live') {
+    const amount = s.costKnown === false ? 'cost unverified' : `${fmt(estimate)} CLI`;
+    return { cls: '', html: `
+      ${srcChip('LIVE', 'live')}
+      <span class="src-label">${escHtml(s.label)}</span>
+      <span class="src-extra">local usage.json</span>
+      <span class="src-amount tnum">${amount}</span>
+    `, title: s.note || '' };
+  }
+
+  if (s.grokBot) {
+    const bits = [];
+    if (s.plan) bits.push(escHtml(s.plan));
+    if (s.weeklyLimitPercent != null) bits.push(`${escHtml(s.weeklyLimitPercent)}% of weekly limit`);
+    if (s.resetsAt) bits.push('resets ' + escHtml(s.resetsAt));
+    return { cls: '', html: `
+      ${srcChip(s.kind === 'manual' ? 'MANUAL' : 'ESTIMATE', s.kind === 'manual' ? 'manual' : '')}
+      <span class="src-label">${escHtml(s.label)}</span>
+      <span class="src-extra">${bits.join(' · ') || 'no token or cost feed'}</span>
+      <span class="src-amount tnum">no feed</span>
+    `, title: `${s.note || ''} Check usage in the Grok Bot app (Settings > Usage & Billing).` };
+  }
+
   if (s.tool === 'grok' && s.kind === 'unofficial-live') {
     const gb = s.grokBilling, onDemand = gb.onDemandUsedUsd ?? 0;
     const mismatch = s.manualPlan && gb.plan && s.manualPlan.toLowerCase() !== gb.plan.toLowerCase();
@@ -2098,7 +2131,7 @@ function planAgentOptionsHtml(sources) {
   // Only tools with no automatic (official-live/official-cached) source of
   // their own — those get a row in the summary table above instead.
   const all = (sources || [])
-    .filter(s => s.tool !== 'claude' && s.kind !== 'official-live' && s.kind !== 'official-cached')
+    .filter(s => s.tool !== 'claude' && !s.grokBot && s.kind !== 'local-live' && s.kind !== 'official-live' && s.kind !== 'official-cached')
     .map(s => s.tool);
   return [...new Set(all)].sort().map(a => `<option value="${a}">${a}</option>`).join('');
 }
@@ -2127,6 +2160,31 @@ function fillPlanForm(agent, plans) {
 function currentPlanName() {
   const tierSel = document.getElementById('planTierSelect');
   return tierSel.value === '__custom__' ? document.getElementById('planNameCustom').value : tierSel.value;
+}
+
+async function saveGrokBotForm() {
+  const status = document.getElementById('grokBotStatus');
+  status.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/plans', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        agent: 'grok-bot',
+        plan: document.getElementById('grokBotPlan').value,
+        coveredByPlan: false,
+        note: document.getElementById('grokBotNote').value,
+        asOf: document.getElementById('grokBotAsOf').value,
+        weeklyLimitPercent: document.getElementById('grokBotPct').value,
+        resetsAt: document.getElementById('grokBotReset').value,
+      }),
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+    status.textContent = 'Saved on this machine.';
+    load(true);
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+  }
 }
 
 async function savePlanForm() {
@@ -2217,6 +2275,7 @@ let lastPlansCtx = null;
 // detail line built from data already fetched, for sources with no
 // account/plan concept of their own (the fix for "opencode has no detail").
 function sourceRangeEstimate(s, accountSessions, days, cutoff, today) {
+  if (s.grokBot) return { estimate: 0, modelDetail: '' };
   if (s.tool === 'claude') {
     const cost = (accountSessions || [])
       .filter(r => r.accountUuid === s.id && r.period >= cutoff && r.period <= today)
@@ -2227,7 +2286,7 @@ function sourceRangeEstimate(s, accountSessions, days, cutoff, today) {
   let cost = 0;
   days.filter(d => d.period >= cutoff && d.period <= today).forEach(d => {
     (d.agents || []).forEach(sub => {
-      if (sub.agent !== s.tool) return;
+      if (sub.agent !== (s.tool === 'grok-cli' ? 'grok' : s.tool)) return;
       cost += sub.totalCost;
       (sub.modelBreakdowns || []).forEach(mb => { modelTotals[mb.modelName] = (modelTotals[mb.modelName] || 0) + mb.cost; });
     });
@@ -2263,7 +2322,13 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
   // few % for sessions spanning midnight) lands on the $0 "covered" side
   // instead of silently zeroing out real money that's actually unverified.
   let realTotal = 0;
+  const hasGrokCli = (sources || []).some(s => s.kind === 'local-live');
   rows.forEach(({ s, estimate }) => {
+    if (hasGrokCli && s.kind === 'unofficial-live' && s.tool === 'grok') {
+      const extra = (s.grokBilling && s.grokBilling.onDemandUsedUsd) || 0;
+      if (extra > 0) realTotal += extra;
+      return;
+    }
     const covered =
       (s.tool === 'claude' && s.maxUsage && (s.maxUsage.usageCredits || {}).usedMinor === 0) ||
       (s.tool === 'codex' && s.kind === 'official-live' && s.codexLive.ordinaryUsageAllowed !== false) ||
@@ -2401,6 +2466,7 @@ const KIND_BADGE = {
   'official-cached': { bg: 'var(--heavy-pill-bg)', fg: 'var(--heavy-pill-text)', text: 'cached' },
   'unofficial-live': { bg: 'var(--ok-bg)', fg: 'var(--ok-text)', text: 'unofficial live' },
   'manual': { bg: 'var(--neutral-bg)', fg: 'var(--text)', text: 'manual note' },
+  'local-live': { bg: 'var(--ok-bg)', fg: 'var(--ok-text)', text: 'local' },
   'none': { bg: 'var(--neutral-bg)', fg: 'var(--muted)', text: 'no data' },
 };
 
@@ -2490,6 +2556,23 @@ function renderSettingsPage() {
         ${grokOn ? '<button id="grokRefreshBtn">Refresh now</button>' : ''}
         <span class="muted" id="grokToggleStatus">${grokOn && grokBilling ? 'last fetched ' + (grokBilling.fetchedAt ? new Date(grokBilling.fetchedAt).toLocaleString() : 'never') : ''}</span>
       </div>
+
+      <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">Grok Bot</div>
+      <p class="muted">No token or cost feed. Type what the app shows. This does not call Grok.</p>
+      <p>Check usage in the Grok Bot app (Settings &gt; Usage &amp; Billing).</p>
+      <div style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:flex-end;">
+        <label>Plan name<br><input id="grokBotPlan" value="${escAttr((plans || {})['grok-bot'] && (plans || {})['grok-bot'].plan || '')}" placeholder="e.g. SuperGrok"></label>
+        <label>Weekly limit %<br><input id="grokBotPct" type="number" min="0" max="100" value="${escAttr((plans || {})['grok-bot'] && (plans || {})['grok-bot'].weeklyLimitPercent != null ? (plans || {})['grok-bot'].weeklyLimitPercent : '')}" style="width:6rem;"></label>
+        <label>Reset<br><input id="grokBotReset" value="${escAttr((plans || {})['grok-bot'] && (plans || {})['grok-bot'].resetsAt || '')}" placeholder="e.g. Monday 00:00"></label>
+        <label>Checked on<br><input id="grokBotAsOf" type="date" value="${escAttr((plans || {})['grok-bot'] && (plans || {})['grok-bot'].asOf || '')}"></label>
+      </div>
+      <label style="display:block; margin-top:0.5rem;">Note<br>
+        <textarea id="grokBotNote" rows="2" style="width:100%;">${escHtml((plans || {})['grok-bot'] && (plans || {})['grok-bot'].note || '')}</textarea>
+      </label>
+      <div style="display:flex; align-items:center; gap:0.6rem; margin-top:0.5rem;">
+        <button type="button" id="grokBotSave">Save Grok Bot note</button>
+        <span class="muted" id="grokBotStatus"></span>
+      </div>
     </div>
   `;
 
@@ -2512,6 +2595,7 @@ function renderSettingsPage() {
   document.getElementById('planSaveBtn').onclick = savePlanForm;
   document.getElementById('planDeleteBtn').onclick = deletePlanForm;
 
+  document.getElementById('grokBotSave').onclick = saveGrokBotForm;
   document.getElementById('grokToggle').onchange = e => toggleGrokLive(e.target.checked);
   const grokRefreshBtn = document.getElementById('grokRefreshBtn');
   if (grokRefreshBtn) grokRefreshBtn.onclick = refreshGrokBilling;
@@ -2927,17 +3011,27 @@ function update() {
   const agents = new Set();
   days.forEach(d => (d.metadata && d.metadata.agents || []).forEach(a => agents.add(a)));
   const claudeAccounts = (data.sources || []).filter(s => s.tool === 'claude');
+  const grokSeen = new Set();
+  const grokAccounts = [];
+  (data.accountSessions || []).forEach(s => {
+    if (s.agent === 'grok' && s.accountUuid && !grokSeen.has(s.accountUuid)) {
+      grokSeen.add(s.accountUuid);
+      grokAccounts.push(s);
+    }
+  });
   const sel = document.getElementById('agentSel');
-  const builtKey = [...agents].join(',') + '|' + claudeAccounts.map(a => a.id + ':' + (a.label || '')).join(',');
+  const builtKey = [...agents].join(',') + '|' + claudeAccounts.map(a => a.id + ':' + (a.label || '')).join(',') + '|' + grokAccounts.map(a => a.accountUuid + ':' + (a.label || '')).join(',');
   if (sel.options.length <= 1 || sel.dataset.built !== builtKey) {
     const prev = agent;
     const toolOptions = [...agents].sort().map(a => `<option value="${escAttr(a)}">${escHtml(a)}</option>`).join('');
     const acctOptions = claudeAccounts.map(a => `<option value="account:${escAttr(a.id)}">${escHtml(a.label)}</option>`).join('');
+    const grokOptions = grokAccounts.map(a => `<option value="account:${escAttr(a.accountUuid)}">${escHtml(a.label)}</option>`).join('');
     sel.innerHTML = '<option value="all">All agents</option>'
       + toolOptions
-      + (acctOptions ? `<optgroup label="Claude accounts">${acctOptions}</optgroup>` : '');
+      + (acctOptions ? `<optgroup label="Claude accounts">${acctOptions}</optgroup>` : '')
+      + (grokOptions ? `<optgroup label="Grok accounts">${grokOptions}</optgroup>` : '');
     sel.dataset.built = builtKey;
-    const validValues = new Set(['all', ...agents, ...claudeAccounts.map(a => 'account:' + a.id)]);
+    const validValues = new Set(['all', ...agents, ...claudeAccounts.map(a => 'account:' + a.id), ...grokAccounts.map(a => 'account:' + a.accountUuid)]);
     sel.value = validValues.has(prev) ? prev : 'all';
     agent = sel.value;
   }
@@ -3132,6 +3226,13 @@ function update() {
 
   // ---- accounts (uses the same range picker as every other tab) ----
   if (tab === 'accounts') {
+    const botSaved = document.getElementById('grokBotSaved');
+    if (botSaved) {
+      const bot = (data.plans || {})['grok-bot'];
+      botSaved.textContent = bot && (bot.plan || bot.weeklyLimitPercent != null)
+        ? `Saved note: ${bot.plan || 'plan'} ${bot.weeklyLimitPercent != null ? bot.weeklyLimitPercent + '% of the weekly limit' : ''} ${bot.resetsAt ? 'resets ' + bot.resetsAt : ''}. Edit it in Settings.`
+        : 'Save a manual note in Settings.';
+    }
     renderMaxUsage(data.maxUsage);
     document.getElementById('acctRangeNote').textContent =
       (range >= 9999 && !customFrom && !customTo) ? 'All time' : `${cutoff} → ${windowEnd}`;
@@ -3195,8 +3296,10 @@ function update() {
       const acct = (data.accounts || []).find(a => a.accountUuid === uuid)
         || (data.sources || []).find(s => s.tool === 'claude' && s.id === uuid);
       rangeLabel += acct && acct.label ? ` · ${acct.label}` : ' · one Claude account';
+    } else if (agent === 'grok') {
+      rangeLabel += ' · Grok CLI';
     } else if (agent && agent !== 'all' && agent !== 'claude') {
-      rangeLabel += ' · Claude Code only, so this tool has no project rows';
+      rangeLabel += ' · no project rows for this filter';
     }
     document.getElementById('projRangeNote').textContent = rangeLabel;
 
@@ -3206,14 +3309,18 @@ function update() {
     if (typeof agent === 'string' && agent.startsWith('account:')) {
       const uuid = agent.slice('account:'.length);
       sessionsInRange = sessionsInRange.filter(s => s.accountUuid === uuid);
-    } else if (agent && agent !== 'all' && agent !== 'claude') {
+    } else if (agent === 'grok') {
+      sessionsInRange = sessionsInRange.filter(s => s.agent === 'grok');
+    } else if (agent === 'claude') {
+      sessionsInRange = sessionsInRange.filter(s => s.agent !== 'grok');
+    } else if (agent && agent !== 'all') {
       sessionsInRange = [];
     }
     const projAgg = {};
     sessionsInRange.forEach(s => {
       const bucket = projAgg[s.project] || (projAgg[s.project] = { project: s.project, cost: 0, sessions: 0, tokens: 0 });
       bucket.cost += s.totalCost;
-      bucket.sessions += 1;
+      bucket.sessions += s.sessions || 1;
       bucket.tokens += (s.modelBreakdowns || []).reduce((sum, mb) => sum + (mb.inputTokens || 0) + (mb.outputTokens || 0), 0);
     });
     const projectRows = Object.values(projAgg).sort((a, b) => {
@@ -3222,9 +3329,9 @@ function update() {
       return projectSort.dir * (a[k] > b[k] ? 1 : -1);
     });
     markSort('projectsTable', projectSort);
-    const emptyCopy = (agent && agent !== 'all' && agent !== 'claude' && !String(agent).startsWith('account:'))
-      ? 'Projects are Claude Code only, so this filter has no rows.'
-      : 'No Claude sessions in this range.';
+    const emptyCopy = (agent && agent !== 'all' && agent !== 'claude' && agent !== 'grok' && !String(agent).startsWith('account:'))
+      ? 'Projects include Claude Code and the Grok CLI. This filter has no project rows.'
+      : 'No Claude or Grok sessions in this range.';
 
     document.querySelector('#projectsTable tbody').innerHTML = projectRows.map(p => {
       const path = shortenPath(p.project);

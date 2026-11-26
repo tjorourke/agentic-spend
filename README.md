@@ -152,28 +152,38 @@ match a manual plan note you've saved, the UI flags it rather than silently pref
   timestamp, so a past hour is final rather than drifting forward as a long session keeps running.
   Every other tool only has a session's last-active moment to go on, so those bars can still move.
   Hourly data is collected for today only. Choosing an earlier day hides the hourly card.
-- **Cache efficiency** and **Where tokens went today** sit side by side, and each says which
-  window it uses. Cache efficiency follows the selected range: uncached input / cache write /
-  cache read / output, straight from fields ccusage already provides in `modelBreakdowns`. Where
-  tokens went today is today only. It splits main thread vs. subagents vs. compaction vs.
-  auto-review, for Claude Code and Codex (the only two tools with enough local transcript detail
-  for this). It reads the raw transcripts directly, not ccusage, tokens only, since there is no
-  pricing per bucket.
+- **Cache efficiency** and **Where tokens went** sit side by side and follow the selected range.
+  Cache efficiency is uncached input / cache write / cache read / output, straight from fields
+  ccusage already provides in `modelBreakdowns`, plus an estimate that cache reads cost about
+  0.1x a fresh input token. Where tokens went splits main thread vs. subagents vs. compaction
+  vs. auto-review, for Claude Code and Codex. The title names the window ("last 30 days", or
+  "on 24 Nov 2026"). All is capped at the last 90 days so the transcript parse stays fast.
 - **Days** has a token count alongside cost for every date, with a breakdown (real vs. including
   cache) on hover. Clicking a heatmap cell, a table row, the peak-day date, or a daily bar sets
   that one day as the range and shows a "Showing 24 Nov 2026" chip. Back returns to the previous
-  range. The header dates are the only date control. Spend by account uses the same header filter
-  as Daily spend.
-- **Projects** (its own tab, next to Accounts): spend per repo, using each session's real working
-  directory as recorded in its own transcript. Claude-only, same scope as Accounts. Long paths are
-  shortened (home becomes `~`, the middle collapses) and the full path stays on the tooltip. The
-  account menu filters this tab the same way it filters Overview.
+  range, including a tab or account change. Custom from/to dates stay behind a Custom control.
+  Days with no spend still take a column, at $0. Spend by account uses the same header filter.
+- **Projects** (its own tab, next to Accounts): spend per repo. Claude uses the working directory
+  in the transcript. The Grok CLI uses the decoded folder name under `~/.grok/sessions`. Long
+  paths are shortened (home becomes `~`, the middle collapses) and the full path stays on the
+  tooltip. Columns sort, and there is a token count (input plus output, excluding cache).
 - **Account names:** an account that still has no name can be named from its Accounts card, from
   its estimate row on Overview, or from the Settings table. A named account can still be renamed
   from its card. The name is saved on this machine in `account-labels.json` (see
   `account-labels.json.example`). It is not written into source. The sidebar has the theme toggle
   and an "updated" time taken from the server. If a refresh fails, that stamp says the figure is
-  cached.
+  cached and a one-line banner offers Retry.
+- **Grok CLI:** `~/.grok/sessions/<project>/<session>/usage.json` is read locally. Turns are
+  bucketed by the local date of `endedAt`. `costUsdTicks` is 10^10 ticks per USD (Grok's own
+  `grok usage` guide). Turns have no cost of their own, so the session total is split by token
+  share and labelled as such. Session files do not record the account. A session updated after
+  the last time this app looked is tagged with the account currently in `~/.grok/auth.json`.
+  Older sessions stay "Unattributed Grok account" until you name them. The map is
+  `grok-account-map.json` in the data directory (see the example). The unofficial
+  `_x.ai/billing` reading is unchanged and still opt-in.
+- **Grok Bot:** there is no token or cost feed. Settings has a manual note (plan name, weekly
+  limit percent, reset). Check usage in the Grok Bot app (Settings > Usage & Billing). Nothing
+  is scraped.
 - **Plan usage over time** (on the Accounts page) — a chart of the 5h/weekly/30-day window
   percentage, not just the current reading. Claude's history accumulates going forward from the
   status line; Codex's is backfilled for real from its own rollout files, which already carry a
