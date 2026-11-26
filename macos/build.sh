@@ -36,6 +36,10 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 
+# Fail the build if the menu bar label would be empty or zero width, or the
+# bundle lost LSUIElement / its identifier (1.8.2 regression guard).
+"$APP/Contents/MacOS/AgenticSpend" --self-test
+
 codesign --force --deep --sign - --timestamp=none "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
 lipo -archs "$APP/Contents/MacOS/AgenticSpend"

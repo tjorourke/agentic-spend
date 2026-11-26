@@ -67,8 +67,8 @@ class DigestTests(unittest.TestCase):
         self.assertEqual(d["spend"]["changePct"], 220.0)
         self.assertEqual(d["tokens"]["total"], 300)
         self.assertEqual(d["topModels"][0]["model"], "m1")
-        self.assertEqual(d["topProjects"], [{"project": "/code/a", "cost": 10.0, "sessions": 1}])
-        self.assertEqual(d["agents"][0], {"agent": "claude", "cost": 10.0})
+        self.assertEqual(d["topProjects"], [{"project": "/code/a", "cost": 10.0, "sessions": 1, "tokens": 0}])
+        self.assertEqual(d["agents"][0], {"agent": "claude", "cost": 10.0, "tokens": 150})
         gb = d["plans"][0]
         self.assertEqual(gb["peakPct"], 80.0)
         self.assertEqual(gb["previousPeakPct"], 50.0)

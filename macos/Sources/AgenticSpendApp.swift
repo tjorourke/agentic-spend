@@ -4,10 +4,23 @@ import WebKit
 
 @main
 struct AgenticSpendApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var store = Store()
 
+    init() {
+        if CommandLine.arguments.contains("--self-test") { exit(SelfTest.run()) }
+    }
+
     var body: some Scene {
-        MenuBarExtra {
+        // isInserted: without it, SwiftUI quits the whole app the moment macOS
+        // hides the item (Control Center's blocked list, or a Gatekeeper
+        // approval still pending), so the app vanished with no message.
+        // Only pass real changes through: SwiftUI writes the same value back on
+        // every update, and republishing it re-renders forever (busy loop).
+        MenuBarExtra(isInserted: Binding(
+            get: { store.menuBarInserted },
+            set: { if $0 != store.menuBarInserted { store.menuBarInserted = $0 } }
+        )) {
             MenuContent().environmentObject(store)
         } label: {
             MenuBarLabel().environmentObject(store)
