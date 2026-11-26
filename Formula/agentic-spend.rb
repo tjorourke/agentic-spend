@@ -1,9 +1,9 @@
 class AgenticSpend < Formula
   desc "Local spend dashboard for Claude Code, Grok, Codex, OpenCode etc."
   homepage "https://github.com/tjorourke/agentic-spend"
-  url "https://github.com/tjorourke/agentic-spend/archive/refs/tags/v1.3.4.tar.gz"
-  sha256 "39b72d943520e7eb68209fe39023e71dc23aeec1dbeeb413e88b6c6524f7a6d3"
-  version "1.3.4"
+  url "https://github.com/tjorourke/agentic-spend/archive/refs/tags/v1.3.5.tar.gz"
+  sha256 "55f7d72f9e191d076d4a965c176bb4d159057211344faf57f99e452ea276853e"
+  version "1.3.5"
 
   license "Apache-2.0"
 
@@ -36,6 +36,6 @@ class AgenticSpend < Formula
 
   test do
     system "python3", "-c",
-           "import sys; sys.path.insert(0, '#{libexec}'); import server, account_usage, provider_usage, statusline_setup, data_dir, token_sources, grok_usage, grokbot_usage"
+           "import sys; sys.path.insert(0, '#{libexec}'); import server, account_usage, provider_usage, statusline_setup, data_dir, token_sources, grok_usage, grokbot_usage, source_detection"
   end
 end
