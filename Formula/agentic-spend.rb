@@ -1,9 +1,9 @@
 class AgenticSpend < Formula
   desc "Local spend dashboard for Claude Code, Grok, Codex, OpenCode etc."
   homepage "https://github.com/tjorourke/agentic-spend"
-  url "https://github.com/tjorourke/agentic-spend/archive/refs/tags/v1.3.0.tar.gz"
-  sha256 "85c81716631e21e7e18497c36bd84c1fafaac1eab726983108e9c0b096975692"
-  version "1.3.0"
+  url "https://github.com/tjorourke/agentic-spend/archive/refs/tags/v1.3.1.tar.gz"
+  sha256 "e44a4a7405b32cdc9a517bbdbfa944408600cfdba13893f45ebdd18412137883"
+  version "1.3.1"
 
   license "Apache-2.0"
 
