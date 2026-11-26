@@ -401,14 +401,26 @@
   .day-heatmap .dh-month-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
   .day-heatmap .dh-grid { display: grid; grid-template-columns: repeat(7, 13px); grid-auto-flow: column; gap: 3px; }
   .day-heatmap .dh-cell { width: 13px; height: 13px; border-radius: 3px; background: var(--border); cursor: default; }
-  .day-heatmap .dh-cell.has-data { cursor: pointer; }
+  .day-heatmap .dh-cell.has-data, .day-heatmap .dh-cell[data-period] { cursor: pointer; }
   .day-heatmap .dh-cell.has-data:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
   .day-heatmap .dh-cell.selected { outline: 2px solid var(--text); outline-offset: 1px; }
   .day-heatmap .dh-legend { display: flex; align-items: center; gap: 0.3rem; font-size: 0.75rem; color: var(--muted); margin-top: 0.4rem; }
   .day-heatmap .dh-legend .dh-cell { width: 11px; height: 11px; cursor: default; }
   .custom-range { display: flex; align-items: center; gap: 0.3rem; }
   .custom-range input[type="date"] { padding: 0.35rem 0.4rem; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; }
+  .custom-range input[type="date"].is-blank { color: var(--muted); border-style: dashed; }
+  .custom-range input[type="date"]:invalid { box-shadow: none; border-color: var(--border); }
+  .custom-range input[type="date"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; color: var(--text); border-style: solid; }
+  .custom-range-hint { font-size: 0.72rem; }
   .custom-range button { padding: 0.3rem 0.5rem; }
+  .day-heatmap .dh-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #dailyTable tbody tr.day-row { cursor: pointer; }
+  button.text-btn {
+    background: none; border: 0; padding: 0; font: inherit; color: var(--accent-soft-text);
+    cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+  }
+  button.text-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .bar-rect.day-bar { cursor: pointer; }
 </style>
 </head>
 <body>
@@ -447,9 +459,10 @@
         <button data-range="9999">All</button>
       </div>
       <span class="custom-range" id="customRange">
-        <input type="date" id="customFrom" title="From">
+        <span class="custom-range-hint muted" id="customRangeHint">optional</span>
+        <input type="date" id="customFrom" title="From date, optional" aria-label="From date, optional" aria-required="false">
         <span class="muted">–</span>
-        <input type="date" id="customTo" title="To">
+        <input type="date" id="customTo" title="To date, optional" aria-label="To date, optional" aria-required="false">
         <button id="customRangeClear" title="Clear custom range, back to the preset above" style="display:none;">&times;</button>
       </span>
       <select id="agentSel"><option value="all">All agents</option></select>
@@ -512,7 +525,7 @@
     </div>
 
     <div class="card" id="hourlyCard" style="margin-top: 1rem; display:none;">
-      <div class="card-head"><h2>Hourly <span id="hourlyMetricLabel"></span> (today)</h2><span class="muted" id="hourlyChartNote"></span></div>
+      <div class="card-head"><h2>Hourly <span id="hourlyMetricLabel"></span> <span id="hourlyDayLabel">(today)</span></h2><span class="muted" id="hourlyChartNote"></span></div>
       <svg id="hourlyChart"></svg>
     </div>
 
@@ -766,28 +779,58 @@ function setTheme(theme) {
 setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
 // No auto-refresh — the ↻ button is the only trigger, and it force-refreshes every
 // data source (ccusage, OpenAI Costs, Codex rate limits), not just a lightweight re-render.
+function syncCustomRangeInputs() {
+  const fromEl = document.getElementById('customFrom');
+  const toEl = document.getElementById('customTo');
+  fromEl.value = customFrom || '';
+  toEl.value = customTo || '';
+  fromEl.classList.toggle('is-blank', !fromEl.value);
+  toEl.classList.toggle('is-blank', !toEl.value);
+  const custom = !!(customFrom || customTo);
+  document.getElementById('customRangeClear').style.display = custom ? '' : 'none';
+  document.getElementById('customRangeHint').hidden = custom;
+}
+
+function setSingleDay(period) {
+  if (!period || !/^\d{4}-\d{2}-\d{2}$/.test(period)) return;
+  customFrom = period;
+  customTo = period;
+  dayFilter = '';
+  const search = document.getElementById('daySearch');
+  if (search) search.value = '';
+  document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
+  syncCustomRangeInputs();
+  syncUrl();
+  update();
+}
+
 document.querySelectorAll('#rangeSeg button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
   b.classList.add('active');
   range = parseInt(b.dataset.range, 10);
   customFrom = null; customTo = null;
-  document.getElementById('customFrom').value = '';
-  document.getElementById('customTo').value = '';
-  document.getElementById('customRangeClear').style.display = 'none';
+  syncCustomRangeInputs();
   syncUrl();
   update();
 });
 document.getElementById('agentSel').onchange = e => { agent = e.target.value; syncUrl(); update(); };
 
 function applyCustomRange() {
-  const from = document.getElementById('customFrom').value;
-  const to = document.getElementById('customTo').value;
-  if (!from && !to) return;
+  const fromEl = document.getElementById('customFrom');
+  const toEl = document.getElementById('customTo');
+  const from = fromEl.value;
+  const to = toEl.value;
+  if (!from && !to) {
+    customFrom = null;
+    customTo = null;
+    syncCustomRangeInputs();
+    return;
+  }
   customFrom = from || to;
   customTo = to || from;
   if (customFrom > customTo) { const t = customFrom; customFrom = customTo; customTo = t; }
   document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
-  document.getElementById('customRangeClear').style.display = '';
+  syncCustomRangeInputs();
   syncUrl();
   update();
 }
@@ -795,9 +838,8 @@ document.getElementById('customFrom').onchange = applyCustomRange;
 document.getElementById('customTo').onchange = applyCustomRange;
 document.getElementById('customRangeClear').onclick = () => {
   customFrom = null; customTo = null;
-  document.getElementById('customFrom').value = '';
-  document.getElementById('customTo').value = '';
-  document.getElementById('customRangeClear').style.display = 'none';
+  syncCustomRangeInputs();
+  document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
   document.querySelector('#rangeSeg button[data-range="7"]').classList.add('active');
   range = 7;
   syncUrl();
@@ -880,6 +922,11 @@ function rowsForFilter(days, accountSessions, filterValue) {
   return days
     .map(d => ({ period: d.period, value: dayForAgent(d, filterValue) }))
     .filter(d => d.value !== null);
+}
+
+function bindDayBar(rect, period) {
+  rect.classList.add('day-bar');
+  rect.addEventListener('click', () => setSingleDay(period));
 }
 
 function drawChart(rows) {
@@ -982,8 +1029,9 @@ function drawChart(rows) {
       rect.setAttribute('class', 'bar-rect');
       rect.style.fill = color;
       const title = document.createElementNS(ns, 'title');
-      title.textContent = `${r.period}: ${fmt(r.value.totalCost)}`;
+      title.textContent = `${r.period}: ${fmt(r.value.totalCost)} list price. Show this day.`;
       rect.appendChild(title);
+      bindDayBar(rect, r.period);
       svg.appendChild(rect);
     });
   });
@@ -1000,12 +1048,13 @@ function drawChart(rows) {
   });
 }
 
-function drawHourlyChart(rows) {
+function drawHourlyChart(rows, extraNote) {
   const svg = document.getElementById('hourlyChart');
   const note = document.getElementById('hourlyChartNote');
   svg.innerHTML = '';
-  if (!rows.length) { note.textContent = 'No data for today yet'; return; }
-  note.textContent = `${rows[0].hourLabel} → ${rows[rows.length - 1].hourLabel}`;
+  if (!rows.length) { note.textContent = extraNote || 'No data for today yet'; return; }
+  const span = `${rows[0].hourLabel} → ${rows[rows.length - 1].hourLabel}`;
+  note.textContent = extraNote ? `${extraNote} ${span}` : span;
 
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900, H = 180, padL = 46, padB = 22, padT = 10;
@@ -1058,12 +1107,13 @@ function drawHourlyChart(rows) {
   });
 }
 
-function drawHourlyTokensChart(rows) {
+function drawHourlyTokensChart(rows, extraNote) {
   const svg = document.getElementById('hourlyChart');
   const note = document.getElementById('hourlyChartNote');
   svg.innerHTML = '';
-  if (!rows.length) { note.textContent = 'No data for today yet'; return; }
-  note.textContent = `${rows[0].hourLabel} → ${rows[rows.length - 1].hourLabel}`;
+  if (!rows.length) { note.textContent = extraNote || 'No data for today yet'; return; }
+  const span = `${rows[0].hourLabel} → ${rows[rows.length - 1].hourLabel}`;
+  note.textContent = extraNote ? `${extraNote} ${span}` : span;
 
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900, H = 180, padL = 46, padB = 22, padT = 10;
@@ -1225,8 +1275,9 @@ function drawTokensChart(rows) {
       rect.style.fill = TOKEN_COLORS[key];
       rect.setAttribute('class', 'bar-rect');
       const title = document.createElementNS(ns, 'title');
-      title.textContent = `${d.period} – ${TOKEN_LABELS[key]}: ${fmtTok(tok)}`;
+      title.textContent = `${d.period} – ${TOKEN_LABELS[key]}: ${fmtTok(tok)}. Show this day.`;
       rect.appendChild(title);
+      bindDayBar(rect, d.period);
       svg.appendChild(rect);
     });
   });
@@ -1312,8 +1363,9 @@ function drawCacheReadChart(rows) {
     rect.style.fill = TOKEN_COLORS.cacheRead;
     rect.setAttribute('class', 'bar-rect');
     const title = document.createElementNS(ns, 'title');
-    title.textContent = `${d.period} – Cache read: ${fmtTok(d.cacheRead)}`;
+    title.textContent = `${d.period} – Cache read: ${fmtTok(d.cacheRead)}. Show this day.`;
     rect.appendChild(title);
+    bindDayBar(rect, d.period);
     svg.appendChild(rect);
   });
 
@@ -1982,11 +2034,14 @@ function renderSettingsPage() {
 const DH_WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const DH_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function renderDayHeatmap(windowed, cutoff, today) {
+function renderDayHeatmap(windowed, cutoff, windowEnd) {
   const box = document.getElementById('dayHeatmap');
   const byPeriod = {};
   windowed.forEach(d => { byPeriod[d.period] = d.value.totalCost; });
   const maxCost = Math.max(0, ...Object.values(byPeriod));
+  const selectedPeriod = (customFrom && customFrom === customTo)
+    ? customFrom
+    : (!customFrom && !customTo && range === 1 ? todayStr() : '');
 
   // One calendar block per month touched by the range, each a GitHub-style
   // week-column grid (Sun top row). Capped so an "All time" range with years
@@ -1994,7 +2049,7 @@ function renderDayHeatmap(windowed, cutoff, today) {
   // covers the full range either way, this is a visual aid, not the only view.
   const months = [];
   let cursor = cutoff;
-  while (cursor <= today && months.length < 24) {
+  while (cursor <= windowEnd && months.length < 24) {
     const monthKey = cursor.slice(0, 7);
     if (!months.length || months[months.length - 1].key !== monthKey) {
       const [y, m] = monthKey.split('-').map(Number);
@@ -2017,8 +2072,11 @@ function renderDayHeatmap(windowed, cutoff, today) {
       month.days.map(period => {
         const cost = byPeriod[period] || 0;
         const has = cost > 0;
-        const selected = dayFilter && period.includes(dayFilter) ? ' selected' : '';
-        return `<div class="dh-cell${has ? ' has-data' : ''}${selected}" style="${colorFor(cost)}" data-period="${period}" title="${period}: ${fmt(cost)}"></div>`;
+        const selected = period === selectedPeriod ? ' selected' : '';
+        const action = has
+          ? `Show ${period}, USD list price ${fmt(cost)}`
+          : `Show ${period}, no list-price spend`;
+        return `<div class="dh-cell${has ? ' has-data' : ''}${selected}" style="${colorFor(cost)}" data-period="${period}" role="button" tabindex="0" aria-label="${escAttr(action)}" title="${escAttr(period + ': ' + fmt(cost) + ' USD list price')}"></div>`;
       })
     );
     return `<div class="dh-month"><div class="dh-month-label">${month.label}</div><div class="dh-grid">${cells.join('')}</div></div>`;
@@ -2028,18 +2086,8 @@ function renderDayHeatmap(windowed, cutoff, today) {
       <div class="dh-cell" style="${colorFor(maxCost * 0.33)}"></div>
       <div class="dh-cell" style="${colorFor(maxCost * 0.66)}"></div>
       <div class="dh-cell" style="${colorFor(maxCost)}"></div>
-    more &middot; click a day to filter the table below
+    more &middot; click a day, or press Enter, to show that day
     </div>`;
-
-  box.querySelectorAll('.dh-cell.has-data').forEach(cell => {
-    cell.onclick = () => {
-      const period = cell.dataset.period;
-      const search = document.getElementById('daySearch');
-      search.value = search.value === period ? '' : period;
-      dayFilter = search.value;
-      update();
-    };
-  });
 }
 
 // Renders a compact SVG line chart from plan-usage history samples (from
@@ -2379,7 +2427,17 @@ function update() {
   }
   const maxEntry = windowed.reduce((m, d) => (d.value.totalCost > (m ? m.value.totalCost : -1) ? d : m), null);
   document.getElementById('maxDay').textContent = maxEntry ? fmt(maxEntry.value.totalCost) : '–';
-  document.getElementById('maxDaySub').textContent = maxEntry ? maxEntry.period : '';
+  const maxSub = document.getElementById('maxDaySub');
+  maxSub.textContent = '';
+  if (maxEntry) {
+    const peakBtn = document.createElement('button');
+    peakBtn.type = 'button';
+    peakBtn.className = 'text-btn';
+    peakBtn.textContent = maxEntry.period;
+    peakBtn.title = 'Show this day';
+    peakBtn.addEventListener('click', () => setSingleDay(maxEntry.period));
+    maxSub.appendChild(peakBtn);
+  }
 
   const todayRow = days.find(d => d.period === today);
   const todayValue = todayRow ? dayForAgent(todayRow, agent) : null;
@@ -2420,9 +2478,9 @@ function update() {
     document.getElementById('planUsageSub').textContent = 'no plan-limit data';
   }
 
-  // Avg/day and Peak day are redundant on a 1-day range — they'd just repeat
-  // Spend/Today back at you.
-  const isSingleDay = range === 1 && !customFrom && !customTo;
+  // Avg/day and Peak day are redundant on a 1-day range: they would just repeat
+  // the list-price total back at you. A custom from/to of the same day counts too.
+  const isSingleDay = (customFrom && customTo && customFrom === customTo) || (range === 1 && !customFrom && !customTo);
   document.getElementById('kpiAvgDay').style.display = isSingleDay ? 'none' : '';
   document.getElementById('kpiHighestDay').style.display = isSingleDay ? 'none' : '';
 
@@ -2442,20 +2500,27 @@ function update() {
     }
 
     const hourlyCard = document.getElementById('hourlyCard');
-    if (range === 1 && !customFrom && !customTo) {
+    if (isSingleDay) {
       hourlyCard.style.display = '';
+      const selectedDay = (customFrom && customFrom === customTo) ? customFrom : today;
+      const available = (data.hourly || []).some(h => (h.period || '').slice(0, 10) === selectedDay);
+      const chartDay = available ? selectedDay : today;
+      const throughHour = chartDay === today ? new Date().getHours() : 23;
       const byHour = {};
       (data.hourly || []).forEach(h => {
-        if (h.period.slice(0, 10) === today) byHour[h.period.slice(11, 13)] = h;
+        if ((h.period || '').slice(0, 10) === chartDay) byHour[(h.period || '').slice(11, 13)] = h;
       });
-      const nowHour = new Date().getHours();
       const hourRows = [];
-      for (let hr = 0; hr <= nowHour; hr++) {
+      for (let hr = 0; hr <= throughHour; hr++) {
         const hh = String(hr).padStart(2, '0');
         const h = byHour[hh];
         hourRows.push({ hourLabel: hh + ':00', cost: (h && h.cost) || 0, input: (h && h.inputTokens) || 0, output: (h && h.outputTokens) || 0 });
       }
-      if (chartMetric === 'tokens') drawHourlyTokensChart(hourRows); else drawHourlyChart(hourRows);
+      document.getElementById('hourlyDayLabel').textContent = chartDay === today ? '(today)' : `(${chartDay})`;
+      const hourlyNote = (!available && selectedDay !== today)
+        ? `Hourly figures are only available for today (${today}). This chart is today, not ${selectedDay}.`
+        : '';
+      if (chartMetric === 'tokens') drawHourlyTokensChart(hourRows, hourlyNote); else drawHourlyChart(hourRows, hourlyNote);
     } else {
       hourlyCard.style.display = 'none';
     }
@@ -2525,7 +2590,7 @@ function update() {
   document.querySelector('#dailyTable tbody').innerHTML = dailyRows.map(r => {
     const pills = r.agentsPresent.map(a => `<span class="pill">${a}</span>`).join('');
     const tooltip = `real (input+output): ${fmtTok(r.tokens)}\ntotal incl. cache: ${fmtTok(r.totalTokens)}`;
-    return `<tr><td class="tnum">${r.period}</td><td>${pills}</td>
+    return `<tr class="day-row" data-period="${r.period}" tabindex="0" title="Show ${r.period}"><td class="tnum">${r.period}</td><td>${pills}</td>
       <td class="right tnum" title="${tooltip}">${fmtTok(r.tokens)}</td>
       <td class="right tnum">${fmt(r.totalCost)}</td></tr>`;
   }).join('') || '<tr><td colspan="4" class="muted">No matching dates.</td></tr>';
@@ -2611,13 +2676,33 @@ function update() {
 }
 
 readUrlState();
-document.querySelectorAll('#rangeSeg button').forEach(b => b.classList.toggle('active', parseInt(b.dataset.range, 10) === range));
-if (customFrom || customTo) {
-  document.getElementById('customFrom').value = customFrom || '';
-  document.getElementById('customTo').value = customTo || '';
-  document.getElementById('customRangeClear').style.display = '';
-  document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
-}
+document.querySelectorAll('#rangeSeg button').forEach(b => b.classList.toggle('active', !customFrom && !customTo && parseInt(b.dataset.range, 10) === range));
+syncCustomRangeInputs();
+
+document.getElementById('dayHeatmap').addEventListener('click', (e) => {
+  const cell = e.target.closest('.dh-cell[data-period]');
+  if (cell) setSingleDay(cell.dataset.period);
+});
+document.getElementById('dayHeatmap').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const cell = e.target.closest('.dh-cell[data-period]');
+  if (!cell) return;
+  e.preventDefault();
+  setSingleDay(cell.dataset.period);
+});
+const dailyBody = document.querySelector('#dailyTable tbody');
+dailyBody.addEventListener('click', (e) => {
+  const tr = e.target.closest('tr[data-period]');
+  if (tr) setSingleDay(tr.dataset.period);
+});
+dailyBody.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  const tr = e.target.closest('tr[data-period]');
+  if (!tr) return;
+  e.preventDefault();
+  setSingleDay(tr.dataset.period);
+});
+
 setTab(tab);
 load(false);
 window.addEventListener('resize', () => update());
