@@ -32,6 +32,9 @@ import provider_usage
 import source_detection
 import statusline_setup
 import ccusage_bin
+import ccusage_sources
+import model_mix
+import seat_prices
 import token_sources
 
 PORT = int(os.environ.get("AGENTIC_SPEND_PORT", "8787"))
@@ -253,6 +256,45 @@ def fetch_claude_hourly_blocks(since_date):
         return None
 
 
+def fetch_claude_active_block():
+    """ccusage's active 5-hour block, {} when there is none, None on failure."""
+    try:
+        result = subprocess.run(
+            ccusage_bin.command("blocks", "--active", "--json"),
+            capture_output=True, text=True, timeout=60, check=True,
+        )
+        blocks = (json.loads(result.stdout) or {}).get("blocks") or []
+        active = next((b for b in blocks if b.get("isActive") and not b.get("isGap")), None)
+        if not active:
+            return {}
+        active = {k: v for k, v in active.items() if k != "entries" or isinstance(v, int)}
+        active["fetchedAt"] = datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+        return active
+    except Exception:
+        return None
+
+
+MODEL_MIX_TTL = 15 * 60
+_model_mix_cache = {"ts": 0.0, "data": None}
+
+
+def get_model_mix(daily_rows, force=False):
+    """Repriced ccusage runs are a few seconds, so keep the result 15 minutes."""
+    now = time.time()
+    if not force and _model_mix_cache["data"] is not None and now - _model_mix_cache["ts"] < MODEL_MIX_TTL:
+        return _model_mix_cache["data"]
+    data = model_mix.compute(daily_rows)
+    _model_mix_cache.update(ts=now, data=data)
+    return data
+
+
+def _team_value(payload):
+    try:
+        return seat_prices.team_value(payload.get("maxUsage"), payload.get("accountSessions"), seat_prices.load())
+    except Exception:
+        return []
+
+
 def _build_provider_costs(force=False):
     openai_cost = get_openai_cost(force=force)
     return {"openai": openai_cost} if openai_cost is not None else {}
@@ -443,6 +485,7 @@ def refresh_usage(force=False):
 
         claude_history = account_usage.get_usage_history()
         codex_history = provider_usage.get_codex_rate_limit_history()
+        claude_active_block = fetch_claude_active_block() if max_usage else None
         payload = {
             "generatedAt": datetime.datetime.now().isoformat(timespec="seconds"),
             "daily": daily_rows,
@@ -466,6 +509,9 @@ def refresh_usage(force=False):
                 "codex": codex_history,
             },
             "grokBot": grokbot,
+            "claudeActiveBlock": claude_active_block,
+            "modelMix": get_model_mix(raw.get("daily") or [], force=force),
+            "seatPrices": seat_prices.load(),
             "sources": _with_grok_sources(build_sources(
                 account_list, max_usage, codex_live, unofficial_toggles.get("grok"),
                 grok_billing, plans, no_account_data, agent_provider,
@@ -482,6 +528,8 @@ def refresh_usage(force=False):
         )
         detection = source_detection.detect(hints=hints)
         payload["detection"] = detection
+        payload["ccusageSources"] = ccusage_sources.present(raw.get("daily") or [], raw.get("session") or [], detection)
+        payload["teamValue"] = _team_value(payload)
         payload["planInsights"] = _plan_insights_from(payload)
         payload["sources"] = source_detection.annotate_sources(
             source_detection.filter_absent_sources(payload["sources"], detection),
@@ -519,6 +567,7 @@ def _plan_insights_from(payload):
             claude_history=history.get("claude"),
             codex_live=payload.get("codexLive"),
             codex_history=history.get("codex"),
+            claude_active_block=payload.get("claudeActiveBlock"),
         )
     except Exception:
         return []
@@ -555,12 +604,14 @@ def current_plan_insights(grokbot=None):
         claude_history = []
     codex_live = _codex_live_cache.get("data") or cached.get("codexLive")
     codex_history = (cached.get("usageHistory") or {}).get("codex") or []
+    active_block = fetch_claude_active_block() if max_usage else None
     return insights.build_plan_insights(
         grokbot=grokbot if grokbot is not None else cached.get("grokBot"),
         max_usage=max_usage,
         claude_history=claude_history,
         codex_live=codex_live,
         codex_history=codex_history,
+        claude_active_block=active_block,
     )
 
 
@@ -638,14 +689,16 @@ def build_summary(usage, today=None):
             tokens += (mb.get("inputTokens") or 0) + (mb.get("outputTokens") or 0)
     plans = []
     for p in usage.get("planInsights") or []:
-        plans.append({k: p.get(k) for k in ("key", "tool", "label", "pct", "resetAt", "windowSeconds", "forecast", "compare", "note", "session", "week")})
+        plans.append({k: p.get(k) for k in ("key", "tool", "label", "pct", "resetAt", "windowSeconds", "forecast", "compare", "note", "session", "week", "sessionPace")})
     plans.sort(key=lambda p: -(p.get("pct") or 0))
+    pace_warnings = [p for p in plans if (p.get("sessionPace") or {}).get("warn")]
     return {
         "generatedAt": usage.get("generatedAt"),
         "stale": bool(usage.get("stale")),
         "today": {"date": today, "listUsd": round((row or {}).get("totalCost") or 0.0, 2), "tokens": tokens},
         "plans": plans,
         "highest": plans[0] if plans else None,
+        "paceWarning": {"label": pace_warnings[0].get("label"), **pace_warnings[0]["sessionPace"]} if pace_warnings else None,
         "dashboardUrl": f"http://127.0.0.1:{PORT}/",
         "notifications": notify.public_status(),
     }
@@ -829,6 +882,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._handle_grok_billing_refresh()
         elif path == "/api/labels":
             self._handle_labels_post()
+        elif path == "/api/seat-prices":
+            self._handle_local_post(self._seat_price_post)
         elif path == "/api/grokbot":
             self._handle_grokbot_post()
         elif path == "/api/notifications":
@@ -859,6 +914,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": str(e)}, code=400)
         except Exception as e:
             self._send_json({"ok": False, "error": str(e)}, code=500)
+
+    def _seat_price_post(self, body):
+        cached = _cache.get("data") or {}
+        currencies = seat_prices.billing_currencies(cached.get("maxUsage"))
+        account = body.get("accountUuid") if isinstance(body, dict) else None
+        account, entry = seat_prices.validate_body(body, currencies.get(account))
+        prices = seat_prices.load()
+        if entry is None:
+            prices.pop(account, None)
+        else:
+            prices[account] = entry
+        seat_prices.save(prices)
+        if cached:
+            cached["seatPrices"] = prices
+            cached["teamValue"] = _team_value(cached)
+        return {"ok": True, "seatPrices": prices, "teamValue": cached.get("teamValue")}
 
     def _notifications_post(self, body):
         settings = notify.validate_settings(body, notify.load_settings())

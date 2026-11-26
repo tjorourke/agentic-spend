@@ -48,10 +48,51 @@ enum MenuBarIcon {
     }()
 }
 
+/// The menu bar draws template images and text in its own colour, so the
+/// amber warning state is a pre-rendered, non-template image instead.
+enum AmberLabel {
+    static let amber = NSColor.systemOrange
+
+    static func image(title: String, display: MenuBarDisplay) -> NSImage {
+        let font = NSFont.menuBarFont(ofSize: 0)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: amber]
+        let text = display == .iconOnly ? "" : title
+        let textSize = (text as NSString).size(withAttributes: attrs)
+        let showIcon = display != .percentOnly
+        let iconSize: CGFloat = showIcon ? 15 : 0
+        let gap: CGFloat = (showIcon && !text.isEmpty) ? 4 : 0
+        let height: CGFloat = 18
+        let size = NSSize(width: ceil(iconSize + gap + textSize.width), height: height)
+        let img = NSImage(size: size, flipped: false) { _ in
+            if showIcon, let base = NSImage(systemSymbolName: "exclamationmark.triangle.fill", accessibilityDescription: "Session limit warning") {
+                let cfg = NSImage.SymbolConfiguration(pointSize: 12, weight: .semibold)
+                    .applying(NSImage.SymbolConfiguration(paletteColors: [amber]))
+                let sym = base.withSymbolConfiguration(cfg) ?? base
+                sym.draw(in: NSRect(x: 0, y: (height - iconSize) / 2, width: iconSize, height: iconSize))
+            }
+            if !text.isEmpty {
+                (text as NSString).draw(at: NSPoint(x: iconSize + gap, y: (height - textSize.height) / 2), withAttributes: attrs)
+            }
+            return true
+        }
+        img.isTemplate = false
+        return img
+    }
+}
+
 struct MenuBarLabel: View {
     @EnvironmentObject var store: Store
 
     var body: some View {
+        if store.paceWarning {
+            Image(nsImage: AmberLabel.image(title: store.menuTitle, display: store.display))
+                .accessibilityLabel("\(store.menuTitle), Claude session limit on pace to run out")
+        } else {
+            normal
+        }
+    }
+
+    @ViewBuilder private var normal: some View {
         switch store.display {
         case .iconOnly:
             Image(nsImage: MenuBarIcon.image)

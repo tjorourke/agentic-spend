@@ -98,7 +98,8 @@ class AgenticSpend < Formula
 
   test do
     modules = %w[server account_usage provider_usage statusline_setup data_dir token_sources grok_usage
-                 grokbot_usage source_detection insights notify digest login_item ccusage_bin]
+                 grokbot_usage source_detection insights notify digest login_item ccusage_bin
+                 ccusage_sources seat_prices pacing model_mix]
     system "python3", "-c",
            "import sys; sys.path.insert(0, '#{libexec}'); import #{modules.join(", ")}"
     assert_match "usage: agentic-spend", shell_output("#{bin}/agentic-spend --help")
