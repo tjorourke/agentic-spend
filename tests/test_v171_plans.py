@@ -51,7 +51,7 @@ class PriceTableTests(unittest.TestCase):
         self.assertEqual(plan_prices.default_for("xai/super", None, self.table)["perMonth"], 100)
         # Anthropic publishes no GBP price, so a GBP-billed Ultra falls back to USD
         d = plan_prices.default_for("claude/ultra", "GBP", self.table)
-        self.assertEqual((d["perMonth"], d["currency"]), (200, "USD"))
+        self.assertEqual((d["perMonth"], d["currency"], d["usedFallback"]), (200, "USD", True))
         self.assertIsNone(plan_prices.default_for(None, table=self.table))
         self.assertIsNone(plan_prices.default_for("chatgpt/go", table=self.table))
 

@@ -1,6 +1,6 @@
 {
  "fetched": "2026-11-26",
- "notes": "List prices from each provider's official pricing or help pages, fetched on the date shown. No price is invented: a blank price means the provider doesn't publish one (contact sales) or it could not be read. Prices exclude VAT unless the row says otherwise.",
+ "notes": "List prices from each provider's official pricing or help pages, fetched on the date shown. No price is invented: a blank price means the provider doesn't publish one (contact sales) or it could not be read. Prices exclude VAT unless the row says otherwise. UK (GBP) rows are included only where the provider publishes them. On 26 Nov 2026, claude.com/pricing still showed US dollars when opened from a UK Mac (\"Prices shown don't include applicable tax\"), and chatgpt.com/pricing and opencode.ai/pricing could not be read as a UK pound price list, so no Claude, ChatGPT or OpenCode GBP rows are shipped.",
  "rows": [
   {
    "provider": "claude",

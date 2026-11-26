@@ -1308,9 +1308,12 @@ function fmtCurrencyAmount(amount, currency) {
 // the shipped list price for the detected plan ("list price (default)").
 // Unknown plans and plans with no public price show "set seat price".
 // No currency conversion.
-function seatSourceLabel(seat) {
+function seatSourceLabel(seat, lp) {
   if (!seat) return '';
-  return seat.source === 'user' ? 'your price' : 'list price (default)';
+  if (seat.source === 'user') return 'your price';
+  const d = lp && lp.default;
+  if (d && d.usedFallback && d.preferredCurrency === 'GBP') return 'USD list price, no UK price published';
+  return 'list price (default)';
 }
 function teamValueParts(tv) {
   if (!tv) return null;
@@ -1324,7 +1327,7 @@ function teamValueParts(tv) {
       text: `${api} API-equivalent this month · ${why} · set seat price` };
   }
   const seat = fmtCurrencyAmount(tv.seat.amount, tv.seat.currency) + '/month';
-  const source = seatSourceLabel(tv.seat);
+  const source = seatSourceLabel(tv.seat, tv.listPrice);
   const multiple = tv.multiple != null ? `${Number(tv.multiple).toFixed(1)}\u00d7 the price` : null;
   return { api, seat, multiple, source, planLabel, why: null,
     text: `${api} API-equivalent this month vs ${seat} ${source}` + (multiple ? ` (${multiple})` : '') };
@@ -3276,7 +3279,9 @@ function listPriceCellHtml(tv) {
   if (d) {
     const annual = (lp.rows || []).filter(r => r.billing === 'annual' && r.currency === d.currency && r.perMonth != null);
     const alt = annual.length ? ` <span class="muted">(annual: ${escHtml(fmtCurrencyAmount(annual[0].perMonth, annual[0].currency))}/month)</span>` : '';
-    const curNote = tv.billingCurrency && tv.billingCurrency !== d.currency ? `<br><span class="muted">Billed in ${escHtml(tv.billingCurrency)}; the provider publishes no ${escHtml(tv.billingCurrency)} price, so this is the ${escHtml(d.currency)} list price.</span>` : '';
+    const curNote = (d.usedFallback && d.preferredCurrency === 'GBP')
+      ? `<br><span class="muted">USD list price, no UK price published.</span>`
+      : (tv.billingCurrency && tv.billingCurrency !== d.currency ? `<br><span class="muted">Billed in ${escHtml(tv.billingCurrency)}; the provider publishes no ${escHtml(tv.billingCurrency)} price, so this is the ${escHtml(d.currency)} list price.</span>` : '');
     return `${escHtml(fmtCurrencyAmount(d.perMonth, d.currency))}/month${d.perSeat ? ' per seat' : ''}, billed monthly${alt}${curNote}<br><span class="muted"><a href="${escAttr(d.sourceUrl)}" target="_blank" rel="noopener">source</a> · fetched ${escHtml(d.fetched)} · ${escHtml(d.tax || 'tax not stated')}</span>`;
   }
   if (lp.contactSales) return '<span class="muted">No public price: contact sales</span>';
@@ -3284,16 +3289,51 @@ function listPriceCellHtml(tv) {
   if (tv.plan && /^No subscription/.test(tv.plan.planLabel || '')) return '<span class="muted">Not applicable: no subscription found</span>';
   return '<span class="muted">None (plan not detected)</span>';
 }
+function pricingRegionSectionHtml() {
+  const pr = (data && data.pricingRegion) || { region: 'US', currency: 'USD', source: 'auto' };
+  const detected = pr.detectedRegion;
+  const autoNote = pr.source === 'auto'
+    ? (detected ? `Detected from this Mac: ${pr.label}.` : "This Mac's region could not be read, so United States (USD) is used until you choose.")
+    : (detected ? `This Mac's region is ${detected === 'UK' ? 'United Kingdom (GBP)' : 'United States (USD)'}.` : '');
+  const opt = (code, label) => `<label style="margin-right:1rem;"><input type="radio" name="pricingRegion" value="${code}" ${pr.region === code ? 'checked' : ''}> ${label}</label>`;
+  return `
+    <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">
+      Pricing region <span class="muted" title="Used when an account's billing currency is not known. If the provider publishes a price in that currency it is the default; otherwise the US dollar list price is shown, never a converted amount.">(?)</span>
+    </div>
+    <div class="row">${opt('UK', 'United Kingdom (GBP)')}${opt('US', 'United States (USD)')}
+      <button class="btn" id="pricingRegionSave">Save</button>
+      ${pr.source === 'user' ? "<button class=\"btn\" id=\"pricingRegionAuto\">Use this Mac's region</button>" : ''}
+      <span class="muted" id="pricingRegionStatus">${escHtml(autoNote)}</span>
+    </div>`;
+}
+async function savePricingRegion(region) {
+  const status = document.getElementById('pricingRegionStatus');
+  if (status) status.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/pricing-region', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ region }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.ok) throw new Error(json.error || 'Could not save the pricing region');
+    if (json.pricingRegion) data.pricingRegion = json.pricingRegion;
+    if (json.teamValue) data.teamValue = json.teamValue;
+    renderSettingsPage();
+    const again = document.getElementById('pricingRegionStatus');
+    if (again) again.textContent = region ? 'Saved on this machine.' : "Back to this Mac's region.";
+  } catch (e) {
+    if (status) status.textContent = e.message;
+  }
+}
 function seatPriceSectionHtml() {
   const list = (data && data.teamValue) || [];
-  if (!list.length) return '';
   const rows = list.map(tv => {
     const key = tv.key || tv.accountUuid;
     const cur = tv.billingCurrency;
     const user = tv.userSeat;
     const curHtml = cur
       ? `<span class="muted" title="This account's billing currency, from its own usage-credit reading.">${escHtml(cur)}</span><input type="hidden" data-seat-currency="${escAttr(key)}" value="${escAttr(cur)}">`
-      : `<select data-seat-currency="${escAttr(key)}">${['USD', 'GBP', 'EUR'].map(c => `<option${(user ? user.currency : ((tv.seat && tv.seat.currency) || 'USD')) === c ? ' selected' : ''}>${c}</option>`).join('')}</select>`;
+      : `<select data-seat-currency="${escAttr(key)}">${['USD', 'GBP', 'EUR'].map(c => `<option${(user ? user.currency : ((tv.seat && tv.seat.currency) || ((data && data.pricingRegion && data.pricingRegion.currency) || 'USD'))) === c ? ' selected' : ''}>${c}</option>`).join('')}</select>`;
     const plan = tv.plan || {};
     const planHtml = `${escHtml(plan.planLabel || 'unknown plan')}${plan.evidence && plan.evidence.length ? ` <span class="muted" title="${escAttr('Read from local files: ' + plan.evidence.join('; '))}">(?)</span>` : ''}`;
     return `<tr>
@@ -3316,7 +3356,7 @@ function seatPriceSectionHtml() {
       <td class="muted">${escHtml([r.tax, r.note].filter(Boolean).join(' '))}</td>
       <td><a href="${escAttr(r.sourceUrl)}" target="_blank" rel="noopener">source</a> <span class="muted">${escHtml(r.fetched)}</span></td>
     </tr>`).join('');
-  return `
+  const plansBlock = !list.length ? '' : `
     <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">
       Plans and seat prices <span class="muted" title="The plan is read from local files on this Mac. When it's known, the list price from the provider's own pricing page is used as the default. Enter your own price to override it (for example an annual or discounted rate).">(?)</span>
     </div>
@@ -3325,6 +3365,7 @@ function seatPriceSectionHtml() {
       <div class="muted" style="margin:0.3rem 0;">${escHtml(table.notes || '')}</div>
       <table style="margin-bottom:0.6rem;"><thead><tr><th>Plan</th><th>Billing</th><th>Price</th><th>Notes</th><th>Source</th></tr></thead><tbody>${priceRows}</tbody></table>
     </details>`;
+  return pricingRegionSectionHtml() + plansBlock;
 }
 
 async function saveSeatPrice(accountUuid, remove) {
@@ -3695,6 +3736,13 @@ function renderSettingsPage() {
     if (planDeleteBtn) planDeleteBtn.onclick = deletePlanForm;
   }
 
+  const prSave = document.getElementById('pricingRegionSave');
+  if (prSave) prSave.onclick = () => {
+    const picked = document.querySelector('input[name="pricingRegion"]:checked');
+    savePricingRegion(picked ? picked.value : 'UK');
+  };
+  const prAuto = document.getElementById('pricingRegionAuto');
+  if (prAuto) prAuto.onclick = () => savePricingRegion(null);
   document.querySelectorAll('[data-seat-save]').forEach(b => { b.onclick = () => saveSeatPrice(b.getAttribute('data-seat-save'), false); });
   document.querySelectorAll('[data-seat-remove]').forEach(b => { b.onclick = () => saveSeatPrice(b.getAttribute('data-seat-remove'), true); });
   if (document.getElementById('grokBotSettingsNote')) fillGrokBotSettingsNote();

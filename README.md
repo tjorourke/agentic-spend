@@ -198,10 +198,23 @@ brew update && brew upgrade agentic-spend
   blank ("contact sales"); nothing is invented. US dollars throughout, plus pounds for xAI,
   which publishes them. Prices exclude VAT unless the row says otherwise.
 - **Defaults.** When the plan is detected and you haven't set a price, the monthly-billing
-  list price is used, in the account's billing currency where the provider publishes it,
-  otherwise in US dollars. The app marks it "list price (default)". A price you enter in
-  Settings, "Plans and seat prices", is marked "your price" and always wins. Use it for annual
-  billing or a discount, because the billing cycle can't be read locally.
+  list price is used, in the account's billing currency where that is known, otherwise in
+  the pricing-region currency (see 1.7.2). The app marks it "list price (default)". A price
+  you enter in Settings is marked "your price" and always wins. Use it for annual billing or
+  a discount, because the billing cycle can't be read locally.
+
+## Pricing region and UK list prices (1.7.2)
+
+- **Pricing region.** Settings has a UK (GBP) or US (USD) choice. It defaults from this
+  Mac's locale (`AppleLocale`, for example `en_GB` → UK) and can be changed. When choosing
+  a default price, the account's own billing currency wins if it's known (Claude's
+  usage-credit currency); otherwise the region setting is used. A published GBP row is
+  preferred when the provider has one; otherwise the USD row is shown and labelled
+  "USD list price, no UK price published". Nothing is converted between currencies.
+- **UK prices shipped only when official.** xAI publishes pounds on [grok.com/plans](https://grok.com/plans)
+  (excluding tax). On 26 Nov 2026, [claude.com/pricing](https://claude.com/pricing) still
+  showed US dollars from a UK Mac, and neither ChatGPT's nor OpenCode's pricing pages could
+  be read as a published UK pound list, so no GBP rows are shipped for those.
 
 ## Live Claude usage (on by default)
 

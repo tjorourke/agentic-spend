@@ -3,7 +3,9 @@
 
 When the plan is detected from local data (plan_detection), the default is
 the shipped list price for that plan (plan_prices.json, from the provider's
-own pricing page). A price you enter overrides it and is stored per account
+own pricing page), in the account's billing currency or, if that isn't known,
+the pricing-region currency (UK/GBP or US/USD). A published GBP row is used
+when there is one; otherwise the USD row is used and labelled as a fallback. A price you enter overrides it and is stored per account
 in seat-prices.json in the data directory (never in the repo). An account
 whose plan is unknown, or whose plan has no public price, shows "set seat
 price".
@@ -121,9 +123,10 @@ def _list_price(default_row, plan_id, table):
 
 
 def _value_entry(key, label, provider, api, sessions, month_start, today_s, billing_currency,
-                 user_price, detection, table):
+                 user_price, detection, table, region_currency=None):
     plan_id = (detection or {}).get("planId")
-    default_row = plan_prices.default_for(plan_id, billing_currency, table)
+    preferred = billing_currency or region_currency
+    default_row = plan_prices.default_for(plan_id, preferred, table)
     seat = _effective_seat(user_price, default_row)
     entry = {
         "accountUuid": key,
@@ -148,7 +151,7 @@ def _value_entry(key, label, provider, api, sessions, month_start, today_s, bill
 
 
 def team_value(max_usage, account_sessions, prices, today=None, detections=None,
-               daily=None, table=None):
+               daily=None, table=None, region_currency=None):
     """One entry per subscription account: each Claude account with a plan
     reading, plus every other tool plan detection knows about (Codex, Grok,
     OpenCode, other ccusage sources). Month to date. Claude accounts are
@@ -175,7 +178,8 @@ def team_value(max_usage, account_sessions, prices, today=None, detections=None,
                 api += float(s.get("totalCost") or 0.0)
                 sessions += 1
         out.append(_value_entry(uuid, mu.get("label"), "claude", api, sessions, month_start, today_s,
-                                currencies.get(uuid), (prices or {}).get(uuid), det.get(uuid), table))
+                                currencies.get(uuid), (prices or {}).get(uuid), det.get(uuid), table,
+                                region_currency=region_currency))
     for d in detections or []:
         if d.get("provider") == "claude":
             continue
@@ -191,7 +195,8 @@ def team_value(max_usage, account_sessions, prices, today=None, detections=None,
                     api += float(a.get("totalCost") or 0.0)
                     days += 1
         entry = _value_entry(key, d.get("label"), d.get("provider"), api, None, month_start, today_s,
-                             d.get("billingCurrency"), (prices or {}).get(key), d, table)
+                             d.get("billingCurrency"), (prices or {}).get(key), d, table,
+                             region_currency=region_currency)
         entry["activeDays"] = days
         out.append(entry)
     return out
