@@ -1258,6 +1258,26 @@ function drawEmptyAxes(svg, labels, zeroText, opts) {
     add('text', { x: cx, y: base - 6, 'text-anchor': 'middle', class: 'axis-label', 'data-empty': 'zero-value' }, zeroText);
   });
 }
+function planWindowLabel(which) {
+  return which === 'session' ? 'Session (5-hour)' : 'Weekly (7-day)';
+}
+function liveAgeLabel(fetchedAt, nowMs) {
+  if (!fetchedAt) return 'live';
+  const t = new Date(fetchedAt).getTime();
+  if (Number.isNaN(t)) return 'live';
+  const age = (nowMs == null ? Date.now() : nowMs) - t;
+  const hours = 24 * 3600 * 1000;
+  if (age < hours) {
+    const d = new Date(t);
+    const sameDay = d.toDateString() === new Date(nowMs == null ? Date.now() : nowMs).toDateString();
+    const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+    if (sameDay) return 'live ' + time;
+    const day = d.getDate() + ' ' + d.toLocaleDateString(undefined, { month: 'short' });
+    return 'live ' + day + ', ' + time;
+  }
+  const days = Math.max(1, Math.floor(age / hours));
+  return 'live, ' + days + ' day' + (days === 1 ? '' : 's') + ' old';
+}
 // </pure-helpers>
 
 function fmtWhenShort(iso) {
@@ -1399,18 +1419,19 @@ function paintPlanLimit() {
   const planUsageSrc = selectedAcctUuid
     ? (data.maxUsage || []).find(m => m.accountUuid === selectedAcctUuid)
     : (data.maxUsage || []).find(m => m.live) || (data.maxUsage || [])[0];
-  if (planUsageSrc && planUsageSrc.session && planUsageSrc.session.percent != null) {
-    const { asOf } = snapshotAge(planUsageSrc);
-    const provenance = planUsageSrc.live ? `live, as of ${asOf}` : `cached ${asOf}`;
-    const weekPct = planUsageSrc.week && planUsageSrc.week.percent != null ? planUsageSrc.week.percent : '–';
-    val.textContent = `${planUsageSrc.session.percent}% · ${weekPct}%`;
-    const sessionWhen = shortReset(planUsageSrc.session.resetsAt);
-    const weekWhen = shortReset(planUsageSrc.week && planUsageSrc.week.resetsAt);
+  if (planUsageSrc && ((planUsageSrc.session && planUsageSrc.session.percent != null) || (planUsageSrc.week && planUsageSrc.week.percent != null))) {
+    const sess = planUsageSrc.session || {};
+    const week = planUsageSrc.week || {};
+    const weekPct = week.percent != null ? week.percent : '–';
+    const sessPct = sess.percent != null ? sess.percent : '–';
+    val.textContent = `${sessPct}% · ${weekPct}%`;
+    const provenance = planUsageSrc.liveLabel || (planUsageSrc.live ? liveAgeLabel(planUsageSrc.fetchedAt) : '');
     sub.append(
       line(planUsageSrc.label || 'Claude account'),
-      line(`session ${sessionWhen} · week ${weekWhen}`),
-      line(provenance),
+      line(`Session (5-hour) ${sessPct}%${sess.note ? ' · ' + sess.note : ''}`),
+      line(`Weekly (7-day) ${weekPct}%${week.note ? ' · ' + week.note : ''}`),
     );
+    if (provenance) sub.append(line(provenance));
   } else {
     val.textContent = '–';
     sub.textContent = 'no plan-limit data';
@@ -2423,23 +2444,29 @@ function snapshotAge(mu) {
 
 // Session/week %-bar markup shared by any source that has that shape (today
 // just Claude, from s.maxUsage).
-function usageWindowsHtml(mu, asOf, liveLabel) {
-  const sessionPct = mu.session?.percent;
-  const weekPct = mu.week?.percent;
-  if (sessionPct == null) return '';
+function windowNoteHtml(win) {
+  if (!win) return '';
+  if (win.note) return `<span class="muted"> (${escHtml(win.note)})</span>`;
+  if (win.resetsAt) return `<span class="muted"> (${fmtResetAt(win.resetsAt)})</span>`;
+  return '';
+}
+function usageWindowsHtml(mu) {
+  const sess = mu.session || {};
+  const week = mu.week || {};
+  if (sess.percent == null && week.percent == null) return '';
+  const bar = pct => `<div class="progress-track" style="width:70px; display:inline-block; vertical-align:middle; margin:0 6px;"><div class="progress-fill" style="width:${Math.min(pct ?? 0, 100)}%"></div></div>`;
   return `<div class="real-cost-how">
-    <span>session <b class="tnum">${sessionPct}%</b> used<span class="muted"> (${fmtResetAt(mu.session?.resetsAt)})</span></span>
-    <div class="progress-track" style="width:70px; display:inline-block; vertical-align:middle; margin:0 6px;"><div class="progress-fill" style="width:${Math.min(sessionPct, 100)}%"></div></div>
-    <span>week <b class="tnum">${weekPct}%</b> used<span class="muted"> (${fmtResetAt(mu.week?.resetsAt)})</span></span>
-    <div class="progress-track" style="width:70px; display:inline-block; vertical-align:middle; margin:0 6px;"><div class="progress-fill" style="width:${Math.min(weekPct, 100)}%"></div></div>
-    <span class="muted">— same numbers claude.ai Settings → Usage shows, ${liveLabel} as of ${asOf}</span>
+    <span title="${escAttr(planWindowLabel('session'))}">${escHtml(planWindowLabel('session'))} <b class="tnum">${sess.percent != null ? sess.percent : '–'}%</b></span>
+    ${bar(sess.percent)}${windowNoteHtml(sess)}
+    <span title="${escAttr(planWindowLabel('week'))}">${escHtml(planWindowLabel('week'))} <b class="tnum">${week.percent != null ? week.percent : '–'}%</b></span>
+    ${bar(week.percent)}${windowNoteHtml(week)}
   </div>`;
 }
 
-function staleBadgeHtml(mu, asOf) {
-  if (mu.live) return `<span class="pill" style="background:var(--ok-bg); color:var(--ok-text);" title="From the status line script — a real server-reported rate_limits reading as of your last message in that account's session, not Claude Code's own internal cache.">live, as of ${asOf}</span>`;
-  const { stale } = snapshotAge(mu);
-  return stale ? `<span class="pill" style="background:var(--heavy-pill-bg); color:var(--heavy-pill-text);" title="Claude Code refreshes this cache on its own schedule, not on every request — this reading can already be behind the live number on claude.ai's own Settings page. Enable the status line (Settings) for a live reading instead.">cached ${asOf}</span>` : '';
+function staleBadgeHtml(mu) {
+  if (!mu.live) return '';
+  const label = mu.liveLabel || liveAgeLabel(mu.fetchedAt);
+  return `<span class="pill" style="background:var(--ok-bg); color:var(--ok-text);" title="From the status line — a real server-reported rate_limits reading. ${escAttr(label)}.">${escHtml(label)}</span>`;
 }
 
 // One render path for every discovered source (see server.py's build_sources) —
@@ -2463,10 +2490,10 @@ function realCostBannerHtml(mu, compact) {
   const { asOf } = snapshotAge(mu);
   return `<div class="real-cost-banner ${hasOverage ? cls : ''}">
     <span class="real-cost-label">${compact ? escHtml(mu.label) : 'Real cost beyond the subscription fee'}</span>
-    ${staleBadgeHtml(mu, asOf)}
+    ${staleBadgeHtml(mu)}
     <span class="real-cost-value tnum">${hasOverage ? fmtCredits(c.usedMinor, c.currency, c.exponent) : 'unknown'}</span>
     <span class="muted real-cost-note">${note}</span>
-    ${compact ? usageWindowsHtml(mu, asOf, mu.live ? 'live from the status line' : 'cached locally by Claude Code') : ''}
+    ${compact ? usageWindowsHtml(mu) : ''}
   </div>`;
 }
 
@@ -2604,8 +2631,8 @@ function grokPlanKnown() {
 }
 const SRC_ROW_WEIGHT = { 'src-bad': 0, '': 1, 'src-ok': 2 };
 
-// One compact row per source: a provenance chip (live/cached/manual/estimate
-// — every cost figure has to say where it came from, same rule as the rest
+// One compact row per source: a provenance chip (live / manual / estimate —
+// every cost figure has to say where it came from, same rule as the rest
 // of this app), the label, an inline mini-bar where there's a %, the amount,
 // and the full explanation moved to a hover title rather than always-on
 // prose — the row itself is the at-a-glance view, the sentence is there if
@@ -2630,18 +2657,23 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
           ? 'All usage so far is covered by the plan — this is the only figure here that reflects money actually spent beyond what’s already paid.'
           : 'Drawn from purchased usage credits after plan limits were hit — this is real extra spend.')
       : 'No usage-credit data cached for this account yet.';
-    const { stale, asOf } = snapshotAge(mu);
-    const chip = mu.live ? srcChip('LIVE', 'live') : (stale ? srcChip('CACHED', 'cached') : srcChip('CACHED', 'cached'));
-    const sessionPct = mu.session?.percent, weekPct = mu.week?.percent;
-    const extra = sessionPct == null ? '' :
-      `S ${srcMiniBar(sessionPct)} ${sessionPct}%&nbsp;&nbsp;W ${srcMiniBar(weekPct)} ${weekPct}%`;
+    const chip = mu.live ? srcChip(mu.liveLabel || liveAgeLabel(mu.fetchedAt) || 'live', 'live', 'From the status line — a real server-reported rate_limits reading.') : '';
+    const sess = mu.session || {}, week = mu.week || {};
+    const sw = (letter, which, win) => {
+      if (win.percent == null && !win.note) return '';
+      const tip = [planWindowLabel(which), win.note].filter(Boolean).join(' — ');
+      const pct = win.percent != null ? `${win.percent}%` : '–';
+      return `<span title="${escAttr(tip)}"><abbr title="${escAttr(planWindowLabel(which))}">${letter}</abbr> ${srcMiniBar(win.percent)} ${pct}${win.note ? ` <span class="muted">${escHtml(win.note)}</span>` : ''}</span>`;
+    };
+    const extra = [sw('S', 'session', sess), sw('W', 'week', week)].filter(Boolean).join('&nbsp;&nbsp;');
+    const titleBits = [note, sess.note && `Session (5-hour): ${sess.percent != null ? sess.percent + '%' : '–'} (${sess.note})`, week.note && `Weekly (7-day): ${week.percent != null ? week.percent + '%' : '–'} (${week.note})`, 'Same numbers as claude.ai Settings → Usage.'].filter(Boolean);
     return { cls, html: `
       ${chip}
       <span class="src-label">${escHtml(mu.label)}</span>
       <span class="src-extra">${extra}</span>
       <span class="src-amount tnum">${hasOverage ? fmtCredits(c.usedMinor, c.currency, c.exponent) : 'unknown'}</span>
       ${planInsightHtml(planInsight('claude:' + s.id), 'src-insight')}
-    `, title: `${note} (as of ${asOf}, ${mu.live ? 'live from the status line' : 'cached locally by Claude Code'}) — same numbers as claude.ai Settings → Usage.` };
+    `, title: titleBits.join(' ') };
   }
 
   if (s.tool === 'codex' && s.kind === 'official-live') {
@@ -3065,7 +3097,7 @@ async function refreshGrokBilling() {
 
 const KIND_BADGE = {
   'official-live': { bg: 'var(--ok-bg)', fg: 'var(--ok-text)', text: 'live' },
-  'official-cached': { bg: 'var(--heavy-pill-bg)', fg: 'var(--heavy-pill-text)', text: 'cached' },
+  'official-cached': { bg: 'var(--heavy-pill-bg)', fg: 'var(--heavy-pill-text)', text: 'as of' },
   'unofficial-live': { bg: 'var(--ok-bg)', fg: 'var(--ok-text)', text: 'unofficial live' },
   'manual': { bg: 'var(--neutral-bg)', fg: 'var(--text)', text: 'manual note' },
   'local-live': { bg: 'var(--ok-bg)', fg: 'var(--ok-text)', text: 'local' },
@@ -3650,17 +3682,17 @@ function renderMaxUsage(list) {
     return `<div class="card">
       <div class="card-head">
         <h2>Claude usage: ${escHtml(mu.label)}</h2>
-        <span class="muted">${mu.live ? 'live, ' : stale ? 'last known, ' : ''}as of ${asOf}</span>
+        <span class="muted">${mu.liveLabel || (mu.live ? liveAgeLabel(mu.fetchedAt) : (asOf ? 'as of ' + asOf : ''))}</span>
       </div>
       ${realCostBannerHtml(mu, false)}
       <div class="usage-rows">
         <div class="usage-row">
-          <div class="usage-row-label">Current session <span class="muted">${fmtResetAt(mu.session?.resetsAt)}</span></div>
+          <div class="usage-row-label" title="${escAttr(planWindowLabel('session'))}">${escHtml(planWindowLabel('session'))} <span class="muted">${escHtml((mu.session && mu.session.note) || fmtResetAt(mu.session?.resetsAt))}</span></div>
           <div class="progress-track"><div class="progress-fill" style="width:${Math.min(sessionPct, 100)}%"></div></div>
           <div class="usage-row-pct tnum">${sessionPct}%</div>
         </div>
         <div class="usage-row">
-          <div class="usage-row-label">This week <span class="muted">${fmtResetAt(mu.week?.resetsAt)}</span></div>
+          <div class="usage-row-label" title="${escAttr(planWindowLabel('week'))}">${escHtml(planWindowLabel('week'))} <span class="muted">${escHtml((mu.week && mu.week.note) || fmtResetAt(mu.week?.resetsAt))}</span></div>
           <div class="progress-track"><div class="progress-fill" style="width:${Math.min(weekPct, 100)}%"></div></div>
           <div class="usage-row-pct tnum">${weekPct}%</div>
         </div>

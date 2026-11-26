@@ -169,8 +169,7 @@ machine, not just this project — and Claude Code feeds it real, server-reporte
 accounts. The script prints a useful status line (cwd/model/5h%/7d%) AND, as a side effect,
 writes that data to `~/.claude/cc-usage-live/<accountUuid>.json` (mode 0600). `account_usage.py`'s
 `get_max_usage_snapshots()` reads that directory and prefers it over the cached
-`cachedUsageUtilization` snapshot whenever it's present — shown in the UI as a green "live, as
-of \<time\>" pill instead of the amber "cached \<time\>" one.
+`cachedUsageUtilization` snapshot whenever it's present — shown in the UI as a green "live 17:23" (or "live, 1 day old") pill. A window whose reset has passed, with no newer reading, shows 0% and "reset Fri 15:00, no use since" — never a stale percentage, and never the word "cached".
 
 **If you already have your own status line configured**, Enable wraps it rather than replacing
 it — your existing status line keeps showing exactly as before (via

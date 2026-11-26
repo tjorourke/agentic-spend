@@ -116,6 +116,21 @@ class DashboardHelperTests(unittest.TestCase):
         self.assertEqual(len(out["labels"]), 7)
         self.assertEqual(out["idx24"], list(range(0, 24, 2)) + [23])
 
+    def test_live_age_and_window_labels(self):
+        out = run_js([
+            "const now = Date.parse('2026-11-26T17:34:00+00:00');",
+            "out.fresh = liveAgeLabel('2026-11-26T17:23:26+00:00', now);",
+            "out.day = liveAgeLabel('2026-11-25T09:36:21+00:00', now);",
+            "out.days = liveAgeLabel('2026-11-24T09:36:21+00:00', now);",
+            "out.s = planWindowLabel('session');",
+            "out.w = planWindowLabel('week');",
+        ])
+        self.assertTrue(out["fresh"].startswith("live "))
+        self.assertEqual(out["day"], "live, 1 day old")
+        self.assertEqual(out["days"], "live, 2 days old")
+        self.assertEqual(out["s"], "Session (5-hour)")
+        self.assertEqual(out["w"], "Weekly (7-day)")
+
     def test_no_em_dashes_in_new_ui_strings(self):
         with open(HTML) as f:
             html = f.read()

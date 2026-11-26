@@ -16,6 +16,14 @@ struct WindowCompare: Decodable {
     let previousPeakPct: Double?
 }
 
+struct PlanWindow: Decodable {
+    let percent: Double?
+    let resetsAt: String?
+    let note: String?
+    let state: String?
+    let asOf: String?
+}
+
 struct Plan: Decodable, Identifiable {
     let key: String
     let tool: String?
@@ -25,6 +33,9 @@ struct Plan: Decodable, Identifiable {
     let windowSeconds: Int?
     let forecast: Forecast?
     let compare: WindowCompare?
+    let note: String?
+    let session: PlanWindow?
+    let week: PlanWindow?
     var id: String { key }
 }
 
@@ -100,8 +111,13 @@ enum Fmt {
         return String(Int(v))
     }
 
-    /// Same wording as the dashboard's forecast line.
+    /// Same wording as the dashboard's forecast line. A reset window uses
+    /// the server's note ("reset Fri 15:00, no use since") instead of a
+    /// forecast, because there is nothing to project from.
     static func forecastLine(_ plan: Plan) -> String {
+        if plan.week?.state == "reset" || (plan.forecast == nil && !(plan.note ?? "").isEmpty) {
+            return plan.note ?? ""
+        }
         var parts: [String] = []
         if let fc = plan.forecast {
             var text: String

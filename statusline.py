@@ -116,6 +116,54 @@ def record_usage_history(acct_uuid, five_hour, seven_day):
         pass
 
 
+
+def _as_epoch(value):
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(float(value))
+        except ValueError:
+            try:
+                text = value[:-1] + "+00:00" if value.endswith("Z") else value
+                return int(datetime.datetime.fromisoformat(text).timestamp())
+            except ValueError:
+                return None
+    return None
+
+
+def merge_live_record(previous, new, now=None):
+    """Keep an in-window figure when this payload omitted that window.
+
+    Claude Code may drop a window from rate_limits once its resets_at has
+    passed, and it can also omit five_hour on a single event even mid-window
+    (we have seen both in the same second). Overwriting a still-valid
+    session figure with null is what left the live file looking empty for
+    the 5-hour window. If the previous resets_at is already in the past we
+    leave the field null — the dashboard then shows 0% with a reset note.
+    """
+    if not previous:
+        return new
+    now = now or datetime.datetime.now(tz=datetime.timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=datetime.timezone.utc)
+    now_ts = now.timestamp()
+    out = dict(new)
+    for prefix in ("fiveHour", "sevenDay"):
+        if out.get(f"{prefix}Percent") is not None:
+            continue
+        prev_pct = previous.get(f"{prefix}Percent")
+        prev_reset = _as_epoch(previous.get(f"{prefix}ResetsAt"))
+        if prev_pct is None and prev_reset is None:
+            continue
+        if prev_reset is not None and prev_reset > now_ts:
+            out[f"{prefix}Percent"] = prev_pct
+            out[f"{prefix}ResetsAt"] = previous.get(f"{prefix}ResetsAt")
+    return out
+
+
 def write_live_file(out_path, record):
     """Write the live usage file atomically: a temp file in the same folder
     (created 0600), then a rename over the real name. Readers therefore only
@@ -158,7 +206,7 @@ def main():
             try:
                 os.makedirs(LIVE_DIR, exist_ok=True)
                 out_path = os.path.join(LIVE_DIR, f"{acct_uuid}.json")
-                write_live_file(out_path, {
+                record = {
                     "accountUuid": acct_uuid,
                     "email": email,
                     "fiveHourPercent": five_hour.get("used_percentage"),
@@ -166,10 +214,20 @@ def main():
                     "sevenDayPercent": seven_day.get("used_percentage"),
                     "sevenDayResetsAt": seven_day.get("resets_at"),
                     "writtenAt": datetime.datetime.now(tz=datetime.timezone.utc).isoformat(timespec="seconds"),
-                })
+                }
+                previous = None
+                try:
+                    with open(out_path) as existing:
+                        previous = json.load(existing)
+                except (OSError, ValueError):
+                    previous = None
+                record = merge_live_record(previous, record)
+                write_live_file(out_path, record)
+                five_hour_for_hist = {"used_percentage": record.get("fiveHourPercent"), "resets_at": record.get("fiveHourResetsAt")}
+                seven_day_for_hist = {"used_percentage": record.get("sevenDayPercent"), "resets_at": record.get("sevenDayResetsAt")}
+                record_usage_history(acct_uuid, five_hour_for_hist, seven_day_for_hist)
             except Exception:
                 pass  # never break the status line over a write failure
-            record_usage_history(acct_uuid, five_hour, seven_day)
 
     # --- what actually shows in the terminal ---
     if WRAP_COMMAND:

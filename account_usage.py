@@ -171,6 +171,228 @@ def _save_usage_snapshots(snapshots):
 LIVE_USAGE_DIR = os.path.expanduser("~/.claude/cc-usage-live")
 
 
+
+# --- plan-window readings ---------------------------------------------------
+#
+# A "reading" is one observation of a single rate-limit window (the 5-hour
+# session or the 7-day week): percent, when it resets, and when we saw it.
+# Live status-line samples, older history samples, and Claude Code's own
+# cachedUsageUtilization are all readings. resolve_window picks the one to
+# show and applies two rules:
+#   - if the window's resetsAt has passed and no later reading exists, the
+#     figure is 0% — usage can only rise again through Claude Code activity,
+#     which would have written a fresh live reading.
+#   - if the reading is older but the window has not reset, show the value
+#     with its age, and "no use since" when local session logs confirm there
+#     has been no later activity for that account.
+
+LIVE_FRESH_AFTER = datetime.timedelta(hours=24)
+# A status-line write and the transcript update for the same reply can be a
+# few seconds apart; treat activity inside this window as the same event.
+ACTIVITY_GRACE = datetime.timedelta(minutes=5)
+
+
+def parse_when(value, tz=None):
+    """ISO timestamp, Unix epoch seconds, or a datetime — as an aware datetime."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime.datetime):
+        dt = value
+    elif isinstance(value, (int, float)) and not isinstance(value, bool):
+        dt = datetime.datetime.fromtimestamp(float(value), tz=datetime.timezone.utc)
+    elif isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            dt = datetime.datetime.fromtimestamp(float(text), tz=datetime.timezone.utc)
+        except ValueError:
+            if text.endswith("Z"):
+                text = text[:-1] + "+00:00"
+            try:
+                dt = datetime.datetime.fromisoformat(text)
+            except ValueError:
+                return None
+    else:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=datetime.timezone.utc)
+    if tz is not None:
+        return dt.astimezone(tz)
+    return dt
+
+
+def _local_tz():
+    return datetime.datetime.now().astimezone().tzinfo
+
+
+def fmt_reset_short(value, tz=None):
+    """'Fri 15:00' in the given (or local) timezone."""
+    dt = parse_when(value, tz or _local_tz())
+    if not dt:
+        return None
+    return f"{dt.strftime('%a')} {dt.strftime('%H:%M')}"
+
+
+def fmt_as_of(value, now=None, tz=None):
+    """Clock time if the reading is today locally, otherwise '25 Nov, 09:36'."""
+    tz = tz or _local_tz()
+    dt = parse_when(value, tz)
+    if not dt:
+        return None
+    now = parse_when(now, tz) or datetime.datetime.now(tz)
+    if dt.date() == now.date():
+        return dt.strftime("%H:%M")
+    return f"{dt.day} {dt.strftime('%b')}, {dt.strftime('%H:%M')}"
+
+
+def live_age_label(fetched_at, now=None, tz=None):
+    """How the live badge should read.
+
+    Within 24 hours the clock time is the most useful (a session window is
+    only five hours). After that, the age in days is clearer than a clock
+    time from yesterday or last week: 'live, 1 day old', 'live, 2 days old'.
+    """
+    tz = tz or _local_tz()
+    dt = parse_when(fetched_at, tz)
+    if not dt:
+        return "live"
+    now = parse_when(now, tz) or datetime.datetime.now(tz)
+    age = now - dt
+    if age < LIVE_FRESH_AFTER:
+        when = fmt_as_of(dt, now, tz)
+        return f"live {when}" if when else "live"
+    days = int(age.total_seconds() // 86400)
+    if days < 1:
+        days = 1
+    noun = "day" if days == 1 else "days"
+    return f"live, {days} {noun} old"
+
+
+def _newest_key(reading):
+    at = parse_when(reading.get("at"))
+    # missing timestamps sort last
+    return at or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
+
+
+def resolve_window(readings, now=None, last_activity=None, tz=None):
+    """Pick the figure to show for one rate-limit window.
+
+    readings: iterable of dicts with percent, resetsAt, at, and optional
+    source ('live', 'history', or 'cached'). Entries with no percent and no
+    resetsAt are ignored. last_activity is the latest local transcript
+    activity for this account, or None if we could not tell.
+    """
+    tz = tz or _local_tz()
+    now = parse_when(now, tz) or datetime.datetime.now(tz)
+    last_activity = parse_when(last_activity, tz)
+    candidates = []
+    for raw in readings or []:
+        if not raw:
+            continue
+        percent = raw.get("percent")
+        resets = parse_when(raw.get("resetsAt") or raw.get("resets_at"))
+        if percent is None and resets is None:
+            continue
+        candidates.append({
+            "percent": percent,
+            "resetsAt": resets,
+            "at": parse_when(raw.get("at")),
+            "source": raw.get("source") or "cached",
+        })
+
+    def pack(percent, resets, as_of, source, state, note):
+        live = source in ("live", "history")
+        return {
+            "percent": percent,
+            "resetsAt": resets.isoformat() if isinstance(resets, datetime.datetime) else resets,
+            "asOf": as_of.isoformat() if isinstance(as_of, datetime.datetime) else as_of,
+            "source": source,
+            "state": state,
+            "note": note,
+            "live": live,
+        }
+
+    with_pct = [c for c in candidates if c["percent"] is not None]
+    if with_pct:
+        source_rank = {"live": 2, "history": 1, "cached": 0}
+        chosen = max(with_pct, key=lambda c: (_newest_key(c), source_rank.get(c["source"], 0)))
+        resets, as_of, source = chosen["resetsAt"], chosen["at"], chosen["source"]
+        if resets is not None and resets <= now and not (as_of and as_of >= resets):
+            # Reading belongs to a window that has already reset, and nothing
+            # newer exists. Usage is 0 until Claude Code next writes a reading.
+            reset_label = fmt_reset_short(resets, tz) or "the window"
+            return pack(0, resets, as_of, source, "reset",
+                        f"reset {reset_label}, no use since")
+        as_of_label = fmt_as_of(as_of, now, tz) or "unknown"
+        quiet = False
+        if last_activity is not None and as_of is not None:
+            quiet = last_activity <= as_of + ACTIVITY_GRACE
+        elif last_activity is not None and as_of is None:
+            quiet = False
+        if quiet:
+            note = f"as of {as_of_label}, no use since"
+        else:
+            note = f"last reading {as_of_label}"
+        return pack(chosen["percent"], resets, as_of, source, "current", note)
+
+    with_reset = [c for c in candidates if c["resetsAt"] is not None]
+    if with_reset:
+        chosen = max(with_reset, key=_newest_key)
+        resets = chosen["resetsAt"]
+        if resets <= now:
+            reset_label = fmt_reset_short(resets, tz) or "the window"
+            return pack(0, resets, chosen["at"], chosen["source"], "reset",
+                        f"reset {reset_label}, no use since")
+    return pack(None, None, None, None, "unknown", None)
+
+
+def last_history_reading(samples, percent_key, reset_key):
+    """The most recent history sample that actually has a figure for this window."""
+    for rec in reversed(list(samples or [])):
+        if rec.get(percent_key) is None:
+            continue
+        return {
+            "percent": rec.get(percent_key),
+            "resetsAt": rec.get(reset_key),
+            "at": rec.get("time"),
+            "source": "history",
+        }
+    return None
+
+
+def claude_last_activity(session_account_map=None):
+    """Latest transcript mtime per accountUuid, from Claude Code session logs.
+
+    A later mtime than the reading means we cannot claim there was no use;
+    an earlier (or equal, within ACTIVITY_GRACE) mtime means the logs show
+    no later activity. Accounts we cannot attribute are omitted, so the
+    caller falls back to 'last reading' rather than a false 'no use since'.
+    """
+    if session_account_map is None:
+        session_account_map, _ = build_session_account_map()
+    latest = {}
+    pattern = os.path.join(CLAUDE_PROJECTS, "*", "*.jsonl")
+    for path in glob.glob(pattern):
+        session_id = os.path.splitext(os.path.basename(path))[0]
+        uuid = session_account_map.get(session_id)
+        if not uuid or uuid == "unknown-session":
+            continue
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        dt = datetime.datetime.fromtimestamp(mtime, tz=datetime.timezone.utc)
+        if uuid not in latest or dt > latest[uuid]:
+            latest[uuid] = dt
+    return latest
+
+
+def _epoch_to_iso(secs):
+    dt = parse_when(secs)
+    return dt.isoformat() if dt else None
+
+
 def _load_live_usage():
     """Per-account live plan usage, written by ~/.claude/cc_usage_statusline.py
     on every status line update (see that script + ~/.claude/settings.json's
@@ -194,11 +416,6 @@ def _load_live_usage():
         if not uuid:
             continue
 
-        def _epoch_to_iso(secs):
-            if secs is None:
-                return None
-            return datetime.datetime.fromtimestamp(secs, tz=datetime.timezone.utc).isoformat()
-
         live[uuid] = {
             "accountUuid": uuid,
             "email": raw.get("email"),
@@ -210,24 +427,43 @@ def _load_live_usage():
     return live
 
 
-def get_max_usage_snapshots():
+def _as_reading(window, at, source):
+    if not window:
+        return None
+    if window.get("percent") is None and not window.get("resetsAt"):
+        return None
+    return {
+        "percent": window.get("percent"),
+        "resetsAt": window.get("resetsAt"),
+        "at": at,
+        "source": source,
+    }
+
+
+def get_max_usage_snapshots(now=None, last_activity=None, history=None):
     """Last-known plan-limit usage for EVERY account Claude Code has ever been
     logged into on this machine, not just whichever one is active right now.
 
-    Two sources, live preferred over cached per account:
+    Sources, merged per window (session and week independently):
     - Live: ~/.claude/cc-usage-live/<uuid>.json, written by the status line
       script on every reply — real server-reported rate_limits, fresh as of
       the user's last message in that account's session.
+    - History: the most recent status-line sample that actually carried a
+      figure for that window. Used when the live file omitted the window
+      (Claude Code drops a window from the payload once it has reset, and
+      can also omit five_hour on an individual event even mid-window).
     - Cached fallback: ~/.claude.json's cachedUsageUtilization, which only
       ever holds the CURRENTLY logged-in account's data and only refreshes on
       Claude Code's own schedule (can lag hours). Snapshotted into a local
       file keyed by accountUuid on every request so a switched-away account's
       last-known numbers don't disappear the moment you log into another one.
 
-    Usage credits (the $ figure, not session/week %) only come from the
-    cached source — the status line doesn't carry that — so a live snapshot
-    is merged on top of (not instead of) the cached one where both exist.
+    A window whose resetsAt has passed, with no later reading, is shown as
+    0% — not the stale percentage. Usage credits only come from the cached
+    source (the status line doesn't carry them), so credits are always
+    merged on top of, not instead of, the cached snapshot.
     """
+    now = parse_when(now) or datetime.datetime.now(datetime.timezone.utc)
     current = _capture_current_max_usage()
     snapshots = _load_usage_snapshots()
     if current and current.get("accountUuid"):
@@ -235,25 +471,57 @@ def get_max_usage_snapshots():
         _save_usage_snapshots(snapshots)
 
     live_by_uuid = _load_live_usage()
+    if history is None:
+        history = get_usage_history()
+    hist_by = {}
+    for rec in history or []:
+        hist_by.setdefault(rec.get("accountUuid"), []).append(rec)
+    if last_activity is None:
+        last_activity = claude_last_activity()
 
     labels = seed_labels_from_current_account(load_labels())
     result = []
-    for uuid, snap in snapshots.items():
-        label = labels.get(uuid, {}).get("label") or snap.get("email") or f"Unlabeled ({uuid[:8]}…)"
-        merged = {**snap, "label": label}
-        live = live_by_uuid.pop(uuid, None)
-        if live and live.get("session", {}).get("percent") is not None:
-            merged["session"] = live["session"]
-            merged["week"] = live["week"]
-            merged["fetchedAt"] = live["fetchedAt"]
-            merged["live"] = True
-        result.append(merged)
 
-    # any account with ONLY a live snapshot (no cachedUsageUtilization ever
-    # captured for it — e.g. usage credits never checked) still gets a row
+    def merge(uuid, snap, live):
+        label = labels.get(uuid, {}).get("label") or (snap or live or {}).get("email") or f"Unlabeled ({uuid[:8]}…)"
+        samples = hist_by.get(uuid) or []
+        activity = (last_activity or {}).get(uuid)
+        session = resolve_window([
+            _as_reading((live or {}).get("session"), (live or {}).get("fetchedAt"), "live"),
+            last_history_reading(samples, "fiveHourPercent", "fiveHourResetsAt"),
+            _as_reading((snap or {}).get("session"), (snap or {}).get("fetchedAt"), "cached"),
+        ], now=now, last_activity=activity)
+        week = resolve_window([
+            _as_reading((live or {}).get("week"), (live or {}).get("fetchedAt"), "live"),
+            last_history_reading(samples, "sevenDayPercent", "sevenDayResetsAt"),
+            _as_reading((snap or {}).get("week"), (snap or {}).get("fetchedAt"), "cached"),
+        ], now=now, last_activity=activity)
+        used_live = (session.get("source") in ("live", "history")) or (week.get("source") in ("live", "history")) or bool(live)
+        live_at = (live or {}).get("fetchedAt") or session.get("asOf") or week.get("asOf")
+        merged = dict(snap or {})
+        merged.update({
+            "accountUuid": uuid,
+            "email": (snap or {}).get("email") or (live or {}).get("email"),
+            "label": label,
+            "session": session,
+            "week": week,
+            "live": used_live,
+            "fetchedAt": live_at if used_live else (snap or {}).get("fetchedAt"),
+            "liveLabel": live_age_label(live_at, now=now) if used_live else None,
+            "usageCredits": (snap or {}).get("usageCredits") or (live or {}).get("usageCredits") or {},
+        })
+        if "weekBreakdown" not in merged:
+            merged["weekBreakdown"] = (snap or {}).get("weekBreakdown") or []
+        return merged
+
+    seen = set()
+    for uuid, snap in snapshots.items():
+        seen.add(uuid)
+        result.append(merge(uuid, snap, live_by_uuid.pop(uuid, None)))
     for uuid, live in live_by_uuid.items():
-        label = labels.get(uuid, {}).get("label") or live.get("email") or f"Unlabeled ({uuid[:8]}…)"
-        result.append({**live, "label": label, "usageCredits": {}})
+        if uuid in seen:
+            continue
+        result.append(merge(uuid, {}, live))
 
     result.sort(key=lambda s: s.get("fetchedAt") or "", reverse=True)
     return result

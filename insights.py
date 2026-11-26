@@ -286,6 +286,17 @@ def _grokbot_insights(grokbot, now):
     return out
 
 
+def _window_fields(window):
+    window = window or {}
+    return {
+        "percent": window.get("percent"),
+        "resetsAt": window.get("resetsAt"),
+        "note": window.get("note"),
+        "state": window.get("state"),
+        "asOf": window.get("asOf"),
+    }
+
+
 def _claude_insights(max_usage, claude_history, now):
     out = []
     for mu in max_usage or []:
@@ -293,35 +304,48 @@ def _claude_insights(max_usage, claude_history, now):
         week = mu.get("week") or {}
         pct = week.get("percent")
         reset = parse_time(week.get("resetsAt"))
-        if not uuid or pct is None or reset is None:
+        if not uuid or pct is None:
             continue
         points = []
         samples = []
+        reset_passed = bool(week.get("state") == "reset" or (reset and now and reset <= parse_time(now)))
         for s in claude_history or []:
             if s.get("accountUuid") != uuid or s.get("sevenDayPercent") is None:
                 continue
             r = parse_time(s.get("sevenDayResetsAt"))
             samples.append((s.get("time"), s.get("sevenDayPercent"), r))
-            if r is None or same_reset(r, reset):
+            if not reset_passed and (r is None or (reset and same_reset(r, reset))):
                 points.append((s.get("time"), s.get("sevenDayPercent")))
-        points.append((mu.get("fetchedAt") or now, pct))
-        samples.append((mu.get("fetchedAt") or now, pct, reset))
+        if not reset_passed:
+            points.append((mu.get("fetchedAt") or week.get("asOf") or now, pct))
+            if reset is not None:
+                samples.append((mu.get("fetchedAt") or week.get("asOf") or now, pct, reset))
         credits = mu.get("usageCredits") or {}
-        out.append({
+        # After a reset with no later reading the next window is the same
+        # length after the reset we already have; forecast is skipped because
+        # there are no points in the new window — the note tells the story.
+        if reset_passed and reset is not None:
+            while reset <= parse_time(now):
+                reset = reset + datetime.timedelta(seconds=WEEK_SECONDS)
+        item = {
             "key": "claude:" + uuid,
             "tool": "claude",
             "label": mu.get("label") or "Claude",
             "pct": round(float(pct), 1),
-            "resetAt": iso(reset),
-            "windowStart": iso(reset - datetime.timedelta(seconds=WEEK_SECONDS)),
+            "resetAt": iso(reset) if reset else None,
+            "windowStart": iso(reset - datetime.timedelta(seconds=WEEK_SECONDS)) if reset else None,
             "windowSeconds": WEEK_SECONDS,
-            "forecast": forecast(points, reset, WEEK_SECONDS, now=now),
-            "compare": compare_windows(window_peaks(samples), reset, WEEK_SECONDS, current_pct=pct),
+            "forecast": None if reset_passed or reset is None else forecast(points, reset, WEEK_SECONDS, now=now),
+            "compare": None if reset_passed or reset is None else compare_windows(window_peaks(samples), reset, WEEK_SECONDS, current_pct=pct),
+            "note": week.get("note"),
+            "session": _window_fields(mu.get("session")),
+            "week": _window_fields(week),
             "credits": {
                 "kind": "used", "value": credits.get("usedMinor"),
                 "currency": credits.get("currency"), "exponent": credits.get("exponent"),
             } if credits.get("usedMinor") is not None else None,
-        })
+        }
+        out.append(item)
     return out
 
 
