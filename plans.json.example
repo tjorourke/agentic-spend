@@ -1,17 +1,9 @@
 {
-  "_readme": "Copy this to plans.json (gitignored) and edit for your own accounts. Keyed by ccusage's agent name (grok/codex/opencode/droid/...). Claude Code needs no entry here — its real plan-limit usage is read automatically from ~/.claude.json. coveredByPlan:true shows the account as $0 real cost (green); false or omitted shows the ccusage cost estimate as the real-cost figure (neutral/red). There's no local API for most of these, so check each tool's own usage/billing page by hand and update asOf when you do.",
+  "_readme": "Copy this to plans.json (gitignored) and edit for your own accounts. Keyed by ccusage's agent name (grok/codex/opencode/droid/...). Claude Code needs no entry here — its real plan-limit usage is read automatically from ~/.claude.json. coveredByPlan:true shows the account as $0 real cost (green); false or omitted shows the ccusage cost estimate as the real-cost figure (neutral/red). There's no local API for most of these, so check each tool's own usage/billing page by hand and update asOf when you do. Grok Bot is the exception: the dashboard reads the desktop app's local weekly-usage cache automatically, so it does not need an entry here.",
   "grok": {
     "plan": "example plan name, e.g. Super",
     "coveredByPlan": true,
     "note": "Why you believe this is covered. For example, the tool's own usage page showed no extra charge.",
     "asOf": "YYYY-MM-DD"
-  },
-  "grok-bot": {
-    "plan": "example plan name",
-    "weeklyLimitPercent": 0,
-    "resetsAt": "Monday 00:00",
-    "note": "Typed from the Grok Bot app. There is no local token or cost feed for the bot.",
-    "asOf": "YYYY-MM-DD",
-    "coveredByPlan": false
   }
 }

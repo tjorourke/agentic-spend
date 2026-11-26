@@ -676,12 +676,7 @@
       is tagged with whoever is signed in to the grok CLI then. Older sessions stay
       "Unattributed Grok account" until you name them here.
     </div>
-    <div class="card" id="grokBotCard" style="margin-bottom:1rem;">
-      <div class="card-head"><h2>Grok Bot</h2></div>
-      <p class="muted">There is no token or cost feed for Grok Bot. The figures above are the Grok CLI only.</p>
-      <p>Check usage in the Grok Bot app (Settings &gt; Usage &amp; Billing).</p>
-      <p class="muted" id="grokBotSaved"></p>
-    </div>
+    <div id="grokBotCards" style="display:flex; flex-direction:column; gap:1rem; margin-bottom:1rem;"></div>
     <div class="muted" style="margin-bottom: 0.8rem;" id="maxUsageIntro"></div>
     <div id="maxUsageContainer" style="display:flex; flex-direction:column; gap:1rem; margin-bottom:1rem;"></div>
     <div class="muted" id="acctRangeNote" style="margin-bottom: 0.8rem;"></div>
@@ -799,6 +794,121 @@ function shortReset(iso) {
   const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
   if (d.toDateString() === new Date().toDateString()) return time;
   return `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${time}`;
+}
+
+const GROKBOT_STALE_MS = 1000 * 60 * 60 * 12;
+
+function grokBotIsStale(iso) {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t > GROKBOT_STALE_MS;
+}
+
+function formatPct(pct) {
+  const n = Number(pct);
+  if (Number.isNaN(n)) return '';
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+function fmtResetCountdown(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const local = d.toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  const ms = d.getTime() - Date.now();
+  if (ms <= 0) return `reset ${local}`;
+  const hours = Math.floor(ms / 3600000);
+  const days = Math.floor(hours / 24);
+  let left;
+  if (days >= 1) {
+    const remH = hours - days * 24;
+    left = remH ? `in ${days}d ${remH}h` : `in ${days}d`;
+  } else if (hours >= 1) {
+    const mins = Math.floor((ms - hours * 3600000) / 60000);
+    left = mins ? `in ${hours}h ${mins}m` : `in ${hours}h`;
+  } else {
+    const mins = Math.max(1, Math.floor(ms / 60000));
+    left = `in ${mins}m`;
+  }
+  return `resets ${local} (${left})`;
+}
+
+function grokBotAccounts() {
+  return (data && data.grokBot && data.grokBot.accounts) || [];
+}
+
+function grokBotEmptyCopy() {
+  return 'No Grok Bot usage cache found on this Mac yet. The Grok Bot desktop app writes one under ~/Library/Application Support/Grok Bot/ when it has fetched your usage. Open the Grok Bot app once (its own Usage page is enough), then refresh this dashboard. This tool only reads that local file; it does not call Grok\'s servers.';
+}
+
+function fillGrokBotSettingsNote() {
+  const el = document.getElementById('grokBotSettingsNote');
+  if (!el) return;
+  const accounts = grokBotAccounts();
+  if (!accounts.length) {
+    el.textContent = grokBotEmptyCopy();
+    return;
+  }
+  const bits = accounts.map(a => {
+    const plan = a.plan || 'plan';
+    const pct = a.weeklyPct != null ? formatPct(a.weeklyPct) + '% used' : 'no figure';
+    return `${plan}: ${pct}, last read ${a.updatedAt ? new Date(a.updatedAt).toLocaleString() : 'unknown'}`;
+  });
+  el.textContent = 'Read automatically from the Grok Bot app\'s local usage cache on this Mac. ' + bits.join(' · ') + '. The Accounts tab shows the weekly share, reset time, and any extra credits. A push script is included for machines that do not have the app.';
+}
+
+function renderGrokBotCards() {
+  const box = document.getElementById('grokBotCards');
+  if (!box) return;
+  const accounts = grokBotAccounts();
+  if (!accounts.length) {
+    box.innerHTML = `<div class="card">
+      <div class="card-head"><h2>Grok Bot</h2></div>
+      <p>${escHtml(grokBotEmptyCopy())}</p>
+    </div>`;
+    return;
+  }
+  const multi = accounts.length > 1;
+  box.innerHTML = accounts.map(a => {
+    const pct = a.weeklyPct;
+    const stale = grokBotIsStale(a.updatedAt);
+    const title = multi
+      ? `Grok Bot: ${a.current ? 'current account' : (a.plan || 'account')}`
+      : 'Grok Bot';
+    const planBits = [a.plan, a.planLabel && a.planLabel !== a.plan ? a.planLabel : null].filter(Boolean).map(escHtml).join(' · ');
+    const updated = a.updatedAt
+      ? new Date(a.updatedAt).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+      : 'unknown';
+    const asOf = stale
+      ? `last updated ${updated} (stale, older than 12 hours; open the Grok Bot app to refresh the cache)`
+      : `last updated ${updated}`;
+    const credits = a.creditsUsd != null
+      ? `$${Number(a.creditsUsd).toFixed(2)} of extra credits left`
+      : 'No extra-credits figure in this cache reading.';
+    const history = (a.history || []).map(h => ({ time: h.at, weeklyPct: h.weeklyPct }));
+    const refuse = a.wouldRefuseSend
+      ? '<p class="muted">The cache says new work would be refused until usage resets or more credits are added.</p>'
+      : '';
+    return `<div class="card">
+      <div class="card-head">
+        <h2>${escHtml(title)}</h2>
+        <span class="muted">${escHtml(asOf)}</span>
+      </div>
+      <p class="muted">${planBits || 'Plan name not in the cache'}${a.current && multi ? ' · signed in now' : ''}</p>
+      <div class="usage-rows">
+        <div class="usage-row">
+          <div class="usage-row-label">This week <span class="muted">${escHtml(fmtResetCountdown(a.resetAt) || 'reset time unknown')}</span></div>
+          <div class="progress-track"><div class="progress-fill" style="width:${Math.min(pct ?? 0, 100)}%"></div></div>
+          <div class="usage-row-pct tnum">${pct != null ? escHtml(formatPct(pct)) + '%' : '—'}</div>
+        </div>
+      </div>
+      <p style="margin-top:0.8rem;">${escHtml(credits)}</p>
+      ${refuse}
+      ${usageHistoryChartHtml(history, [{ key: 'weeklyPct', label: 'Weekly limit', color: 'var(--accent)' }], 'Weekly usage over time')}
+      <p class="muted" style="margin-top:0.8rem;">${escHtml(a.note || 'Grok Bot reports usage as a share of a weekly limit shared with other apps, not tokens or dollars.')} Read from the Grok Bot app\'s local usage cache on this Mac. This dashboard does not call Grok\'s servers.</p>
+    </div>`;
+  }).join('');
 }
 
 // " (<plan> plan)" reads fine for a short tier name ("Pro"), but a saved
@@ -2071,16 +2181,27 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
   }
 
   if (s.grokBot) {
+    const acct = s.grokBotAccount || {};
+    const pct = acct.weeklyPct ?? s.weeklyLimitPercent;
+    const credits = acct.creditsUsd ?? s.creditsUsd;
+    const stale = grokBotIsStale(acct.updatedAt || s.asOf);
     const bits = [];
     if (s.plan) bits.push(escHtml(s.plan));
-    if (s.weeklyLimitPercent != null) bits.push(`${escHtml(s.weeklyLimitPercent)}% of weekly limit`);
-    if (s.resetsAt) bits.push('resets ' + escHtml(s.resetsAt));
+    if (pct != null) bits.push(`${srcMiniBar(pct)} ${escHtml(formatPct(pct))} of weekly limit`);
+    if (s.resetsAt) bits.push(escHtml(fmtResetCountdown(s.resetsAt)));
+    if (stale) bits.push('cached, may be stale');
+    const amount = credits != null
+      ? `$${Number(credits).toFixed(2)} credits`
+      : (pct == null ? 'no cache yet' : 'included');
+    const chip = pct == null
+      ? srcChip('ESTIMATE', '')
+      : srcChip('CACHED', 'cached');
     return { cls: '', html: `
-      ${srcChip(s.kind === 'manual' ? 'MANUAL' : 'ESTIMATE', s.kind === 'manual' ? 'manual' : '')}
+      ${chip}
       <span class="src-label">${escHtml(s.label)}</span>
-      <span class="src-extra">${bits.join(' · ') || 'no token or cost feed'}</span>
-      <span class="src-amount tnum">no feed</span>
-    `, title: `${s.note || ''} Check usage in the Grok Bot app (Settings > Usage & Billing).` };
+      <span class="src-extra">${bits.join(' · ') || 'no local usage cache yet'}</span>
+      <span class="src-amount tnum">${amount}</span>
+    `, title: s.note || '' };
   }
 
   if (s.tool === 'grok' && s.kind === 'unofficial-live') {
@@ -2160,31 +2281,6 @@ function fillPlanForm(agent, plans) {
 function currentPlanName() {
   const tierSel = document.getElementById('planTierSelect');
   return tierSel.value === '__custom__' ? document.getElementById('planNameCustom').value : tierSel.value;
-}
-
-async function saveGrokBotForm() {
-  const status = document.getElementById('grokBotStatus');
-  status.textContent = 'Saving…';
-  try {
-    const res = await fetch('/api/plans', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        agent: 'grok-bot',
-        plan: document.getElementById('grokBotPlan').value,
-        coveredByPlan: false,
-        note: document.getElementById('grokBotNote').value,
-        asOf: document.getElementById('grokBotAsOf').value,
-        weeklyLimitPercent: document.getElementById('grokBotPct').value,
-        resetsAt: document.getElementById('grokBotReset').value,
-      }),
-    });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    status.textContent = 'Saved on this machine.';
-    load(true);
-  } catch (e) {
-    status.textContent = 'Error: ' + e.message;
-  }
 }
 
 async function savePlanForm() {
@@ -2558,21 +2654,7 @@ function renderSettingsPage() {
       </div>
 
       <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">Grok Bot</div>
-      <p class="muted">No token or cost feed. Type what the app shows. This does not call Grok.</p>
-      <p>Check usage in the Grok Bot app (Settings &gt; Usage &amp; Billing).</p>
-      <div style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:flex-end;">
-        <label>Plan name<br><input id="grokBotPlan" value="${escAttr((plans || {})['grok-bot'] && (plans || {})['grok-bot'].plan || '')}" placeholder="e.g. SuperGrok"></label>
-        <label>Weekly limit %<br><input id="grokBotPct" type="number" min="0" max="100" value="${escAttr((plans || {})['grok-bot'] && (plans || {})['grok-bot'].weeklyLimitPercent != null ? (plans || {})['grok-bot'].weeklyLimitPercent : '')}" style="width:6rem;"></label>
-        <label>Reset<br><input id="grokBotReset" value="${escAttr((plans || {})['grok-bot'] && (plans || {})['grok-bot'].resetsAt || '')}" placeholder="e.g. Monday 00:00"></label>
-        <label>Checked on<br><input id="grokBotAsOf" type="date" value="${escAttr((plans || {})['grok-bot'] && (plans || {})['grok-bot'].asOf || '')}"></label>
-      </div>
-      <label style="display:block; margin-top:0.5rem;">Note<br>
-        <textarea id="grokBotNote" rows="2" style="width:100%;">${escHtml((plans || {})['grok-bot'] && (plans || {})['grok-bot'].note || '')}</textarea>
-      </label>
-      <div style="display:flex; align-items:center; gap:0.6rem; margin-top:0.5rem;">
-        <button type="button" id="grokBotSave">Save Grok Bot note</button>
-        <span class="muted" id="grokBotStatus"></span>
-      </div>
+      <p class="muted" id="grokBotSettingsNote"></p>
     </div>
   `;
 
@@ -2595,7 +2677,7 @@ function renderSettingsPage() {
   document.getElementById('planSaveBtn').onclick = savePlanForm;
   document.getElementById('planDeleteBtn').onclick = deletePlanForm;
 
-  document.getElementById('grokBotSave').onclick = saveGrokBotForm;
+  fillGrokBotSettingsNote();
   document.getElementById('grokToggle').onchange = e => toggleGrokLive(e.target.checked);
   const grokRefreshBtn = document.getElementById('grokRefreshBtn');
   if (grokRefreshBtn) grokRefreshBtn.onclick = refreshGrokBilling;
@@ -3226,13 +3308,7 @@ function update() {
 
   // ---- accounts (uses the same range picker as every other tab) ----
   if (tab === 'accounts') {
-    const botSaved = document.getElementById('grokBotSaved');
-    if (botSaved) {
-      const bot = (data.plans || {})['grok-bot'];
-      botSaved.textContent = bot && (bot.plan || bot.weeklyLimitPercent != null)
-        ? `Saved note: ${bot.plan || 'plan'} ${bot.weeklyLimitPercent != null ? bot.weeklyLimitPercent + '% of the weekly limit' : ''} ${bot.resetsAt ? 'resets ' + bot.resetsAt : ''}. Edit it in Settings.`
-        : 'Save a manual note in Settings.';
-    }
+    renderGrokBotCards();
     renderMaxUsage(data.maxUsage);
     document.getElementById('acctRangeNote').textContent =
       (range >= 9999 && !customFrom && !customTo) ? 'All time' : `${cutoff} → ${windowEnd}`;

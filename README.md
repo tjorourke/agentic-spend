@@ -68,7 +68,7 @@ python3 -m unittest discover -s tests
 
 Stdlib `unittest`, no pip installs, consistent with the rest of the project. Covers the pure
 data-transformation functions (`compute_accounts`, `build_hourly`, `build_sources`, the Grok
-billing parser, the plan-usage-history writer/reader, and the token-source classifier) — the
+billing parser, the Grok Bot cache reader, the plan-usage-history writer/reader, and the token-source classifier) — the
 logic most likely to silently produce a wrong figure.
 
 ### Upgrading
@@ -181,9 +181,17 @@ match a manual plan note you've saved, the UI flags it rather than silently pref
   Older sessions stay "Unattributed Grok account" until you name them. The map is
   `grok-account-map.json` in the data directory (see the example). The unofficial
   `_x.ai/billing` reading is unchanged and still opt-in.
-- **Grok Bot:** there is no token or cost feed. Settings has a manual note (plan name, weekly
-  limit percent, reset). Check usage in the Grok Bot app (Settings > Usage & Billing). Nothing
-  is scraped.
+- **Grok Bot:** the weekly plan share is read automatically from the Grok Bot desktop app's
+  local cache on this Mac (`~/Library/Application Support/Grok Bot/sand-client-persistence/`).
+  The card shows the plan name, weekly percentage, reset time (local, with a countdown), extra
+  credits, and a short history of the percentage. Grok Bot reports a share of a weekly limit
+  shared with other apps on the plan, not tokens or a dollar spend. This dashboard only reads
+  that local file; it does not call Grok's servers or use cookies or tokens. If the cache is
+  not there yet, the card explains how to get one: open the Grok Bot app so it can write the
+  snapshot, then refresh. For a machine without the app, `scripts/grokbot-push.sh` can POST a
+  JSON snapshot (or a pasted usage report) to `http://127.0.0.1:8787/api/grokbot`, or write
+  the file directly if the server is down. Several Grok Bot accounts each keep their own
+  history, keyed by the account id in the cache filename.
 - **Plan usage over time** (on the Accounts page) — a chart of the 5h/weekly/30-day window
   percentage, not just the current reading. Claude's history accumulates going forward from the
   status line; Codex's is backfilled for real from its own rollout files, which already carry a

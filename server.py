@@ -23,6 +23,7 @@ import urllib.parse
 import account_usage
 import data_dir
 import grok_usage
+import grokbot_usage
 import provider_usage
 import statusline_setup
 import token_sources
@@ -325,7 +326,7 @@ def build_sources(account_list, max_usage_list, codex_live, grok_on, grok_billin
     return sources
 
 
-def _with_grok_sources(sources, grok_report, plans):
+def _with_grok_sources(sources, grok_report, plans, grokbot=None):
     sources = list(sources)
     if grok_report.get("found"):
         known = all(day.get("costKnown") for day in grok_report.get("days") or [])
@@ -340,21 +341,48 @@ def _with_grok_sources(sources, grok_report, plans):
             "note": grok_usage.COST_NOTE,
             "costKnown": known,
         })
-    bot = (plans or {}).get("grok-bot") or {}
-    sources.append({
-        "id": "grok-bot",
-        "tool": "grok-bot",
-        "provider": "xai",
-        "label": "Grok Bot",
-        "plan": bot.get("plan"),
-        "kind": "manual" if bot else "none",
-        "asOf": bot.get("asOf"),
-        "note": bot.get("note") or "No token or cost feed. Usage stays in the Grok Bot app.",
-        "coveredByPlan": False,
-        "weeklyLimitPercent": bot.get("weeklyLimitPercent"),
-        "resetsAt": bot.get("resetsAt"),
-        "grokBot": True,
-    })
+    accounts = (grokbot or {}).get("accounts") or []
+    if accounts:
+        multi = len(accounts) > 1
+        for acct in accounts:
+            if multi:
+                suffix = "current" if acct.get("current") else (acct.get("plan") or "account")
+                label = f"Grok Bot ({suffix})"
+                source_id = "grok-bot:" + (acct.get("accountId") or suffix)
+            else:
+                label = "Grok Bot"
+                source_id = "grok-bot"
+            sources.append({
+                "id": source_id,
+                "tool": "grok-bot",
+                "provider": "xai",
+                "label": label,
+                "plan": acct.get("plan"),
+                "kind": "official-cached",
+                "asOf": acct.get("updatedAt"),
+                "note": acct.get("note") or grokbot_usage.DEFAULT_NOTE,
+                "coveredByPlan": True,
+                "weeklyLimitPercent": acct.get("weeklyPct"),
+                "resetsAt": acct.get("resetAt"),
+                "creditsUsd": acct.get("creditsUsd"),
+                "grokBot": True,
+                "grokBotAccount": acct,
+            })
+    else:
+        sources.append({
+            "id": "grok-bot",
+            "tool": "grok-bot",
+            "provider": "xai",
+            "label": "Grok Bot",
+            "plan": None,
+            "kind": "none",
+            "asOf": None,
+            "note": "No local Grok Bot usage cache yet. The desktop app writes one when it has fetched usage; this dashboard reads that file and does not call Grok's servers.",
+            "coveredByPlan": False,
+            "weeklyLimitPercent": None,
+            "resetsAt": None,
+            "grokBot": True,
+        })
     return sources
 
 
@@ -391,6 +419,11 @@ def refresh_usage(force=False):
 
         max_usage = account_usage.get_max_usage_snapshots()
         plans = account_usage.load_plans()
+        try:
+            grokbot = grokbot_usage.collect()
+        except Exception:
+            grokbot = {"found": False, "accounts": [], "source": None}
+
         agent_provider = provider_usage.AGENT_PROVIDER
         codex_live = get_codex_live(force=force)
         unofficial_toggles = provider_usage.load_unofficial_toggles()
@@ -422,10 +455,11 @@ def refresh_usage(force=False):
                 "claude": account_usage.get_usage_history(),
                 "codex": provider_usage.get_codex_rate_limit_history(),
             },
+            "grokBot": grokbot,
             "sources": _with_grok_sources(build_sources(
                 account_list, max_usage, codex_live, unofficial_toggles.get("grok"),
                 grok_billing, plans, no_account_data, agent_provider,
-            ), grok_report, plans),
+            ), grok_report, plans, grokbot),
         }
     except FileNotFoundError as e:
         if getattr(e, "filename", None) == "npx":
@@ -593,6 +627,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json(get_token_sources_cached(query))
             except ValueError as e:
                 self._send_json({"error": str(e)}, code=400)
+        elif path == "/api/grokbot":
+            self._send_json(grokbot_usage.collect())
         elif path == "/api/labels":
             self._handle_labels_get()
         elif path in ("/", "/index.html"):
@@ -633,6 +669,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._handle_grok_billing_refresh()
         elif path == "/api/labels":
             self._handle_labels_post()
+        elif path == "/api/grokbot":
+            self._handle_grokbot_post()
         else:
             self.send_response(404)
             self.end_headers()
@@ -761,6 +799,50 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if test_result and "error" in test_result:
                 resp["warning"] = f"Key saved, but the test call failed: {test_result['error']}"
             self._send_json(resp)
+        except Exception as e:
+            self._send_json({"ok": False, "error": str(e)}, code=400)
+
+    def _handle_grokbot_post(self):
+        """Optional automation path. The dashboard usually reads the Grok Bot
+        app's local cache on its own; this endpoint lets a local assistant
+        push a snapshot when that cache is not available."""
+        if not self._client_is_local():
+            self._send_json({"ok": False, "error": "This endpoint only accepts requests from this machine."}, code=403)
+            return
+        try:
+            raw_len = self.headers.get("Content-Length") or "0"
+            if not str(raw_len).isdigit():
+                raise ValueError("Content-Length is invalid")
+            length = int(raw_len)
+            if length > 100_000:
+                raise ValueError("request body is too large")
+            raw = self.rfile.read(length) if length else b""
+            try:
+                text_body = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                raise ValueError("body must be UTF-8")
+            stripped = text_body.strip()
+            if not stripped:
+                raise ValueError("body is empty")
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            body = None
+            if ctype in ("application/json", "text/json") or stripped.startswith("{"):
+                try:
+                    parsed = json.loads(stripped)
+                except json.JSONDecodeError:
+                    parsed = None
+                if isinstance(parsed, dict):
+                    body = parsed
+                elif parsed is not None:
+                    raise ValueError("JSON object required")
+            if body is None:
+                body = {"rawText": text_body}
+            saved = grokbot_usage.apply_push(body)
+            with _lock:
+                _cache["ts"] = 0.0
+            self._send_json({"ok": True, "account": saved, "grokBot": grokbot_usage.collect()})
+        except ValueError as e:
+            self._send_json({"ok": False, "error": str(e)}, code=400)
         except Exception as e:
             self._send_json({"ok": False, "error": str(e)}, code=400)
 

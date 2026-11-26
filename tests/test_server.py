@@ -12,6 +12,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 os.environ.setdefault("AGENTIC_SPEND_DATA_DIR", tempfile.mkdtemp(prefix="agentic-spend-test-"))
+os.environ.setdefault("GROK_BOT_PERSISTENCE_DIR", tempfile.mkdtemp(prefix="grokbot-persist-test-"))
 
 import server  # noqa: E402
 
@@ -269,6 +270,143 @@ class LabelEndpointTests(unittest.TestCase):
         self.assertEqual(code, 403)
         self.assertFalse(payload["ok"])
         self.assertFalse(os.path.exists(server.account_usage.LABELS_PATH))
+
+
+class GrokBotEndpointTests(unittest.TestCase):
+    """POST /api/grokbot is an optional local automation path. Figures here
+    are obviously fake (12.5%, $1.25, a sample Pro plan)."""
+
+    def setUp(self):
+        self.httpd = server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+        self.port = self.httpd.server_address[1]
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+        # Isolate history from other tests that share the process data dir.
+        path = server.grokbot_usage.HISTORY_PATH
+        if os.path.exists(path):
+            os.remove(path)
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        path = server.grokbot_usage.HISTORY_PATH
+        if os.path.exists(path):
+            os.remove(path)
+
+    def _request(self, method, path, body=None, headers=None, raw=None):
+        if raw is not None:
+            data = raw if isinstance(raw, bytes) else raw.encode()
+        else:
+            data = None if body is None else json.dumps(body).encode()
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}{path}",
+            data=data,
+            headers=headers or {},
+            method=method,
+        )
+        try:
+            with urllib.request.urlopen(req) as res:
+                return res.status, json.load(res)
+        except urllib.error.HTTPError as e:
+            payload = e.read().decode()
+            return e.code, json.loads(payload) if payload else {}
+
+    def test_get_is_empty_when_no_cache_and_no_store(self):
+        code, payload = self._request("GET", "/api/grokbot")
+        self.assertEqual(code, 200)
+        self.assertFalse(payload["found"])
+        self.assertEqual(payload["accounts"], [])
+
+    def test_post_json_then_get_round_trip(self):
+        code, payload = self._request(
+            "POST", "/api/grokbot",
+            {
+                "accountId": "work",
+                "plan": "Pro",
+                "weeklyPct": 12.5,
+                "resetAt": "2026-01-05T14:30:00+00:00",
+                "creditsUsd": 1.25,
+            },
+            {"Content-Type": "application/json"},
+        )
+        self.assertEqual(code, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["account"]["weeklyPct"], 12.5)
+        self.assertEqual(payload["account"]["plan"], "Pro")
+        self.assertEqual(payload["account"]["creditsUsd"], 1.25)
+        self.assertEqual(payload["account"]["source"], "push")
+        code, payload = self._request("GET", "/api/grokbot")
+        self.assertEqual(code, 200)
+        self.assertTrue(payload["found"])
+        self.assertEqual(payload["accounts"][0]["accountId"], "work")
+        self.assertEqual(payload["accounts"][0]["weeklyPct"], 12.5)
+
+    def test_post_raw_report_text(self):
+        report = (
+            "Plan: Pro\n"
+            "12.5% used of the weekly limit\n"
+            "Resets Monday, Jan 5 at 14:30\n"
+            "$1.25 of additional credits left\n"
+        )
+        code, payload = self._request(
+            "POST", "/api/grokbot",
+            raw=report,
+            headers={"Content-Type": "text/plain; charset=utf-8"},
+        )
+        self.assertEqual(code, 200, payload)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["account"]["weeklyPct"], 12.5)
+        self.assertEqual(payload["account"]["plan"], "Pro")
+        self.assertEqual(payload["account"]["creditsUsd"], 1.25)
+
+    def test_post_rejects_bad_percent(self):
+        code, payload = self._request(
+            "POST", "/api/grokbot",
+            {"weeklyPct": "lots"},
+            {"Content-Type": "application/json"},
+        )
+        self.assertEqual(code, 400)
+        self.assertFalse(payload["ok"])
+
+    def test_foreign_origin_is_forbidden(self):
+        code, payload = self._request(
+            "POST", "/api/grokbot",
+            {"accountId": "work", "weeklyPct": 12.5},
+            {"Content-Type": "application/json", "Origin": "https://example.com"},
+        )
+        self.assertEqual(code, 403)
+        self.assertFalse(payload["ok"])
+
+
+class WithGrokSourcesTests(unittest.TestCase):
+    def test_cached_reading_uses_official_cached_not_a_dollar_amount(self):
+        grokbot = {
+            "found": True,
+            "accounts": [{
+                "accountId": "test-account-personal",
+                "current": True,
+                "plan": "Pro",
+                "weeklyPct": 12.5,
+                "resetAt": "2026-01-05T14:30:00+00:00",
+                "creditsUsd": 1.25,
+                "updatedAt": "2026-01-03T09:00:00+00:00",
+                "note": "shared with other apps",
+            }],
+        }
+        sources = server._with_grok_sources([], {"found": False}, {}, grokbot)
+        bot = [s for s in sources if s.get("grokBot")]
+        self.assertEqual(len(bot), 1)
+        self.assertEqual(bot[0]["kind"], "official-cached")
+        self.assertEqual(bot[0]["weeklyLimitPercent"], 12.5)
+        self.assertEqual(bot[0]["plan"], "Pro")
+        self.assertEqual(bot[0]["creditsUsd"], 1.25)
+
+    def test_empty_cache_is_kind_none(self):
+        sources = server._with_grok_sources([], {"found": False}, {}, {"found": False, "accounts": []})
+        bot = [s for s in sources if s.get("grokBot")]
+        self.assertEqual(len(bot), 1)
+        self.assertEqual(bot[0]["kind"], "none")
+        self.assertIsNone(bot[0]["weeklyLimitPercent"])
 
 
 if __name__ == "__main__":

@@ -36,6 +36,6 @@ class AgenticSpend < Formula
 
   test do
     system "python3", "-c",
-           "import sys; sys.path.insert(0, '#{libexec}'); import server, account_usage, provider_usage, statusline_setup, data_dir, token_sources, grok_usage"
+           "import sys; sys.path.insert(0, '#{libexec}'); import server, account_usage, provider_usage, statusline_setup, data_dir, token_sources, grok_usage, grokbot_usage"
   end
 end
