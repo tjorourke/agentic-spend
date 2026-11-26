@@ -34,6 +34,10 @@ _LABEL_MAX = 80
 _NOTE_MAX = 500
 _LABEL_BODY_MAX = 8192
 CACHE_TTL = 10  # seconds
+GROKBOT_SAMPLE_INTERVAL = 10 * 60  # seconds, while the server is running
+_sampler_stop = threading.Event()
+_sampler_thread = None
+
 CCUSAGE_VERSION = "20.1.1"  # pinned so refresh doesn't hit the npm registry every time
 HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
 FAVICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "favicon.png")
@@ -472,7 +476,48 @@ def refresh_usage(force=False):
         return {"error": str(e)}
 
 
+def sample_grokbot_usage():
+    """Read the Grok Bot cache and append history. Cheap, no network."""
+    try:
+        return grokbot_usage.collect()
+    except Exception:
+        return None
+
+
+def _attach_fresh_grokbot(payload):
+    """Take a Grok Bot reading on every /api/usage, including cache hits.
+
+    The ccusage payload can stay cached for a few seconds; the cache file
+    still needs sampling so daily history fills in while the dashboard is open.
+    """
+    report = sample_grokbot_usage()
+    if report is not None:
+        payload["grokBot"] = report
+
+
+def _grokbot_sampler_loop():
+    sample_grokbot_usage()
+    while not _sampler_stop.wait(GROKBOT_SAMPLE_INTERVAL):
+        sample_grokbot_usage()
+
+
+def start_grokbot_sampler():
+    """Sample the Grok Bot cache every 10 minutes while the server runs."""
+    global _sampler_thread
+    if _sampler_thread is not None and _sampler_thread.is_alive():
+        return _sampler_thread
+    _sampler_stop.clear()
+    _sampler_thread = threading.Thread(
+        target=_grokbot_sampler_loop,
+        name="grokbot-sampler",
+        daemon=True,
+    )
+    _sampler_thread.start()
+    return _sampler_thread
+
+
 def get_usage(force=False):
+
     """Return the usage payload.
 
     A forced refresh that fails after a previous success does not drop the
@@ -495,8 +540,11 @@ def get_usage(force=False):
             cached = dict(_cache["data"])
             cached["stale"] = True
             cached["refreshError"] = data.get("error") or "refresh failed"
+            _attach_fresh_grokbot(cached)
             return cached
-        return dict(_cache["data"], stale=False)
+        payload = dict(_cache["data"], stale=False)
+        _attach_fresh_grokbot(payload)
+        return payload
 
 
 def _hostname(host_header):
@@ -884,6 +932,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    start_grokbot_sampler()
     with http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Handler) as httpd:
         print(f"Serving dashboard at http://127.0.0.1:{PORT}/  (Ctrl-C to stop)")
         httpd.serve_forever()

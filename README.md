@@ -184,7 +184,11 @@ match a manual plan note you've saved, the UI flags it rather than silently pref
 - **Grok Bot:** the weekly plan share is read automatically from the Grok Bot desktop app's
   local cache on this Mac (`~/Library/Application Support/Grok Bot/sand-client-persistence/`).
   The card shows the plan name, weekly percentage, reset time (local, with a countdown), extra
-  credits, and a short history of the percentage. Grok Bot reports a share of a weekly limit
+  credits, and a short history of the percentage. Overview also shows usage by day, derived
+  from positive increases in that history within the same weekly window, and a today figure
+  when you are looking at a single day. A reading is taken whenever the dashboard loads usage,
+  and every ten minutes while the server is running, so the day fills in even if the page is
+  closed. Grok Bot reports a share of a weekly limit
   shared with other apps on the plan, not tokens or a dollar spend. This dashboard only reads
   that local file; it does not call Grok's servers or use cookies or tokens. If the cache is
   not there yet, the card explains how to get one: open the Grok Bot app so it can write the

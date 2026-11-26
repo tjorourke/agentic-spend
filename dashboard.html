@@ -262,9 +262,12 @@
   .card-head h2 { font-size: 0.95rem; margin: 0; }
   .muted { color: var(--muted); font-size: 0.8rem; }
 
-  #chart, #acctChart, #modelDetailChart, #hourlyChart { width: 100%; height: 220px; overflow: visible; display: block; }
+  #chart, #acctChart, #modelDetailChart, #hourlyChart, #grokBotDailyChart, #grokBotHourlyChart { width: 100%; height: 220px; overflow: visible; display: block; }
   #acctChart { height: 140px; }
   #hourlyChart { height: 180px; }
+  #grokBotDailyChart, #grokBotHourlyChart { height: 140px; }
+  #grokBotTodayCard .today-fig { font-size: 1.35rem; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  #grokBotTodayCard .today-note { margin-top: 0.25rem; }
   .bar-rect { fill: var(--accent); transition: opacity 0.1s; }
   .bar-rect:hover { opacity: 0.75; }
   .gridline { stroke: var(--border); stroke-width: 1; }
@@ -549,6 +552,7 @@
 
   <section id="view-overview" class="view active">
     <div class="card" id="realCostOverview" style="display:none; margin-bottom: 1rem;"></div>
+    <div class="card" id="grokBotTodayCard" style="display:none; margin-bottom: 1rem;"></div>
     <div class="cards">
       <div class="card kpi" id="kpiSpend" title="ccusage list price for this range: token counts times published prices, in USD. Real and covered underneath reuse the split on the card below.">
         <div class="label">List-price estimate</div>
@@ -594,9 +598,21 @@
       </div>
     </div>
 
+    <div class="card" id="grokBotDailyCard" style="margin-top: 1rem; display:none;">
+      <div class="card-head">
+        <h2>Grok Bot usage by day</h2>
+        <span class="muted" id="grokBotDailyChartNote"></span>
+      </div>
+      <svg id="grokBotDailyChart" role="img" aria-label="Grok Bot usage by day, percent of weekly limit"></svg>
+    </div>
+
     <div class="card" id="hourlyCard" style="margin-top: 1rem; display:none;">
       <div class="card-head"><h2>Hourly <span id="hourlyMetricLabel"></span> <span id="hourlyDayLabel">(today)</span></h2><span class="muted" id="hourlyChartNote"></span></div>
       <svg id="hourlyChart" role="img" aria-label="Hourly spend chart"></svg>
+      <div id="grokBotHourlyChartWrap" style="display:none; margin-top:1.2rem; padding-top:1rem; border-top:1px solid var(--border);">
+        <div class="card-head" style="margin-bottom:0.3rem;"><h2 style="font-size:0.85rem;">Grok Bot usage by hour</h2><span class="muted" id="grokBotHourlyChartNote"></span></div>
+        <svg id="grokBotHourlyChart" role="img" aria-label="Grok Bot usage by hour, percent of weekly limit"></svg>
+      </div>
     </div>
 
     <div class="card" style="margin-top: 1rem;">
@@ -844,6 +860,56 @@ function fmtResetCountdown(iso) {
 
 function grokBotAccounts() {
   return (data && data.grokBot && data.grokBot.accounts) || [];
+}
+
+function preferredGrokBotAccount() {
+  const accounts = grokBotAccounts();
+  return accounts.find(a => a.current) || accounts[0] || null;
+}
+
+function showGrokBotUsage(filterValue) {
+  if (!filterValue || filterValue === 'all' || filterValue === 'grok') return true;
+  if (String(filterValue).startsWith('account:')) {
+    const id = String(filterValue).slice('account:'.length);
+    return grokBotAccounts().some(a => a.accountId === id);
+  }
+  return false;
+}
+
+function formatCoverageSince(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `since ${hh}:${mm}`;
+}
+
+function grokBotDaysInRange(cutoff, windowEnd, account) {
+  const acct = account || preferredGrokBotAccount();
+  if (!acct) return [];
+  return (acct.dailyUsage || []).filter(d => d.date >= cutoff && d.date <= windowEnd);
+}
+
+function grokBotUsedInRange(cutoff, windowEnd) {
+  return grokBotAccounts().some(a => (a.dailyUsage || []).some(d => d.date >= cutoff && d.date <= windowEnd && (d.usedPct || 0) > 0));
+}
+
+function grokBotHasCoverageInRange(cutoff, windowEnd) {
+  return grokBotAccounts().some(a => (a.dailyUsage || []).some(d => d.date >= cutoff && d.date <= windowEnd));
+}
+
+function grokBotUsedPctSum(cutoff, windowEnd, account) {
+  return grokBotDaysInRange(cutoff, windowEnd, account).reduce((s, d) => s + (d.usedPct || 0), 0);
+}
+
+function signedPct(pct) {
+  const n = Number(pct);
+  if (Number.isNaN(n)) return '';
+  const body = formatPct(Math.abs(n));
+  if (n > 0) return '+' + body;
+  if (n < 0) return '-' + body;
+  return body;
 }
 
 function grokBotEmptyCopy() {
@@ -1830,6 +1896,21 @@ function fillCalendarDays(rows, cutoff, windowEnd, blank) {
   return out;
 }
 
+function isGrokCliSession(session) {
+  if (!session) return false;
+  const id = session.accountUuid || '';
+  return session.agent === 'grok' || id === 'grok-unattributed' || id.startsWith('grok:');
+}
+
+function grokCliSeriesName(session) {
+  if (!session) return 'Grok CLI';
+  const label = session.label || session.accountUuid || '';
+  if (session.accountUuid === 'grok-unattributed' || label === 'Unattributed Grok account' || label === 'grok') {
+    return 'Grok CLI';
+  }
+  return label;
+}
+
 function accountChartRows(days, accountSessions, filterValue, cutoff, windowEnd) {
   // Every series comes from rowsForFilter, the same path as Daily spend and the KPIs.
   // Zero-spend days stay in the series so the bars line up with the calendar.
@@ -1843,20 +1924,29 @@ function accountChartRows(days, accountSessions, filterValue, cutoff, windowEnd)
   };
   if (!filterValue || filterValue === 'all') {
     const seen = new Set();
+    let grokFromSessions = false;
     (accountSessions || []).forEach(s => {
       if (!s.accountUuid || seen.has(s.accountUuid)) return;
       seen.add(s.accountUuid);
-      addSeries(s.label || s.accountUuid, 'account:' + s.accountUuid);
+      const name = isGrokCliSession(s) ? grokCliSeriesName(s) : (s.label || s.accountUuid);
+      addSeries(name, 'account:' + s.accountUuid);
+      if (isGrokCliSession(s)) grokFromSessions = true;
     });
     const tools = new Set();
     days.forEach(d => ((d.metadata && d.metadata.agents) || []).forEach(a => { if (a !== 'claude') tools.add(a); }));
-    [...tools].sort().forEach(tool => addSeries(tool, tool));
+    [...tools].sort().forEach(tool => {
+      // Grok CLI spend already appears as a session series (Grok CLI or a
+      // named account). Adding the raw 'grok' agent series would double-count.
+      if (tool === 'grok' && grokFromSessions) return;
+      addSeries(tool === 'grok' ? 'Grok CLI' : tool, tool);
+    });
   } else if (String(filterValue).startsWith('account:')) {
     const uuid = filterValue.slice('account:'.length);
     const sample = (accountSessions || []).find(s => s.accountUuid === uuid);
-    addSeries((sample && sample.label) || uuid, filterValue);
+    const name = isGrokCliSession(sample) ? grokCliSeriesName(sample) : ((sample && sample.label) || uuid);
+    addSeries(name, filterValue);
   } else {
-    addSeries(String(filterValue), filterValue);
+    addSeries(filterValue === 'grok' ? 'Grok CLI' : String(filterValue), filterValue);
   }
   const present = Object.values(byPeriod).sort((a, b) => a.period.localeCompare(b.period));
   return fillCalendarDays(present, cutoff, windowEnd, period => ({ period }));
@@ -1883,7 +1973,10 @@ function drawAccountChart(rows) {
     `<span class="item"><span class="swatch" style="background:${colorOf[b]}"></span>${escHtml(b)} <span class="amt tnum">${fmt(totals[b])}</span></span>`
   ).join('');
 
-  if (!rows.length || !buckets.length) { note.textContent = 'No data in this range'; return; }
+  if (!rows.length || !buckets.length) {
+    note.textContent = 'No data in this range';
+    return;
+  }
   note.textContent = `${rows[0].period} → ${rows[rows.length - 1].period} · USD list price, by each session's last-active day`;
 
   const ns = 'http://www.w3.org/2000/svg';
@@ -3123,12 +3216,155 @@ function renderCacheEfficiency(windowed) {
   }
 }
 
+function drawPctBarChart(svg, rows, axisSuffix, ariaLabel) {
+  svg.innerHTML = '';
+  labelSvg(svg, ariaLabel || '');
+  const ns = 'http://www.w3.org/2000/svg';
+  const W = svg.clientWidth || 900, H = 140, padL = 46, padB = 20, padT = 6;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  if (!rows.length) return;
+  const max = Math.max(...rows.map(r => r.value || 0), 0.01);
+  const niceMax = max * 1.15;
+  const plotW = W - padL - 10, plotH = H - padT - padB;
+  const bw = plotW / rows.length;
+  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#4f46e5';
+  for (let i = 0; i <= 2; i++) {
+    const y = padT + plotH - (i / 2) * plotH;
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', padL); line.setAttribute('x2', W - 5);
+    line.setAttribute('y1', y); line.setAttribute('y2', y);
+    line.setAttribute('class', 'gridline');
+    svg.appendChild(line);
+    const label = document.createElementNS(ns, 'text');
+    label.setAttribute('x', 4); label.setAttribute('y', y + 3);
+    label.setAttribute('class', 'axis-label');
+    label.textContent = formatPct((i / 2) * niceMax) + axisSuffix;
+    svg.appendChild(label);
+  }
+  rows.forEach((r, i) => {
+    const value = r.value || 0;
+    if (value <= 0) return;
+    const h = (value / niceMax) * plotH;
+    const x = padL + i * bw;
+    const y = padT + plotH - h;
+    const rect = document.createElementNS(ns, 'rect');
+    rect.setAttribute('x', x + bw * 0.12);
+    rect.setAttribute('y', y);
+    rect.setAttribute('width', Math.max(bw * 0.76, 1));
+    rect.setAttribute('height', Math.max(h, 0.5));
+    rect.setAttribute('fill', accentColor);
+    rect.style.fill = accentColor;
+    rect.setAttribute('class', 'bar-rect');
+    const title = document.createElementNS(ns, 'title');
+    title.textContent = `${r.label}: ${signedPct(value)}% of weekly limit`;
+    rect.appendChild(title);
+    svg.appendChild(rect);
+  });
+  const labelEvery = Math.max(1, Math.ceil(rows.length / 8));
+  rows.forEach((r, i) => {
+    if (i % labelEvery !== 0 && i !== rows.length - 1) return;
+    const x = padL + i * bw + bw / 2;
+    const t = document.createElementNS(ns, 'text');
+    t.setAttribute('x', x); t.setAttribute('y', H - 4);
+    t.setAttribute('class', 'axis-label'); t.setAttribute('text-anchor', 'middle');
+    t.textContent = r.tick || r.label;
+    svg.appendChild(t);
+  });
+}
+
+function grokBotUsageLine(usedPct, coverageStart, coverageComplete) {
+  const since = (!coverageComplete && coverageStart) ? ` (${formatCoverageSince(coverageStart)})` : '';
+  return `${signedPct(usedPct)}% of weekly limit${since}`;
+}
+
+function renderGrokBotTodayCard(cutoff, windowEnd, isSingleDay) {
+  const card = document.getElementById('grokBotTodayCard');
+  if (!card) return;
+  if (!isSingleDay || !showGrokBotUsage(agent)) {
+    card.style.display = 'none';
+    card.innerHTML = '';
+    return;
+  }
+  const day = cutoff;
+  const accounts = grokBotAccounts().filter(a => (a.dailyUsage || []).some(d => d.date === day));
+  if (!accounts.length) {
+    card.style.display = 'none';
+    card.innerHTML = '';
+    return;
+  }
+  const when = (day === todayStr()) ? 'today' : day;
+  const rows = accounts.map(a => {
+    const rec = (a.dailyUsage || []).find(d => d.date === day) || { usedPct: 0 };
+    const suffix = accounts.length > 1 && (a.plan || a.planLabel || a.accountId)
+      ? ` <span class="muted">${escHtml(a.plan || a.planLabel || '')}</span>`
+      : '';
+    return `<div>
+      <div class="today-fig">Grok Bot ${escHtml(when)}: ${escHtml(grokBotUsageLine(rec.usedPct, rec.coverageStart, rec.coverageComplete))}${suffix}</div>
+    </div>`;
+  });
+  card.innerHTML = rows.join('') + '<div class="muted today-note">Share of the weekly Grok limit, not a dollar spend.</div>';
+  card.style.display = '';
+}
+
+function renderGrokBotDailyChart(cutoff, windowEnd) {
+  const card = document.getElementById('grokBotDailyCard');
+  const svg = document.getElementById('grokBotDailyChart');
+  const note = document.getElementById('grokBotDailyChartNote');
+  if (!card || !svg) return;
+  if (!showGrokBotUsage(agent) || !grokBotUsedInRange(cutoff, windowEnd)) {
+    card.style.display = 'none';
+    svg.innerHTML = '';
+    return;
+  }
+  card.style.display = '';
+  const days = [];
+  let cursor = cutoff;
+  while (cursor <= windowEnd) {
+    days.push(cursor);
+    cursor = addDays(cursor, 1);
+    if (days.length > 400) break;
+  }
+  const acct = preferredGrokBotAccount();
+  const byDate = {};
+  grokBotDaysInRange(cutoff, windowEnd, acct).forEach(d => { byDate[d.date] = d; });
+  const rows = days.map(date => ({
+    label: date,
+    tick: date.slice(5),
+    value: (byDate[date] && byDate[date].usedPct) || 0,
+  }));
+  note.textContent = `${cutoff} to ${windowEnd} · percent of weekly limit, not priced`;
+  drawPctBarChart(svg, rows, '%', `Grok Bot usage by day from ${cutoff} to ${windowEnd}, percent of weekly limit`);
+}
+
+function renderGrokBotHourlyChart(today) {
+  const wrap = document.getElementById('grokBotHourlyChartWrap');
+  const svg = document.getElementById('grokBotHourlyChart');
+  const note = document.getElementById('grokBotHourlyChartNote');
+  if (!wrap || !svg) return;
+  const acct = preferredGrokBotAccount();
+  const hours = ((acct && acct.hourlyUsage) || []).filter(h => h.date === today && (h.usedPct || 0) > 0);
+  if (!showGrokBotUsage(agent) || !hours.length) {
+    wrap.style.display = 'none';
+    svg.innerHTML = '';
+    return;
+  }
+  wrap.style.display = '';
+  const byHour = {};
+  hours.forEach(h => { byHour[h.hour] = h.usedPct; });
+  const lastHour = Math.max(...hours.map(h => h.hour), new Date().getHours());
+  const rows = [];
+  for (let hr = 0; hr <= lastHour; hr++) {
+    const hh = String(hr).padStart(2, '0');
+    rows.push({ label: hh + ':00', tick: hh + ':00', value: byHour[hr] || 0 });
+  }
+  if (note) note.textContent = 'Percent of weekly limit, not priced';
+  drawPctBarChart(svg, rows, '%', 'Grok Bot usage by hour today, percent of weekly limit');
+}
+
 function update() {
   if (!data) return;
   const days = [...data.daily].sort((a, b) => a.period.localeCompare(b.period));
   const today = todayStr();
-
-  document.getElementById('emptyState').style.display = days.length === 0 ? '' : 'none';
 
   const agents = new Set();
   days.forEach(d => (d.metadata && d.metadata.agents || []).forEach(a => agents.add(a)));
@@ -3164,6 +3400,9 @@ function update() {
   // and the hourly chart below, neither of which make sense for a past range.
   const cutoff = customFrom || (range >= 9999 ? (days[0] ? days[0].period : today) : addDays(today, -(range - 1)));
   const windowEnd = customTo || today;
+  const grokBotVisible = showGrokBotUsage(agent);
+  document.getElementById('emptyState').style.display =
+    (days.length === 0 && !(grokBotVisible && grokBotUsedInRange(cutoff, windowEnd))) ? '' : 'none';
   const windowed = rowsForFilter(days, data.accountSessions, agent)
     .filter(d => d.period >= cutoff && d.period <= windowEnd);
 
@@ -3253,6 +3492,9 @@ function update() {
       document.getElementById('cacheReadChartWrap').style.display = 'none';
     }
 
+    renderGrokBotTodayCard(cutoff, windowEnd, isSingleDay);
+    renderGrokBotDailyChart(cutoff, windowEnd);
+
     const hourlyCard = document.getElementById('hourlyCard');
     // ccusage blocks are fetched for today only, so a past day has no hourly series.
     if (isSingleDay && !showingPastDay) {
@@ -3269,11 +3511,20 @@ function update() {
       }
       document.getElementById('hourlyDayLabel').textContent = '(today)';
       if (chartMetric === 'tokens') drawHourlyTokensChart(hourRows, ''); else drawHourlyChart(hourRows, '');
+      renderGrokBotHourlyChart(today);
     } else {
       hourlyCard.style.display = 'none';
     }
 
     drawAccountChart(accountChartRows(days, data.accountSessions, agent, cutoff, windowEnd));
+    const acctNote = document.getElementById('acctChartNote');
+    const acctLegend = document.getElementById('acctLegend');
+    if (acctNote && (!acctLegend || !acctLegend.innerHTML.trim()) && grokBotVisible && grokBotUsedInRange(cutoff, windowEnd)) {
+      acctNote.textContent = `Grok Bot used ${signedPct(grokBotUsedPctSum(cutoff, windowEnd))}% of weekly limit (not priced)`;
+    }
+  } else {
+    const todayCard = document.getElementById('grokBotTodayCard');
+    if (todayCard) { todayCard.style.display = 'none'; todayCard.innerHTML = ''; }
   }
 
   // Always runs (not just on the overview tab) — it's also what populates

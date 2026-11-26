@@ -21,6 +21,7 @@ import json
 import os
 import re
 import sys
+import threading
 import urllib.parse
 
 import data_dir
@@ -39,6 +40,8 @@ _DEFAULT_PERSISTENCE = os.path.join(
     "Grok Bot",
     "sand-client-persistence",
 )
+_store_lock = threading.Lock()
+
 ACCOUNT_SLOT_KEY = "sand.client.slice.client-meta.account-slot"
 _CACHE_KEY_RE = re.compile(r"^sand\.client\.slice\.account\.(.+)\.weekly-usage\.cache$")
 _ACCOUNT_ID_RE = re.compile(r"^[A-Za-z0-9_.:|%+\-@]{1,200}$")
@@ -226,13 +229,28 @@ def save_store(store, path=None):
     os.replace(tmp, path)
 
 
-def append_history(history, weekly_pct, at, now=None):
+def _iso(dt):
+    if dt is None:
+        return None
+    if isinstance(dt, str):
+        parsed = _parse_iso(dt)
+        if parsed is None:
+            return None
+        dt = parsed
+    return dt.astimezone(datetime.timezone.utc).isoformat(timespec="seconds")
+
+
+def append_history(history, weekly_pct, at, now=None, reset_at=None):
     """Append a point, dropping same-value samples within 30 minutes and
-    anything older than 60 days. ``history`` is a list of {at, weeklyPct}."""
+    anything older than 60 days. ``history`` is a list of {at, weeklyPct}
+    and an optional resetAt on each point."""
     now = now or datetime.datetime.now(datetime.timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=datetime.timezone.utc)
     cutoff = now - datetime.timedelta(days=HISTORY_DAYS)
     at_dt = _parse_iso(at) or now
-    at_iso = at_dt.astimezone(datetime.timezone.utc).isoformat(timespec="seconds")
+    at_iso = _iso(at_dt)
+    reset_iso = _iso(reset_at) if reset_at else None
     cleaned = []
     for point in history or []:
         if not isinstance(point, dict):
@@ -246,14 +264,24 @@ def append_history(history, weekly_pct, at, now=None):
             pct = float(point.get("weeklyPct"))
         except (TypeError, ValueError):
             continue
-        cleaned.append({"at": when.astimezone(datetime.timezone.utc).isoformat(timespec="seconds"), "weeklyPct": pct})
+        row = {
+            "at": when.astimezone(datetime.timezone.utc).isoformat(timespec="seconds"),
+            "weeklyPct": pct,
+        }
+        existing_reset = _iso(point.get("resetAt")) if point.get("resetAt") else None
+        if existing_reset:
+            row["resetAt"] = existing_reset
+        cleaned.append(row)
     if cleaned:
         last = cleaned[-1]
         last_dt = _parse_iso(last["at"])
         if last_dt is not None and abs(float(last["weeklyPct"]) - float(weekly_pct)) < 1e-9:
             if abs((at_dt - last_dt).total_seconds()) <= DEDUPE_SECONDS:
                 return cleaned
-    cleaned.append({"at": at_iso, "weeklyPct": float(weekly_pct)})
+    row = {"at": at_iso, "weeklyPct": float(weekly_pct)}
+    if reset_iso:
+        row["resetAt"] = reset_iso
+    cleaned.append(row)
     return cleaned
 
 
@@ -263,11 +291,16 @@ def merge_snapshot(store, snapshot, now=None):
     existing = accounts.get(account_id)
     if not isinstance(existing, dict):
         existing = {}
+    # History is stamped with the time we sampled the cache, not the cache
+    # file's own readAt, so repeated dashboard loads and the background
+    # sampler accumulate coverage through the day (still deduped).
+    sample_at = _iso(now) if now is not None else _now_iso()
     history = append_history(
         existing.get("history") or [],
         snapshot["weeklyPct"],
-        snapshot.get("updatedAt") or _now_iso(),
+        sample_at,
         now=now,
+        reset_at=snapshot.get("resetAt"),
     )
     entry = dict(snapshot)
     entry["history"] = history
@@ -275,37 +308,193 @@ def merge_snapshot(store, snapshot, now=None):
     return {"accounts": accounts}
 
 
-def collect(directory=None, store_path=None, now=None):
+
+def _history_points(history):
+    points = []
+    for point in history or []:
+        if not isinstance(point, dict):
+            continue
+        when = _parse_iso(point.get("at"))
+        if when is None:
+            continue
+        try:
+            pct = float(point.get("weeklyPct"))
+        except (TypeError, ValueError):
+            continue
+        points.append({
+            "at": when,
+            "weeklyPct": pct,
+            "resetAt": _parse_iso(point.get("resetAt")) if point.get("resetAt") else None,
+        })
+    points.sort(key=lambda p: p["at"])
+    return points
+
+
+def _assign_windows(points, current_reset_at=None):
+    """Split the series into weekly windows.
+
+    A new window starts when the percentage drops, or when a reading is at
+    or after the previous point's reset (nextResetMs / resetAt). The
+    account's current resetAt is used when older points did not store one.
+    """
+    reset_now = _parse_iso(current_reset_at) if isinstance(current_reset_at, str) else current_reset_at
+    window = 0
+    for i, point in enumerate(points):
+        if i == 0:
+            point["window"] = 0
+            continue
+        prev = points[i - 1]
+        new_window = False
+        if point["weeklyPct"] < prev["weeklyPct"] - 1e-9:
+            new_window = True
+        deadline = prev["resetAt"]
+        if deadline is None and reset_now is not None and prev["at"] < reset_now:
+            deadline = reset_now
+        if deadline is not None and point["at"] >= deadline:
+            new_window = True
+        if new_window:
+            window += 1
+        point["window"] = window
+    return points
+
+
+def daily_usage_from_history(history, tz=None, now=None, current_reset_at=None):
+    """Per local day (and hour), sum positive increases in the same weekly window.
+
+    The first reading in a new window counts from 0 if it is above 0 (usage
+    already accumulated after a reset, before we sampled). The first reading
+    in the whole history does not count from 0: that is the start of
+    coverage, not a known increase. A delta that spans midnight is attributed
+    to the local day and hour of the later reading.
+
+    ``tz`` should be a DST-aware timezone (for example ZoneInfo("Europe/London")).
+    When omitted, the machine's local timezone is used.
+    """
+    tz = tz or default_timezone()
+    points = _assign_windows(_history_points(history), current_reset_at=current_reset_at)
+    days = {}
+    hours = {}
+
+    def day_record(local):
+        key = local.date().isoformat()
+        rec = days.get(key)
+        if rec is None:
+            rec = {
+                "date": key,
+                "usedPct": 0.0,
+                "sinceFirstPct": 0.0,
+                "coverageStart": None,
+                "coverageComplete": False,
+                "firstPct": None,
+                "lastPct": None,
+                "_first_at": None,
+                "_first_window": None,
+            }
+            days[key] = rec
+        return rec
+
+    def add_delta(later, delta):
+        if delta <= 0:
+            return
+        local = later["at"].astimezone(tz)
+        rec = day_record(local)
+        rec["usedPct"] += delta
+        hour_key = (rec["date"], local.hour)
+        bucket = hours.get(hour_key)
+        if bucket is None:
+            bucket = {"date": rec["date"], "hour": local.hour, "usedPct": 0.0}
+            hours[hour_key] = bucket
+        bucket["usedPct"] += delta
+
+    for i, point in enumerate(points):
+        local = point["at"].astimezone(tz)
+        rec = day_record(local)
+        if rec["_first_at"] is None or point["at"] < rec["_first_at"]:
+            rec["_first_at"] = point["at"]
+            rec["firstPct"] = point["weeklyPct"]
+            rec["_first_window"] = point["window"]
+            rec["coverageStart"] = _iso(point["at"])
+        rec["lastPct"] = point["weeklyPct"]
+        if i == 0:
+            # Start of coverage, not a known post-reset burst.
+            continue
+        prev = points[i - 1]
+        if point["window"] != prev["window"]:
+            add_delta(point, point["weeklyPct"] if point["weeklyPct"] > 0 else 0.0)
+        else:
+            add_delta(point, point["weeklyPct"] - prev["weeklyPct"])
+
+    # coverageComplete: there was a same-window reading at or before local midnight.
+    for rec in days.values():
+        day_start = datetime.datetime.combine(
+            datetime.date.fromisoformat(rec["date"]),
+            datetime.time.min,
+            tzinfo=tz,
+        )
+        earlier = [p for p in points if p["at"] < day_start]
+        if earlier and rec["_first_window"] is not None and earlier[-1]["window"] == rec["_first_window"]:
+            rec["coverageComplete"] = True
+        first = rec["firstPct"]
+        last = rec["lastPct"]
+        if first is not None and last is not None:
+            rec["sinceFirstPct"] = max(0.0, last - first)
+        rec.pop("_first_at", None)
+        rec.pop("_first_window", None)
+        rec["usedPct"] = round(rec["usedPct"], 6)
+        rec["sinceFirstPct"] = round(rec["sinceFirstPct"], 6)
+
+    day_list = [days[k] for k in sorted(days)]
+    hour_list = [hours[k] for k in sorted(hours)]
+    for bucket in hour_list:
+        bucket["usedPct"] = round(bucket["usedPct"], 6)
+    return {"days": day_list, "hours": hour_list}
+
+
+def default_timezone():
+    """The machine's current local timezone, DST-aware where zoneinfo applies."""
+    return datetime.datetime.now().astimezone().tzinfo
+
+
+def collect(directory=None, store_path=None, now=None, tz=None):
     """Discover the local cache, append history, and return the public report."""
     directory = directory or persistence_dir()
     store_path = store_path or HISTORY_PATH
-    discovered = discover(directory)
-    store = load_store(store_path)
-    if discovered:
-        for snap in discovered:
-            store = merge_snapshot(store, snap, now=now)
-        save_store(store, store_path)
-        accounts = []
-        for snap in discovered:
-            entry = (store.get("accounts") or {}).get(snap["accountId"]) or snap
-            accounts.append(_public_account(entry))
-        return {"found": True, "accounts": accounts, "source": "local-cache"}
-    # No cache on disk: still return any previously stored accounts so a
-    # push/import is not wiped the next time the dashboard loads.
-    stored = []
-    for account_id, entry in (store.get("accounts") or {}).items():
-        if not isinstance(entry, dict):
-            continue
-        row = dict(entry)
-        row.setdefault("accountId", account_id)
-        if row.get("weeklyPct") is None:
-            continue
-        stored.append(_public_account(row))
-    stored.sort(key=lambda a: (not a.get("current"), a.get("accountId") or ""))
-    return {"found": bool(stored), "accounts": stored, "source": "store" if stored else None}
+    tz = tz or default_timezone()
+    with _store_lock:
+        discovered = discover(directory)
+        store = load_store(store_path)
+        if discovered:
+            for snap in discovered:
+                store = merge_snapshot(store, snap, now=now)
+            save_store(store, store_path)
+            accounts = []
+            for snap in discovered:
+                entry = (store.get("accounts") or {}).get(snap["accountId"]) or snap
+                accounts.append(_public_account(entry, tz=tz, now=now))
+            return {"found": True, "accounts": accounts, "source": "local-cache"}
+        # No cache on disk: still return any previously stored accounts so a
+        # push/import is not wiped the next time the dashboard loads.
+        stored = []
+        for account_id, entry in (store.get("accounts") or {}).items():
+            if not isinstance(entry, dict):
+                continue
+            row = dict(entry)
+            row.setdefault("accountId", account_id)
+            if row.get("weeklyPct") is None:
+                continue
+            stored.append(_public_account(row, tz=tz, now=now))
+        stored.sort(key=lambda a: (not a.get("current"), a.get("accountId") or ""))
+        return {"found": bool(stored), "accounts": stored, "source": "store" if stored else None}
 
 
-def _public_account(entry):
+def _public_account(entry, tz=None, now=None):
+    history = list(entry.get("history") or [])
+    usage = daily_usage_from_history(
+        history,
+        tz=tz or default_timezone(),
+        now=now,
+        current_reset_at=entry.get("resetAt"),
+    )
     return {
         "accountId": entry.get("accountId"),
         "current": bool(entry.get("current")),
@@ -321,7 +510,9 @@ def _public_account(entry):
         "isTeamSeat": bool(entry.get("isTeamSeat")),
         "source": entry.get("source") or "local-cache",
         "note": entry.get("note") or DEFAULT_NOTE,
-        "history": list(entry.get("history") or []),
+        "history": history,
+        "dailyUsage": usage["days"],
+        "hourlyUsage": usage["hours"],
     }
 
 
@@ -488,12 +679,14 @@ def parse_report_text(text, now=None):
     return out
 
 
-def apply_push(body, store_path=None, now=None):
+def apply_push(body, store_path=None, now=None, tz=None):
     snap = validate_snapshot(body)
-    store = load_store(store_path)
-    store = merge_snapshot(store, snap, now=now)
-    save_store(store, store_path)
-    return _public_account((store.get("accounts") or {})[snap["accountId"]])
+    with _store_lock:
+        store = load_store(store_path)
+        store = merge_snapshot(store, snap, now=now)
+        save_store(store, store_path)
+        entry = (store.get("accounts") or {})[snap["accountId"]]
+    return _public_account(entry, tz=tz, now=now)
 
 
 def _import_stdin(raw, store_path=None):

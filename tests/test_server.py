@@ -409,5 +409,15 @@ class WithGrokSourcesTests(unittest.TestCase):
         self.assertIsNone(bot[0]["weeklyLimitPercent"])
 
 
+
+class GrokBotSamplerTests(unittest.TestCase):
+    def test_sample_interval_is_ten_minutes(self):
+        self.assertEqual(server.GROKBOT_SAMPLE_INTERVAL, 10 * 60)
+
+    def test_sampler_does_not_start_on_import(self):
+        thread = getattr(server, "_sampler_thread", None)
+        self.assertTrue(thread is None or not thread.is_alive())
+
+
 if __name__ == "__main__":
     unittest.main()
