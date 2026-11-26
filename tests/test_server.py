@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import sys
@@ -104,6 +105,44 @@ class BuildSourcesTests(unittest.TestCase):
         sources = server.build_sources(account_list, max_usage, None, False, None, {}, {}, {})
         self.assertEqual(sources[0]["kind"], "official-live")
         self.assertEqual(sources[0]["asOf"], "2026-11-24T18:00:00")
+
+
+class TokenSourcesRangeTests(unittest.TestCase):
+    def setUp(self):
+        self._saved = dict(server._token_sources_cache)
+
+    def tearDown(self):
+        server._token_sources_cache.clear()
+        server._token_sources_cache.update(self._saved)
+
+    def test_long_span_is_capped_at_90_days(self):
+        since, until, _since_dt, _until_dt, capped = server.parse_token_sources_range(
+            "since=2020-01-01&until=2026-11-26", today=datetime.date(2026, 11, 26),
+        )
+        self.assertTrue(capped)
+        self.assertEqual(until, datetime.date(2026, 11, 26))
+        self.assertEqual((until - since).days + 1, 90)
+
+    def test_bad_date_is_rejected(self):
+        with self.assertRaises(ValueError):
+            server.parse_token_sources_range("since=11-26-2026")
+
+    def test_ranges_are_cached_separately(self):
+        calls = []
+
+        def fake(since_dt=None, until_dt=None):
+            calls.append((since_dt, until_dt))
+            return {"summary": {"claude": {}, "codex": {}}, "generatedAt": "t"}
+
+        with mock.patch.object(server.token_sources, "get_token_sources", side_effect=fake):
+            server._token_sources_cache.clear()
+            first = server.get_token_sources_cached("since=2026-11-01&until=2026-11-07")
+            second = server.get_token_sources_cached("since=2026-11-20&until=2026-11-26")
+            again = server.get_token_sources_cached("since=2026-11-01&until=2026-11-07")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(first["since"], "2026-11-01")
+        self.assertEqual(second["until"], "2026-11-26")
+        self.assertIs(again, first)
 
 
 class GetUsageStaleTests(unittest.TestCase):

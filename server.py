@@ -18,6 +18,7 @@ import re
 import subprocess
 import threading
 import time
+import urllib.parse
 
 import account_usage
 import data_dir
@@ -41,8 +42,9 @@ _provider_cost_cache = {"ts": 0.0, "data": None}
 PROVIDER_COST_TTL = 300  # seconds — real API calls to OpenAI, don't hammer it every 10s
 _codex_live_cache = {"ts": 0.0, "data": None}
 CODEX_LIVE_TTL = 60  # seconds — spawning `codex app-server` has real overhead, don't do it every request
-_token_sources_cache = {"ts": 0.0, "data": None}
-TOKEN_SOURCES_TTL = 120  # seconds — parsing every transcript from today takes real time; kept off the 10s /api/usage path entirely
+_token_sources_cache = {}  # (since_iso, until_iso) -> {"ts", "data"}
+TOKEN_SOURCES_TTL = 120  # seconds — parsing transcripts takes real time; kept off the 10s /api/usage path entirely
+TOKEN_SOURCES_MAX_DAYS = 90
 GROK_BILLING_CACHE_PATH = data_dir.path("grok-billing-cache.json")
 
 
@@ -95,21 +97,70 @@ def get_codex_live(force=False):
     return snap
 
 
-def get_token_sources_cached():
-    """Scoped to today only (local midnight) — parsing every transcript ever
-    written takes several seconds, not something to do on every poll. Its
-    own TTL, well away from /api/usage's 10s cache, since this is genuinely
-    expensive compared to everything else this server does."""
+def parse_token_sources_range(query, today=None):
+    """Query string without the leading '?'.
+
+    Returns (since_date, until_date, since_dt, until_dt, capped). until_dt is
+    exclusive: the start of the day after until_date, in local time. A span
+    longer than TOKEN_SOURCES_MAX_DAYS is clipped to that many days ending
+    on until_date, and capped is True.
+    """
+    today = today or datetime.date.today()
+    params = urllib.parse.parse_qs(query or "", keep_blank_values=False)
+
+    def one(name):
+        vals = params.get(name) or []
+        text = vals[0].strip() if vals and vals[0] else ""
+        return text or None
+
+    def parse_day(text, label):
+        if text is None:
+            return None
+        try:
+            return datetime.date.fromisoformat(text)
+        except ValueError:
+            raise ValueError(f"{label} must be YYYY-MM-DD")
+
+    until = parse_day(one("until"), "until") or today
+    since = parse_day(one("since"), "since") or until
+    if since > until:
+        since, until = until, since
+    capped = False
+    if (until - since).days + 1 > TOKEN_SOURCES_MAX_DAYS:
+        since = until - datetime.timedelta(days=TOKEN_SOURCES_MAX_DAYS - 1)
+        capped = True
+    since_dt = datetime.datetime.combine(since, datetime.time.min).astimezone()
+    until_dt = datetime.datetime.combine(until + datetime.timedelta(days=1), datetime.time.min).astimezone()
+    return since, until, since_dt, until_dt, capped
+
+
+def get_token_sources_cached(query=""):
+    """Token destinations for one inclusive date range, cached per range.
+
+    Parsing every transcript ever written takes several seconds, so All is
+    capped at TOKEN_SOURCES_MAX_DAYS and each range has its own TTL, away
+    from /api/usage.
+    """
+    since, until, since_dt, until_dt, capped = parse_token_sources_range(query)
+    key = (since.isoformat(), until.isoformat())
     now = time.time()
-    if _token_sources_cache["data"] is not None and (now - _token_sources_cache["ts"]) < TOKEN_SOURCES_TTL:
-        return _token_sources_cache["data"]
-    since = datetime.datetime.combine(datetime.date.today(), datetime.time())
+    expired = [k for k, entry in _token_sources_cache.items() if now - entry["ts"] >= TOKEN_SOURCES_TTL]
+    for old in expired:
+        _token_sources_cache.pop(old, None)
+    hit = _token_sources_cache.get(key)
+    if hit is not None and now - hit["ts"] < TOKEN_SOURCES_TTL:
+        return hit["data"]
     try:
-        result = token_sources.get_token_sources(since_dt=since)
+        result = token_sources.get_token_sources(since_dt=since_dt, until_dt=until_dt)
     except Exception as e:
-        result = {"error": str(e)}
-    _token_sources_cache["data"] = result
-    _token_sources_cache["ts"] = now
+        return {"error": str(e)}
+    result = dict(result)
+    result["since"] = since.isoformat()
+    result["until"] = until.isoformat()
+    result["capped"] = capped
+    if capped:
+        result["capNote"] = f"All is capped at the last {TOKEN_SOURCES_MAX_DAYS} days so this stays fast."
+    _token_sources_cache[key] = {"ts": now, "data": result}
     return result
 
 
@@ -490,7 +541,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             force = "force=1" in self.path
             self._send_json(get_usage(force=force))
         elif path == "/api/token-sources":
-            self._send_json(get_token_sources_cached())
+            query = self.path.split("?", 1)[1] if "?" in self.path else ""
+            try:
+                self._send_json(get_token_sources_cached(query))
+            except ValueError as e:
+                self._send_json({"error": str(e)}, code=400)
         elif path == "/api/labels":
             self._handle_labels_get()
         elif path in ("/", "/index.html"):
