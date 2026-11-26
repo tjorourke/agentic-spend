@@ -25,6 +25,7 @@ import data_dir
 import grok_usage
 import grokbot_usage
 import provider_usage
+import source_detection
 import statusline_setup
 import token_sources
 
@@ -437,7 +438,7 @@ def refresh_usage(force=False):
         blocks_json = fetch_claude_hourly_blocks(today_local)
         claude_blocks = build_hourly_from_blocks(blocks_json) if blocks_json is not None else None
 
-        return {
+        payload = {
             "generatedAt": datetime.datetime.now().isoformat(timespec="seconds"),
             "daily": daily_rows,
             "totals": raw.get("totals", {}),
@@ -465,6 +466,22 @@ def refresh_usage(force=False):
                 grok_billing, plans, no_account_data, agent_provider,
             ), grok_report, plans, grokbot),
         }
+        # `detection` is the per-tool installed/hasData catalog. The existing
+        # `sources` key stays the cost/plan rows, with absent tools removed.
+        hints = source_detection.hints_from_usage(
+            account_list=account_list,
+            no_account_data=no_account_data,
+            grok_report=grok_report,
+            grokbot=grokbot,
+            codex_live=codex_live,
+        )
+        detection = source_detection.detect(hints=hints)
+        payload["detection"] = detection
+        payload["sources"] = source_detection.annotate_sources(
+            source_detection.filter_absent_sources(payload["sources"], detection),
+            detection,
+        )
+        return payload
     except FileNotFoundError as e:
         if getattr(e, "filename", None) == "npx":
             return {

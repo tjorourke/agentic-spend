@@ -134,7 +134,16 @@ match a manual plan note you've saved, the UI flags it rather than silently pref
   glance, an inline mini-bar wherever there's a plan-usage %, and the amount. Rows sort with real
   cost and anything genuinely unverified (an unlabeled account, sessions with no owner record) on
   top and confirmed-covered sources at the bottom, rather than in whatever order they were found.
-  Hover a row for the full explanation.
+  Hover a row for the full explanation. A tool only appears in the dashboard when it is installed
+  on this machine (its CLI is on `PATH`, a known app bundle is present, or a data directory it
+  already uses exists) or when historical data for it is already on disk. A $0 row with no
+  activity in the selected range is hidden, unless it is a plan-limit reading such as the Grok Bot
+  weekly share or a Claude or Codex plan window. Claude-specific banners and plan tiles are
+  hidden when Claude Code is not detected. Settings lists what was found, and tucks anything
+  missing into a collapsed "Not found on this Mac" section. `/api/usage` includes a `detection`
+  list with `installed` and `hasData` for each supported tool (`claude`, `codex`, `opencode`,
+  `grok-cli`, `grok-bot`). The existing `sources` array is still the cost and plan catalog, with
+  absent tools removed and the same flags copied onto each remaining row.
 - The KPI row leads with **List-price estimate** (ccusage's USD total: tokens times published
   prices). Under it, real and covered reuse the same subtraction as "What's actually costing you
   money". **Plan limit** is the session/week usage percentage the subscription is actually bound

@@ -270,6 +270,11 @@
   .how-this-works { margin-top: 1.2rem; font-size: 0.82rem; color: var(--muted); }
   .how-this-works summary { cursor: pointer; color: var(--muted); font-size: 0.82rem; }
   .how-this-works-body { margin-top: 0.5rem; max-width: 42rem; line-height: 1.45; color: var(--muted); }
+  .not-found-sources { margin: 0.2rem 0 0.9rem; font-size: 0.82rem; color: var(--muted); }
+  .not-found-sources summary { cursor: pointer; color: var(--muted); font-size: 0.82rem; }
+  .not-found-sources ul { margin: 0.4rem 0 0; padding-left: 1.15rem; }
+  .not-found-sources li { margin: 0.15rem 0; }
+  body.no-agents #view-overview { display: none !important; }
   #grokBotTodayCard .today-fig { font-size: 1.35rem; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
   #grokBotTodayCard .today-note { margin-top: 0.25rem; }
   .bar-rect { fill: var(--accent); transition: opacity 0.1s; }
@@ -547,11 +552,20 @@
   <div id="err"></div>
   <div id="liveNudge" class="banner" style="display:none; margin-bottom: 1rem;"></div>
   <div class="card" id="emptyState" style="display:none; margin-bottom: 1rem;">
-    <strong>No usage data found yet.</strong> Agentic Spend reads local logs from Claude Code,
-    Codex, Grok and OpenCode — it looks like none of them have been used on this machine yet, or
-    their logs haven't synced. Run one of those tools for a bit, then hit refresh
-    (<span style="display:inline-block; transform:translateY(2px);">&#8635;</span>) in the
-    sidebar. Figures below will stay at zero until then.
+    <div id="emptyNoAgents" style="display:none;">
+      <strong>No supported agents found.</strong>
+      <div class="muted" style="margin-top:0.4rem;">
+        Agentic Spend looks for Claude Code, Codex, OpenCode, Grok CLI and the Grok Bot app
+        on this machine. Install one of those, use it once so it writes a local log, then refresh.
+      </div>
+    </div>
+    <div id="emptyNoData">
+      <strong>No usage data found yet.</strong> Agentic Spend reads local logs from Claude Code,
+      Codex, Grok and OpenCode — it looks like none of them have been used on this machine yet, or
+      their logs haven't synced. Run one of those tools for a bit, then hit refresh
+      (<span style="display:inline-block; transform:translateY(2px);">&#8635;</span>) in the
+      sidebar. Figures below will stay at zero until then.
+    </div>
   </div>
 
   <section id="view-overview" class="view active">
@@ -823,6 +837,42 @@ function shortReset(iso) {
 const GROKBOT_STALE_MS = 1000 * 60 * 60 * 12;
 const GROKBOT_FRESH_MS = 1000 * 60 * 60;
 
+function detectionList() {
+  return (data && data.detection) || [];
+}
+function detectionIdForTool(tool, source) {
+  if (source && source.grokBot) return 'grok-bot';
+  if (tool === 'grok' || tool === 'grok-cli') return 'grok-cli';
+  if (tool === 'grok-bot') return 'grok-bot';
+  return tool;
+}
+function sourcePresent(id) {
+  const det = detectionList();
+  if (!det.length) return true;
+  const row = det.find(d => d.id === id);
+  if (!row) return true;
+  return !!(row.installed || row.hasData);
+}
+function anySourcePresent() {
+  const det = detectionList();
+  if (!det.length) return true;
+  return det.some(d => d.installed || d.hasData);
+}
+function isPlanLimitRow(s) {
+  if (!s) return false;
+  if (s.grokBot && s.weeklyLimitPercent != null) return true;
+  if (s.tool === 'claude' && s.maxUsage) return true;
+  if (s.tool === 'codex' && s.kind === 'official-live' && s.codexLive) return true;
+  if (s.tool === 'grok' && s.kind === 'unofficial-live' && s.grokBilling) return true;
+  return false;
+}
+function sourceRowVisibleInRange(s, estimate) {
+  if (!sourcePresent(detectionIdForTool(s.tool, s))) return false;
+  if (isPlanLimitRow(s)) return true;
+  return (estimate || 0) > 0;
+}
+
+
 function grokBotIsStale(iso) {
   if (!iso) return false;
   const t = new Date(iso).getTime();
@@ -876,6 +926,7 @@ function preferredGrokBotAccount() {
 }
 
 function showGrokBotUsage(filterValue) {
+  if (!sourcePresent('grok-bot')) return false;
   if (!filterValue || filterValue === 'all' || filterValue === 'grok') return true;
   if (String(filterValue).startsWith('account:')) {
     const id = String(filterValue).slice('account:'.length);
@@ -994,6 +1045,7 @@ function fillGrokBotSettingsNote() {
 function renderGrokBotCards() {
   const box = document.getElementById('grokBotCards');
   if (!box) return;
+  if (!sourcePresent('grok-bot')) { box.innerHTML = ''; return; }
   const accounts = grokBotAccounts();
   if (!accounts.length) {
     box.innerHTML = `<div class="card">
@@ -1125,8 +1177,16 @@ async function load(force) {
 }
 
 function paintPlanLimit() {
+  const tile = document.getElementById('kpiPlan');
   const val = document.getElementById('planUsageVal');
   const sub = document.getElementById('planUsageSub');
+  const claudeOk = sourcePresent('claude');
+  const codexOk = sourcePresent('codex');
+  if (tile && !claudeOk && !codexOk) {
+    tile.style.display = 'none';
+    return;
+  }
+  if (tile) tile.style.display = '';
   sub.textContent = '';
   const line = text => {
     const el = document.createElement('div');
@@ -1140,7 +1200,8 @@ function paintPlanLimit() {
     sub.appendChild(line('n/a for this filter'));
     return;
   }
-  if (agent === 'codex') {
+  const showCodex = agent === 'codex' || (!claudeOk && codexOk && claudeFilter);
+  if (showCodex) {
     const cx = data.codexLive;
     const primary = cx && cx.primary;
     const secondary = cx && cx.secondary;
@@ -2584,7 +2645,7 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
   // reading at all (so a $0-but-covered source like Claude still shows)
   const hasGrokCli = (sources || []).some(s => s.kind === 'local-live');
   const rows = (sources || []).map(s => ({ s, ...sourceRangeEstimate(s, accountSessions, days, cutoff, today) }))
-    .filter(r => r.estimate > 0 || r.s.kind !== 'none')
+    .filter(r => sourceRowVisibleInRange(r.s, r.estimate))
     // A Grok CLI local-live row already shows the same spend as the older
     // manual "grok (Super plan)" note, so drop the duplicate.
     .filter(r => !(hasGrokCli && r.s.tool === 'grok' && (r.s.kind === 'manual' || r.s.kind === 'none')));
@@ -2653,6 +2714,7 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
 function renderLiveNudge() {
   const box = document.getElementById('liveNudge');
   if (!box) return;
+  if (!sourcePresent('claude')) { box.style.display = 'none'; return; }
   const setup = (data && data.liveUsageSetup) || {};
   const state = setup.state || 'none';
   const canEnable = state === 'none' || state === 'other';
@@ -2785,6 +2847,37 @@ function themeSectionHtml() {
   `;
 }
 
+function settingsSourcesHtml(sources) {
+  const det = detectionList();
+  const found = det.filter(d => d.installed || d.hasData);
+  const missing = det.filter(d => !d.installed && !d.hasData);
+  const catalog = sources || [];
+  const foundRows = [];
+  found.forEach(d => {
+    const rows = catalog.filter(s => detectionIdForTool(s.tool, s) === d.id);
+    if (rows.length) foundRows.push(...rows);
+    else foundRows.push({ label: d.label, tool: d.id, kind: 'none', asOf: null });
+  });
+  let html = '<div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem;">Detected on this Mac</div>';
+  if (!det.length) {
+    html = '<div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem;">Everything found, all-time</div>';
+    html += sourcesSummaryTableHtml(catalog);
+    return html;
+  }
+  if (!found.length) {
+    html += '<p class="muted">No supported agents found on this Mac.</p>';
+  } else {
+    html += sourcesSummaryTableHtml(foundRows);
+  }
+  if (missing.length) {
+    html += `<details class="not-found-sources"${found.length ? '' : ' open'}>
+      <summary>Not found on this Mac</summary>
+      <ul>${missing.map(d => `<li>${escHtml(d.label)}: not found on this Mac</li>`).join('')}</ul>
+    </details>`;
+  }
+  return html;
+}
+
 function renderSettingsPage() {
   if (!lastPlansCtx) return;
   const { sources, plans, providerStatus, liveUsageSetup, unofficialToggles } = lastPlansCtx;
@@ -2792,23 +2885,20 @@ function renderSettingsPage() {
   const grokOn = (unofficialToggles || {}).grok;
   const grokSource = (sources || []).find(s => s.tool === 'grok');
   const grokBilling = grokSource ? grokSource.grokBilling : null;
+  const showClaude = sourcePresent('claude');
+  const showCodex = sourcePresent('codex');
+  const showGrokCli = sourcePresent('grok-cli');
+  const showGrokBot = sourcePresent('grok-bot');
+  const planOptions = planAgentOptionsHtml(sources);
+  const showManual = !!planOptions;
+  const showOpenai = showCodex || openaiOn;
 
-  document.getElementById('settingsBody').innerHTML = `
-    <div class="plan-form" style="border-top:none; padding-top:0; margin-top:0;">
-      <div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem;">Everything found, all-time</div>
-      ${sourcesSummaryTableHtml(sources)}
-
-      ${accountNamesSectionHtml()}
-
-      ${themeSectionHtml()}
-
-      ${liveUsageSectionHtml(liveUsageSetup)}
-
+  const manualHtml = showManual ? `
       <div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem; border-top:1px solid var(--border); padding-top:0.9rem;">
-        Manual note <span class="muted" title="A sticky note, not a fetch — type what a tool's own billing page told you. Only shown for tools with no automatic source above (Codex/Claude are automatic, so they're not in this list).">(?)</span>
+        Manual note <span class="muted" title="A sticky note, not a fetch. Type what a tool's own billing page told you. Only shown for tools with no automatic source above (Codex and Claude are automatic, so they are not in this list).">(?)</span>
       </div>
       <div style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:flex-end;">
-        <label>Tool<br><select id="planAgentSelect">${planAgentOptionsHtml(sources)}</select></label>
+        <label>Tool<br><select id="planAgentSelect">${planOptions}</select></label>
         <label>Plan tier<br><select id="planTierSelect"></select></label>
         <label>Custom name<br><input id="planNameCustom" placeholder="e.g. SuperHeavy" style="display:none;"></label>
         <label style="display:flex; align-items:center; gap:0.3rem; padding-bottom:0.4rem;"><input type="checkbox" id="planCovered"> covered by plan ($0 real cost)</label>
@@ -2822,21 +2912,25 @@ function renderSettingsPage() {
         <button id="planDeleteBtn" style="display:none;">Remove entry</button>
         <span class="muted" id="planFormStatus"></span>
       </div>
+  ` : '';
 
+  const openaiHtml = showOpenai ? `
       <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">
-        OpenAI Admin key <span class="muted" title="Pulls a real $ figure live from OpenAI's own Costs API (org/API billing only, not a ChatGPT subscription's weekly cap). Generate one under Organization → API keys → Admin keys — a regular project key won't work.">(?)</span>
-        — ${openaiOn ? '<span style="color:var(--ok-text); font-weight:600;">configured</span>' : '<span class="muted">not configured</span>'}
+        OpenAI Admin key <span class="muted" title="Pulls a real $ figure live from OpenAI's own Costs API (org/API billing only, not a ChatGPT subscription's weekly cap). Generate one under Organization → API keys → Admin keys. A regular project key will not work.">(?)</span>
+        ${openaiOn ? '<span style="color:var(--ok-text); font-weight:600;">configured</span>' : '<span class="muted">not configured</span>'}
       </div>
       <div style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:flex-end;">
-        <label>Admin API key<br><input id="providerApiKey" type="password" placeholder="${openaiOn ? '•••••••• (set — enter a new one to replace)' : 'sk-admin-…'}" style="width:260px;"></label>
+        <label>Admin API key<br><input id="providerApiKey" type="password" placeholder="${openaiOn ? '•••••••• (set, enter a new one to replace)' : 'sk-admin-…'}" style="width:260px;"></label>
         <button id="providerSaveBtn">Save key</button>
         ${openaiOn ? '<button id="providerRemoveBtn">Remove key</button>' : ''}
         <span class="muted" id="providerKeyStatus"></span>
       </div>
+  ` : '';
 
+  const grokHtml = showGrokCli ? `
       <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">
         Grok billing <span style="color:var(--bad-text);">(unofficial)</span>
-        <span class="muted" title="Off by default, never polled automatically. Tries grok's own CLI first (no token read by this code), falls back to a direct call with the token in ~/.grok/auth.json. Could break with any Grok release — it's not a documented API.">(?)</span>
+        <span class="muted" title="Off by default, never polled automatically. Tries grok's own CLI first (no token read by this code), falls back to a direct call with the token in ~/.grok/auth.json. Could break with any Grok release, it is not a documented API.">(?)</span>
       </div>
       <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
         <label style="display:flex; align-items:center; gap:0.4rem;">
@@ -2845,9 +2939,30 @@ function renderSettingsPage() {
         ${grokOn ? '<button id="grokRefreshBtn">Refresh now</button>' : ''}
         <span class="muted" id="grokToggleStatus">${grokOn && grokBilling ? 'last fetched ' + (grokBilling.fetchedAt ? new Date(grokBilling.fetchedAt).toLocaleString() : 'never') : ''}</span>
       </div>
+  ` : '';
 
+  const grokBotHtml = showGrokBot ? `
       <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">Grok Bot</div>
       <p class="muted" id="grokBotSettingsNote"></p>
+  ` : '';
+
+  document.getElementById('settingsBody').innerHTML = `
+    <div class="plan-form" style="border-top:none; padding-top:0; margin-top:0;">
+      ${settingsSourcesHtml(sources)}
+
+      ${accountNamesSectionHtml()}
+
+      ${themeSectionHtml()}
+
+      ${showClaude ? liveUsageSectionHtml(liveUsageSetup) : ''}
+
+      ${manualHtml}
+
+      ${openaiHtml}
+
+      ${grokHtml}
+
+      ${grokBotHtml}
     </div>
   `;
 
@@ -2858,29 +2973,38 @@ function renderSettingsPage() {
 
   const providerStatusEl = document.getElementById('providerKeyStatus');
   if (providerStatusEl && providerKeyMessage) providerStatusEl.textContent = providerKeyMessage;
-  document.getElementById('providerSaveBtn').onclick = saveProviderKeyForm;
+  const providerSaveBtn = document.getElementById('providerSaveBtn');
+  if (providerSaveBtn) providerSaveBtn.onclick = saveProviderKeyForm;
   const removeBtn = document.getElementById('providerRemoveBtn');
   if (removeBtn) removeBtn.onclick = removeProviderKeyForm;
   const sel = document.getElementById('planAgentSelect');
-  sel.onchange = () => fillPlanForm(sel.value, plans);
-  fillPlanForm(sel.value, plans);
-  document.getElementById('planTierSelect').onchange = e => {
-    document.getElementById('planNameCustom').style.display = e.target.value === '__custom__' ? '' : 'none';
-  };
-  document.getElementById('planSaveBtn').onclick = savePlanForm;
-  document.getElementById('planDeleteBtn').onclick = deletePlanForm;
+  if (sel) {
+    sel.onchange = () => fillPlanForm(sel.value, plans);
+    fillPlanForm(sel.value, plans);
+    const tierSel = document.getElementById('planTierSelect');
+    if (tierSel) tierSel.onchange = e => {
+      document.getElementById('planNameCustom').style.display = e.target.value === '__custom__' ? '' : 'none';
+    };
+    const planSaveBtn = document.getElementById('planSaveBtn');
+    if (planSaveBtn) planSaveBtn.onclick = savePlanForm;
+    const planDeleteBtn = document.getElementById('planDeleteBtn');
+    if (planDeleteBtn) planDeleteBtn.onclick = deletePlanForm;
+  }
 
-  fillGrokBotSettingsNote();
-  document.getElementById('grokToggle').onchange = e => toggleGrokLive(e.target.checked);
+  if (document.getElementById('grokBotSettingsNote')) fillGrokBotSettingsNote();
+  const grokToggle = document.getElementById('grokToggle');
+  if (grokToggle) grokToggle.onchange = e => toggleGrokLive(e.target.checked);
   const grokRefreshBtn = document.getElementById('grokRefreshBtn');
   if (grokRefreshBtn) grokRefreshBtn.onclick = refreshGrokBilling;
 
-  document.getElementById('themeBtnSettings').onclick = () => {
+  const themeBtn = document.getElementById('themeBtnSettings');
+  if (themeBtn) themeBtn.onclick = () => {
     setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
     paintThemeBtn();
     renderSettingsPage();
   };
 }
+
 
 const DH_WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const DH_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -3505,16 +3629,22 @@ function update() {
   const today = todayStr();
 
   const agents = new Set();
-  days.forEach(d => (d.metadata && d.metadata.agents || []).forEach(a => agents.add(a)));
-  const claudeAccounts = (data.sources || []).filter(s => s.tool === 'claude');
+  days.forEach(d => (d.metadata && d.metadata.agents || []).forEach(a => {
+    if (sourcePresent(detectionIdForTool(a))) agents.add(a);
+  }));
+  const claudeAccounts = sourcePresent('claude')
+    ? (data.sources || []).filter(s => s.tool === 'claude')
+    : [];
   const grokSeen = new Set();
   const grokAccounts = [];
-  (data.accountSessions || []).forEach(s => {
-    if (s.agent === 'grok' && s.accountUuid && !grokSeen.has(s.accountUuid)) {
-      grokSeen.add(s.accountUuid);
-      grokAccounts.push(s);
-    }
-  });
+  if (sourcePresent('grok-cli')) {
+    (data.accountSessions || []).forEach(s => {
+      if (s.agent === 'grok' && s.accountUuid && !grokSeen.has(s.accountUuid)) {
+        grokSeen.add(s.accountUuid);
+        grokAccounts.push(s);
+      }
+    });
+  }
   const sel = document.getElementById('agentSel');
   const builtKey = [...agents].join(',') + '|' + claudeAccounts.map(a => a.id + ':' + (a.label || '')).join(',') + '|' + grokAccounts.map(a => a.accountUuid + ':' + (a.label || '')).join(',');
   if (sel.options.length <= 1 || sel.dataset.built !== builtKey) {
@@ -3539,8 +3669,21 @@ function update() {
   const cutoff = customFrom || (range >= 9999 ? (days[0] ? days[0].period : today) : addDays(today, -(range - 1)));
   const windowEnd = customTo || today;
   const grokBotVisible = showGrokBotUsage(agent);
-  document.getElementById('emptyState').style.display =
-    (days.length === 0 && !(grokBotVisible && grokBotUsedInRange(cutoff, windowEnd))) ? '' : 'none';
+  const missingAgents = !anySourcePresent();
+  document.body.classList.toggle('no-agents', missingAgents);
+  const emptyBox = document.getElementById('emptyState');
+  const emptyNoAgents = document.getElementById('emptyNoAgents');
+  const emptyNoData = document.getElementById('emptyNoData');
+  if (missingAgents) {
+    emptyBox.style.display = '';
+    if (emptyNoAgents) emptyNoAgents.style.display = '';
+    if (emptyNoData) emptyNoData.style.display = 'none';
+  } else {
+    if (emptyNoAgents) emptyNoAgents.style.display = 'none';
+    const noRangeData = days.length === 0 && !(grokBotVisible && grokBotUsedInRange(cutoff, windowEnd));
+    emptyBox.style.display = noRangeData ? '' : 'none';
+    if (emptyNoData) emptyNoData.style.display = noRangeData ? '' : 'none';
+  }
   const windowed = rowsForFilter(days, data.accountSessions, agent)
     .filter(d => d.period >= cutoff && d.period <= windowEnd);
 
