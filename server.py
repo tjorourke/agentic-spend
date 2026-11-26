@@ -341,17 +341,30 @@ def refresh_usage(force=False):
 
 
 def get_usage(force=False):
+    """Return the usage payload.
+
+    A forced refresh that fails after a previous success does not drop the
+    last good payload. The copy handed back is marked stale and carries
+    refreshError; the cache itself stays clean so a later success is not
+    stuck looking failed.
+    """
     with _lock:
         now = time.time()
         stale = _cache["data"] is None or (now - _cache["ts"] > CACHE_TTL)
         if force or stale:
             data = refresh_usage(force=force)
             if "error" not in data:
-                _cache["data"] = data
+                clean = {k: v for k, v in data.items() if k not in ("stale", "refreshError")}
+                _cache["data"] = clean
                 _cache["ts"] = now
-            elif _cache["data"] is None:
+                return dict(clean, stale=False)
+            if _cache["data"] is None:
                 return data
-        return _cache["data"]
+            cached = dict(_cache["data"])
+            cached["stale"] = True
+            cached["refreshError"] = data.get("error") or "refresh failed"
+            return cached
+        return dict(_cache["data"], stale=False)
 
 
 def _hostname(host_header):

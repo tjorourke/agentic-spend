@@ -3,9 +3,11 @@ import os
 import sys
 import tempfile
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 os.environ.setdefault("AGENTIC_SPEND_DATA_DIR", tempfile.mkdtemp(prefix="agentic-spend-test-"))
@@ -102,6 +104,41 @@ class BuildSourcesTests(unittest.TestCase):
         sources = server.build_sources(account_list, max_usage, None, False, None, {}, {}, {})
         self.assertEqual(sources[0]["kind"], "official-live")
         self.assertEqual(sources[0]["asOf"], "2026-11-24T18:00:00")
+
+
+class GetUsageStaleTests(unittest.TestCase):
+    def setUp(self):
+        self._saved = dict(server._cache)
+
+    def tearDown(self):
+        server._cache.clear()
+        server._cache.update(self._saved)
+
+    def test_forced_refresh_failure_returns_cached_payload_with_flag(self):
+        server._cache["data"] = {"generatedAt": "2026-11-20T10:00:00", "daily": []}
+        server._cache["ts"] = time.time()
+        with mock.patch.object(server, "refresh_usage", return_value={"error": "ccusage failed"}):
+            result = server.get_usage(force=True)
+        self.assertTrue(result["stale"])
+        self.assertEqual(result["refreshError"], "ccusage failed")
+        self.assertEqual(result["generatedAt"], "2026-11-20T10:00:00")
+        self.assertNotIn("stale", server._cache["data"])
+        self.assertNotIn("refreshError", server._cache["data"])
+
+    def test_successful_refresh_is_not_stale(self):
+        with mock.patch.object(server, "refresh_usage", return_value={"generatedAt": "2026-11-26T12:00:00", "daily": []}):
+            result = server.get_usage(force=True)
+        self.assertFalse(result["stale"])
+        self.assertNotIn("refreshError", result)
+        self.assertEqual(server._cache["data"]["generatedAt"], "2026-11-26T12:00:00")
+
+    def test_refresh_failure_with_no_cache_returns_the_error(self):
+        server._cache["data"] = None
+        server._cache["ts"] = 0.0
+        with mock.patch.object(server, "refresh_usage", return_value={"error": "ccusage failed", "errorType": "node_missing"}):
+            result = server.get_usage(force=True)
+        self.assertEqual(result["error"], "ccusage failed")
+        self.assertNotIn("stale", result)
 
 
 class LabelValidationTests(unittest.TestCase):
