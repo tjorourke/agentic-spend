@@ -22,8 +22,12 @@ import urllib.parse
 
 import account_usage
 import data_dir
+import digest
 import grok_usage
 import grokbot_usage
+import insights
+import login_item
+import notify
 import provider_usage
 import source_detection
 import statusline_setup
@@ -438,6 +442,8 @@ def refresh_usage(force=False):
         blocks_json = fetch_claude_hourly_blocks(today_local)
         claude_blocks = build_hourly_from_blocks(blocks_json) if blocks_json is not None else None
 
+        claude_history = account_usage.get_usage_history()
+        codex_history = provider_usage.get_codex_rate_limit_history()
         payload = {
             "generatedAt": datetime.datetime.now().isoformat(timespec="seconds"),
             "daily": daily_rows,
@@ -457,8 +463,8 @@ def refresh_usage(force=False):
             "unofficialToggles": unofficial_toggles,
             "grokBilling": grok_billing,
             "usageHistory": {
-                "claude": account_usage.get_usage_history(),
-                "codex": provider_usage.get_codex_rate_limit_history(),
+                "claude": claude_history,
+                "codex": codex_history,
             },
             "grokBot": grokbot,
             "sources": _with_grok_sources(build_sources(
@@ -477,6 +483,7 @@ def refresh_usage(force=False):
         )
         detection = source_detection.detect(hints=hints)
         payload["detection"] = detection
+        payload["planInsights"] = _plan_insights_from(payload)
         payload["sources"] = source_detection.annotate_sources(
             source_detection.filter_absent_sources(payload["sources"], detection),
             detection,
@@ -501,6 +508,22 @@ def sample_grokbot_usage():
         return None
 
 
+def _plan_insights_from(payload):
+    """Forecast and previous-window comparison for every plan with a reading,
+    built from data already in the usage payload (no extra reads)."""
+    history = payload.get("usageHistory") or {}
+    try:
+        return insights.build_plan_insights(
+            grokbot=payload.get("grokBot"),
+            max_usage=payload.get("maxUsage"),
+            claude_history=history.get("claude"),
+            codex_live=payload.get("codexLive"),
+            codex_history=history.get("codex"),
+        )
+    except Exception:
+        return []
+
+
 def _attach_fresh_grokbot(payload):
     """Take a Grok Bot reading on every /api/usage, including cache hits.
 
@@ -510,12 +533,54 @@ def _attach_fresh_grokbot(payload):
     report = sample_grokbot_usage()
     if report is not None:
         payload["grokBot"] = report
+        payload["planInsights"] = _plan_insights_from(payload)
+
+
+def digest_url():
+    return f"http://127.0.0.1:{PORT}/?tab=digest"
+
+
+def current_plan_insights(grokbot=None):
+    """Plan readings for the notification check. Uses only cheap local reads:
+    the Grok Bot cache, Claude's snapshots and history, and the last Codex
+    reading from the usage cache (never spawns Codex from the sampler)."""
+    cached = _cache.get("data") or {}
+    try:
+        max_usage = account_usage.get_max_usage_snapshots()
+    except Exception:
+        max_usage = cached.get("maxUsage")
+    try:
+        claude_history = account_usage.get_usage_history()
+    except Exception:
+        claude_history = []
+    codex_live = _codex_live_cache.get("data") or cached.get("codexLive")
+    codex_history = (cached.get("usageHistory") or {}).get("codex") or []
+    return insights.build_plan_insights(
+        grokbot=grokbot if grokbot is not None else cached.get("grokBot"),
+        max_usage=max_usage,
+        claude_history=claude_history,
+        codex_live=codex_live,
+        codex_history=codex_history,
+    )
+
+
+def run_notification_checks(grokbot=None):
+    try:
+        plans = current_plan_insights(grokbot)
+        return notify.run_checks(plans, digest_url=digest_url())
+    except Exception:
+        return []
+
+
+def _sampler_pass():
+    report = sample_grokbot_usage()
+    run_notification_checks(report)
 
 
 def _grokbot_sampler_loop():
-    sample_grokbot_usage()
+    _sampler_pass()
     while not _sampler_stop.wait(GROKBOT_SAMPLE_INTERVAL):
-        sample_grokbot_usage()
+        _sampler_pass()
 
 
 def start_grokbot_sampler():
@@ -562,6 +627,28 @@ def get_usage(force=False):
         payload = dict(_cache["data"], stale=False)
         _attach_fresh_grokbot(payload)
         return payload
+
+
+def build_summary(usage, today=None):
+    today = (today or datetime.date.today()).isoformat()
+    row = next((d for d in usage.get("daily") or [] if (d.get("period") or "")[:10] == today), None)
+    tokens = 0
+    if row:
+        for mb in row.get("modelBreakdowns") or []:
+            tokens += (mb.get("inputTokens") or 0) + (mb.get("outputTokens") or 0)
+    plans = []
+    for p in usage.get("planInsights") or []:
+        plans.append({k: p.get(k) for k in ("key", "tool", "label", "pct", "resetAt", "windowSeconds", "forecast", "compare")})
+    plans.sort(key=lambda p: -(p.get("pct") or 0))
+    return {
+        "generatedAt": usage.get("generatedAt"),
+        "stale": bool(usage.get("stale")),
+        "today": {"date": today, "listUsd": round((row or {}).get("totalCost") or 0.0, 2), "tokens": tokens},
+        "plans": plans,
+        "highest": plans[0] if plans else None,
+        "dashboardUrl": f"http://127.0.0.1:{PORT}/",
+        "notifications": notify.public_status(),
+    }
 
 
 def _hostname(host_header):
@@ -694,6 +781,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send_json({"error": str(e)}, code=400)
         elif path == "/api/grokbot":
             self._send_json(grokbot_usage.collect())
+        elif path == "/api/digest":
+            self._handle_digest_get()
+        elif path == "/api/summary":
+            self._handle_summary_get()
+        elif path == "/api/notifications":
+            self._send_json(notify.public_status())
+        elif path == "/api/login-item":
+            self._send_json(login_item.status())
         elif path == "/api/labels":
             self._handle_labels_get()
         elif path in ("/", "/index.html"):
@@ -736,12 +831,68 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._handle_labels_post()
         elif path == "/api/grokbot":
             self._handle_grokbot_post()
+        elif path == "/api/notifications":
+            self._handle_local_post(self._notifications_post)
+        elif path == "/api/notifications/test":
+            self._handle_local_post(lambda body: {"ok": True, "result": notify.send_test()})
+        elif path == "/api/app/heartbeat":
+            self._handle_local_post(lambda body: {"ok": True, "pending": notify.record_heartbeat()})
+        elif path == "/api/login-item":
+            self._handle_local_post(self._login_item_post)
         else:
             self.send_response(404)
             self.end_headers()
 
     def _client_is_local(self):
         return request_is_local(self.headers.get("Host"), self.headers.get("Origin"))
+
+    def _handle_local_post(self, fn):
+        """Settings that change this machine (notifications, LaunchAgent) only
+        accept same-machine, same-origin requests."""
+        if not self._client_is_local():
+            self._send_json({"ok": False, "error": "This endpoint only accepts requests from this machine."}, code=403)
+            return
+        try:
+            body = self._read_json_object(_LABEL_BODY_MAX)
+            self._send_json(fn(body))
+        except ValueError as e:
+            self._send_json({"ok": False, "error": str(e)}, code=400)
+        except Exception as e:
+            self._send_json({"ok": False, "error": str(e)}, code=500)
+
+    def _notifications_post(self, body):
+        settings = notify.validate_settings(body, notify.load_settings())
+        notify.save_settings(settings)
+        return {"ok": True, "settings": notify.load_settings()}
+
+    def _login_item_post(self, body):
+        enabled = body.get("enabled")
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled must be true or false")
+        st = login_item.turn_on() if enabled else login_item.turn_off()
+        # Read back rather than trusting the launchctl exit code.
+        st = login_item.status()
+        ok = st["enabled"] == enabled
+        return {"ok": ok, "status": st, "error": None if ok else "The setting did not stick. Check ~/Library/LaunchAgents."}
+
+    def _handle_digest_get(self):
+        usage = get_usage()
+        if usage.get("error"):
+            self._send_json({"error": usage["error"]}, code=503)
+            return
+        try:
+            self._send_json(digest.build_digest(usage))
+        except Exception as e:
+            self._send_json({"error": str(e)}, code=500)
+
+    def _handle_summary_get(self):
+        """Compact view for the menu bar app: plan readings with forecasts,
+        and today's list-price spend and tokens."""
+        usage = get_usage()
+        if usage.get("error"):
+            self._send_json({"error": usage["error"]}, code=503)
+            return
+        self._send_json(build_summary(usage))
 
     def _read_json_object(self, max_bytes):
         raw_len = self.headers.get("Content-Length") or "0"

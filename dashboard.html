@@ -494,6 +494,27 @@
   }
   button.text-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .bar-rect.day-bar { cursor: pointer; }
+  .src-row:has(.src-insight) { flex-wrap: wrap; }
+  .src-insight { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; font-size: 0.74rem; color: var(--muted); padding-left: 0.2rem; }
+  .plan-insight { display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; margin-top: 0.55rem; font-size: 0.8rem; color: var(--muted); }
+  .src-insight .warn, .plan-insight .warn { color: var(--bad-text); font-weight: 600; }
+  .kpi .cmp { font-size: 0.74rem; color: var(--muted); margin-top: 0.15rem; }
+  .acct-legend { flex-wrap: wrap; gap: 0.4rem 1.4rem; }
+  .acct-legend button.item { border: none; background: none; padding: 0.15rem 0.3rem; margin: -0.15rem -0.3rem; cursor: pointer; color: var(--text); font: inherit; border-radius: 5px; }
+  .acct-legend button.item:hover { background: var(--neutral-bg); }
+  .acct-legend button.item:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .acct-legend button.item[aria-pressed="true"] { background: var(--accent-soft); }
+  svg .pick { cursor: pointer; }
+  svg .pick:focus { outline: none; }
+  svg .pick:focus-visible { stroke: var(--accent); stroke-width: 2px; }
+  .digest-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+  .digest-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+  .settings-app .row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.5rem; font-size: 0.85rem; }
+  .settings-app input[type=text] { font: inherit; padding: 0.3rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--card, transparent); color: var(--text); width: 9rem; }
+  .settings-app button { border: 1px solid var(--border); background: var(--accent); color: white; border-radius: 7px; padding: 0.35rem 0.8rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+  .settings-app button.secondary { background: transparent; color: var(--text); }
+  .settings-app button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .settings-app table td { padding: 0.25rem 0.6rem 0.25rem 0; font-size: 0.82rem; }
 </style>
 </head>
 <body>
@@ -509,6 +530,7 @@
     <button class="nav-item" data-tab="days">Days</button>
     <button class="nav-item" data-tab="accounts">Accounts</button>
     <button class="nav-item" data-tab="projects">Projects</button>
+    <button class="nav-item" data-tab="digest">Digest</button>
     <button class="nav-item" data-tab="settings">Settings</button>
   </nav>
   <div class="sidebar-footer">
@@ -576,11 +598,12 @@
         <div class="label">List-price estimate</div>
         <div class="value" id="totalWin">–</div>
         <div class="sub" id="spendRealSub"></div>
+        <div class="cmp" id="totalWinCmp"></div>
       </div>
       <div class="card kpi" id="kpiAvgDay"><div class="label">Avg / day</div><div class="value" id="avgDay">–</div><div class="sub" id="avgDaySub"></div></div>
       <div class="card kpi" id="kpiHighestDay"><div class="label">Peak day</div><div class="value" id="maxDay">–</div><div class="sub" id="maxDaySub"></div></div>
       <div class="card kpi" id="kpiToday"><div class="label" id="todayLabel">Today</div><div class="value" id="totalToday">–</div><div class="sub" id="todaySub"></div></div>
-      <div class="card kpi" id="kpiTokens"><div class="label">Tokens</div><div class="value" id="realTokensWin">–</div><div class="sub" id="tokensCaption">input + output, excluding cache</div><div class="sub" id="realTokensToday"></div></div>
+      <div class="card kpi" id="kpiTokens"><div class="label">Tokens</div><div class="value" id="realTokensWin">–</div><div class="sub" id="tokensCaption">input + output, excluding cache</div><div class="sub" id="realTokensToday"></div><div class="cmp" id="tokensCmp"></div></div>
       <div class="card kpi" id="kpiPlan"><div class="label">Plan limit</div><div class="value" id="planUsageVal">–</div><div class="sub" id="planUsageSub"></div></div>
     </div>
     <div class="overview-pair">
@@ -750,8 +773,14 @@
     </details>
   </section>
 
+  <section id="view-digest" class="view">
+    <p class="tab-intro" id="digestIntro">Last complete week, Monday to Sunday.</p>
+    <div id="digestBody"><div class="muted">Loading the digest…</div></div>
+  </section>
+
   <section id="view-settings" class="view">
     <div class="card" id="settingsBody"></div>
+    <div class="card settings-app" id="settingsApp" style="margin-top: 1rem;"></div>
   </section>
 </main>
 
@@ -1088,6 +1117,7 @@ function renderGrokBotCards() {
           <div class="usage-row-pct tnum">${pct != null ? escHtml(formatPct(pct)) + '%' : '—'}</div>
         </div>
       </div>
+      ${planInsightHtml(planInsight(grokBotInsightKey(a)), 'plan-insight')}
       <p style="margin-top:0.8rem;">${escHtml(credits)}</p>
       ${refuse}
       ${usageHistoryChartHtml(history, [{ key: 'weeklyPct', label: 'Weekly limit', color: 'var(--accent)' }], 'Weekly usage over time')}
@@ -1105,6 +1135,92 @@ const planSuffix = plan => {
   const safe = escHtml(plan);
   return / plan$/i.test(String(plan).trim()) ? ` (${safe})` : ` (${safe} plan)`;
 };
+
+// <pure-helpers>
+// No DOM access in this block: tests/test_dashboard_js.py runs it under node.
+function isoAddDays(dateStr, delta) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+function isoDayCount(fromStr, toStr) {
+  return Math.round((Date.parse(toStr + 'T00:00:00Z') - Date.parse(fromStr + 'T00:00:00Z')) / 86400000) + 1;
+}
+// The same-length period that ends the day before the selected range starts.
+function previousPeriod(fromStr, toStr) {
+  const n = isoDayCount(fromStr, toStr);
+  return { from: isoAddDays(fromStr, -n), to: isoAddDays(fromStr, -1), days: n };
+}
+function compareNoun(rangeDays, from, to, n) {
+  if (!from && !to) {
+    if (rangeDays === 1) return 'yesterday';
+    if (rangeDays === 7) return 'last week';
+  }
+  return n === 1 ? 'the day before' : `previous ${n} days`;
+}
+function changeVsPrevious(current, previous) {
+  if (previous == null || !(previous > 0) || current == null) return null;
+  return (current - previous) / previous * 100;
+}
+function compareLabel(current, previous, noun) {
+  if (previous == null) return '';
+  if (!(previous > 0)) return current > 0 ? `nothing ${/^previous/.test(noun) ? 'in the ' + noun : noun}` : '';
+  const pct = Math.round(changeVsPrevious(current, previous));
+  if (pct === 0) return `same as ${noun}`;
+  return `${pct > 0 ? '+' : '-'}${Math.abs(pct)}% vs ${noun}`;
+}
+// fc is a server forecast (insights.forecast). fmtWhen formats an ISO time.
+function forecastSummary(fc, fmtWhen) {
+  if (!fc) return null;
+  const early = fc.confidence === 'low';
+  let text, warn = false;
+  if (fc.currentPct >= 100) {
+    text = 'at the limit now';
+    warn = true;
+  } else if (fc.hitsLimitAt) {
+    text = `would hit 100% around ${fmtWhen(fc.hitsLimitAt)}`;
+    warn = true;
+  } else {
+    text = `on track for ${Math.round(fc.projectedPct)}% by ${fmtWhen(fc.resetAt)}`;
+  }
+  if (early) text += ' (early estimate)';
+  const pace = fc.basis === 'readings'
+    ? `Pace from readings since ${fmtWhen(fc.coverageStart)}: about ${fc.ratePerDay}% a day.`
+    : `Average pace since the window started ${fmtWhen(fc.windowStart)}: about ${fc.ratePerDay}% a day.`;
+  const caveat = early ? ` Only ${fc.coverageHours} hours of readings so far, so treat this as rough.` : '';
+  return { text, warn, title: `Straight-line forecast. ${pace}${caveat}` };
+}
+function windowCompareSummary(cmp, noun) {
+  if (!cmp || cmp.previousPeakPct == null) return null;
+  const d = Math.round(cmp.deltaPct);
+  const text = d === 0 ? `same peak as ${noun}` : `${d > 0 ? '+' : '-'}${Math.abs(d)} pts vs ${noun}`;
+  const partial = cmp.previousPartial ? ' The previous window was only partly covered by readings.' : '';
+  return { text, warn: false, title: `Peak this window ${Math.round(cmp.currentPeakPct)}%, previous window ${Math.round(cmp.previousPeakPct)}%.${partial}` };
+}
+// </pure-helpers>
+
+function fmtWhenShort(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso || '');
+  const days = Math.abs(d.getTime() - Date.now()) / 86400000;
+  const opts = days > 6
+    ? { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }
+    : { weekday: 'short', hour: '2-digit', minute: '2-digit' };
+  return d.toLocaleString(undefined, opts);
+}
+function planInsight(key) {
+  return ((data && data.planInsights) || []).find(p => p.key === key) || null;
+}
+function grokBotInsightKey(acct) {
+  return 'grok-bot:' + ((acct && acct.accountId) || 'default');
+}
+function planInsightHtml(p, cls) {
+  if (!p) return '';
+  const noun = p.windowSeconds === 7 * 86400 ? 'last week' : 'last window';
+  const parts = [forecastSummary(p.forecast, fmtWhenShort), windowCompareSummary(p.compare, noun)].filter(Boolean);
+  if (!parts.length) return '';
+  return `<div class="${cls}">${parts.map(x => `<span class="${x.warn ? 'warn' : ''}" title="${escAttr(x.title)}">${escHtml(x.text)}</span>`).join('')}</div>`;
+}
 
 function readUrlState() {
   const p = new URLSearchParams(location.search);
@@ -1276,14 +1392,15 @@ function paintTab(t) {
     else b.removeAttribute('aria-current');
   });
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + t));
-  document.getElementById('pageTitle').textContent = { overview: 'Overview', models: 'Spend by model', days: 'Spend by day', accounts: 'Spend by account', projects: 'Spend by project', settings: 'Settings' }[t];
-  document.getElementById('agentSel').style.display = (t === 'accounts' || t === 'settings') ? 'none' : '';
-  document.getElementById('rangeSeg').style.display = t === 'settings' ? 'none' : '';
+  document.getElementById('pageTitle').textContent = { overview: 'Overview', models: 'Spend by model', days: 'Spend by day', accounts: 'Spend by account', projects: 'Spend by project', digest: 'Weekly digest', settings: 'Settings' }[t];
+  const noRange = t === 'settings' || t === 'digest';
+  document.getElementById('agentSel').style.display = (t === 'accounts' || noRange) ? 'none' : '';
+  document.getElementById('rangeSeg').style.display = noRange ? 'none' : '';
   const customBtn = document.getElementById('customToggle');
-  if (customBtn) customBtn.style.display = t === 'settings' ? 'none' : '';
-  document.getElementById('customRange').style.display = t === 'settings' ? 'none' : '';
+  if (customBtn) customBtn.style.display = noRange ? 'none' : '';
+  document.getElementById('customRange').style.display = noRange ? 'none' : '';
   const chip = document.getElementById('rangeChip');
-  if (chip) chip.style.display = t === 'settings' ? 'none' : '';
+  if (chip) chip.style.display = noRange ? 'none' : '';
 }
 
 function setTab(t) {
@@ -1508,9 +1625,48 @@ function labelSvg(svg, text) {
   svg.setAttribute('aria-label', text);
 }
 
-function bindDayBar(rect, period) {
+// Click-through: a day bar opens that day on the Days tab; a model bar opens
+// the model; an account or agent opens the filter for it.
+function openDay(period) {
+  if (!period || !/^\d{4}-\d{2}-\d{2}$/.test(period)) return;
+  tab = 'days';
+  paintTab('days');
+  setSingleDay(period);
+}
+function openModel(name) {
+  if (!name) return;
+  selectedModel = name;
+  tab = 'models';
+  paintTab('models');
+  syncUrl();
+  update();
+}
+function setAgentFilter(value) {
+  const sel = document.getElementById('agentSel');
+  if (!sel || ![...sel.options].some(o => o.value === value)) return;
+  agent = value;
+  sel.value = value;
+  syncUrl();
+  update();
+}
+// Keyboard-accessible SVG target: focusable, announced as a button, and
+// activated with Enter or Space as well as a click.
+function makePickable(el, label, onPick) {
+  el.classList.add('pick');
+  el.setAttribute('tabindex', '0');
+  el.setAttribute('role', 'button');
+  el.setAttribute('aria-label', label);
+  el.addEventListener('click', onPick);
+  el.addEventListener('keydown', e => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    onPick();
+  });
+}
+function bindDayBar(rect, period, label) {
   rect.classList.add('day-bar');
-  rect.addEventListener('click', () => setSingleDay(period));
+  if (label) makePickable(rect, label, () => openDay(period));
+  else rect.addEventListener('click', () => openDay(period));
 }
 
 function drawChart(rows) {
@@ -1544,8 +1700,9 @@ function drawChart(rows) {
       rect.setAttribute('rx', 3);
       rect.setAttribute('class', 'bar-rect');
       const title = document.createElementNS(ns, 'title');
-      title.textContent = `${name}: ${fmt(cost)}`;
+      title.textContent = `${name}: ${fmt(cost)}. Show this model.`;
       rect.appendChild(title);
+      makePickable(rect, `${name}, ${fmt(cost)}. Show this model`, () => openModel(name));
       svg.appendChild(rect);
       const label = document.createElementNS(ns, 'text');
       label.setAttribute('x', 0); label.setAttribute('y', y + 11);
@@ -1612,7 +1769,7 @@ function drawChart(rows) {
     const hitTitle = document.createElementNS(ns, 'title');
     hitTitle.textContent = `${r.period}: ${fmt(r.value.totalCost)} list price. Show this day.`;
     hit.appendChild(hitTitle);
-    bindDayBar(hit, r.period);
+    bindDayBar(hit, r.period, `${r.period}, ${fmt(r.value.totalCost)} list price. Open this day`);
     svg.appendChild(hit);
     let yCursor = padT + plotH;
     segs.forEach(([cost, color]) => {
@@ -2037,7 +2194,9 @@ function accountChartRows(days, accountSessions, filterValue, cutoff, windowEnd)
   // Zero-spend days stay in the series so the bars line up with the calendar.
   const inRange = rows => rows.filter(d => d.period >= cutoff && d.period <= windowEnd);
   const byPeriod = {};
+  acctSeriesFilter = {};
   const addSeries = (name, filter) => {
+    acctSeriesFilter[name] = filter;
     inRange(rowsForFilter(days, accountSessions, filter)).forEach(r => {
       const row = byPeriod[r.period] || (byPeriod[r.period] = { period: r.period });
       row[name] = (row[name] || 0) + (r.value.totalCost || 0);
@@ -2073,6 +2232,7 @@ function accountChartRows(days, accountSessions, filterValue, cutoff, windowEnd)
   return fillCalendarDays(present, cutoff, windowEnd, period => ({ period }));
 }
 
+let acctSeriesFilter = {};
 function drawAccountChart(rows) {
   const svg = document.getElementById('acctChart');
   const note = document.getElementById('acctChartNote');
@@ -2090,9 +2250,17 @@ function drawAccountChart(rows) {
   const colorOf = {};
   buckets.forEach((b, i) => { colorOf[b] = ACCOUNT_PALETTE[i % ACCOUNT_PALETTE.length]; });
 
-  legend.innerHTML = buckets.map(b =>
-    `<span class="item"><span class="swatch" style="background:${colorOf[b]}"></span>${escHtml(b)} <span class="amt tnum">${fmt(totals[b])}</span></span>`
-  ).join('');
+  const filterFor = b => acctSeriesFilter[b];
+  legend.innerHTML = buckets.map(b => {
+    const f = filterFor(b);
+    const inner = `<span class="swatch" style="background:${colorOf[b]}"></span>${escHtml(b)} <span class="amt tnum">${fmt(totals[b])}</span>`;
+    if (!f) return `<span class="item">${inner}</span>`;
+    const on = agent === f;
+    return `<button type="button" class="item" data-filter="${escAttr(f)}" aria-pressed="${on}" title="${on ? 'Show all agents again' : 'Filter the dashboard to ' + escAttr(b)}">${inner}</button>`;
+  }).join('');
+  legend.querySelectorAll('button.item[data-filter]').forEach(btn => {
+    btn.onclick = () => setAgentFilter(agent === btn.dataset.filter ? 'all' : btn.dataset.filter);
+  });
 
   if (!rows.length || !buckets.length) {
     note.textContent = 'No data in this range';
@@ -2139,8 +2307,13 @@ function drawAccountChart(rows) {
       rect.setAttribute('class', 'bar-rect');
       rect.style.fill = colorOf[name];
       const title = document.createElementNS(ns, 'title');
-      title.textContent = `${r.period} – ${name}: ${fmt(cost)}`;
+      title.textContent = `${r.period}: ${name}, ${fmt(cost)}. Filter to ${name}.`;
       rect.appendChild(title);
+      const f = filterFor(name);
+      if (f) {
+        rect.classList.add('pick');
+        rect.addEventListener('click', () => setAgentFilter(agent === f ? 'all' : f));
+      }
       svg.appendChild(rect);
     });
   });
@@ -2391,6 +2564,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
       <span class="src-label">${escHtml(mu.label)}</span>
       <span class="src-extra">${extra}</span>
       <span class="src-amount tnum">${hasOverage ? fmtCredits(c.usedMinor, c.currency, c.exponent) : 'unknown'}</span>
+      ${planInsightHtml(planInsight('claude:' + s.id), 'src-insight')}
     `, title: `${note} (as of ${asOf}, ${mu.live ? 'live from the status line' : 'cached locally by Claude Code'}) — same numbers as claude.ai Settings → Usage.` };
   }
 
@@ -2404,6 +2578,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
       <span class="src-label">${escHtml(s.label)}${planSuffix(cx.planType)}</span>
       <span class="src-extra">${windowLabel(p.windowMins)} ${srcMiniBar(p.percent)} ${p.percent ?? '?'}%</span>
       <span class="src-amount tnum">${realValue}</span>
+      ${planInsightHtml(planInsight('codex:primary'), 'src-insight')}
     `, title: `${blocked ? 'Plan limit reached — may be drawing on credits.' : 'covered by plan'}${openaiCost && !openaiCost.error ? ' — Admin-key Costs API also configured, used above once the plan limit is hit' : ''} — real numbers via Codex's own \`account/rateLimits/read\`, fetched ${new Date(cx.fetchedAt).toLocaleString()}.` };
   }
 
@@ -2446,6 +2621,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
       <span class="src-label">${escHtml(s.label)}</span>
       <span class="src-extra">${bits.join(' · ') || 'no local usage cache yet'}</span>
       <span class="src-amount tnum">${amount}</span>
+      ${planInsightHtml(planInsight(grokBotInsightKey(acct)), 'src-insight')}
     `, title: s.note || chipTitle };
   }
 
@@ -2878,7 +3054,190 @@ function settingsSourcesHtml(sources) {
   return html;
 }
 
+let digestData = null;
+let digestFetching = false;
+let digestError = null;
+async function loadDigest() {
+  if (digestFetching) return;
+  digestFetching = true;
+  try {
+    const res = await fetch('/api/digest', { cache: 'no-store' });
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+    digestData = json;
+    digestError = null;
+  } catch (e) {
+    digestError = e.message || String(e);
+  } finally {
+    digestFetching = false;
+    if (tab === 'digest') renderDigest();
+  }
+}
+function digestChangeHtml(pct, noun) {
+  if (pct == null) return '<div class="sub">no earlier week to compare</div>';
+  const r = Math.round(pct);
+  return `<div class="sub">${r === 0 ? 'same as' : (r > 0 ? '+' : '-') + Math.abs(r) + '% vs'} ${escHtml(noun)}</div>`;
+}
+function renderDigest() {
+  const body = document.getElementById('digestBody');
+  const intro = document.getElementById('digestIntro');
+  if (!body) return;
+  if (digestError) { body.innerHTML = `<div class="card">Could not build the digest: ${escHtml(digestError)}</div>`; return; }
+  if (!digestData) { body.innerHTML = '<div class="muted">Loading the digest…</div>'; return; }
+  const d = digestData;
+  const range = `${formatShownDate(d.weekStart)} to ${formatShownDate(d.weekEnd)}`;
+  intro.textContent = `Last complete week, ${range}. Compared with the week before.`;
+  const sp = d.spend || {}, tk = d.tokens || {};
+  const table = (head, rows, empty) => rows.length
+    ? `<table><thead><tr>${head.map((h, i) => `<th class="${i ? 'right' : ''}">${escHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`
+    : `<div class="muted">${escHtml(empty)}</div>`;
+  const planRows = (d.plans || []).map(p => `<tr><td>${escHtml(p.label)}</td><td class="right tnum">${escHtml(formatPct(p.peakPct))}%</td>
+    <td class="right tnum">${p.previousPeakPct == null ? '–' : escHtml(formatPct(p.previousPeakPct)) + '%'}</td>
+    <td class="right tnum">${p.deltaPct == null ? '–' : (p.deltaPct > 0 ? '+' : p.deltaPct < 0 ? '-' : '') + escHtml(formatPct(Math.abs(p.deltaPct))) + ' pts'}</td></tr>`);
+  const projRows = (d.topProjects || []).map(p => {
+    const path = shortenPath(p.project);
+    return `<tr><td class="proj-path" title="${escAttr(path.full)}">${escHtml(path.short)}</td><td class="right tnum">${p.sessions}</td><td class="right tnum">${fmt(p.cost)}</td></tr>`;
+  });
+  const modelRows = (d.topModels || []).map(m => `<tr><td><button type="button" class="model-name model-name-cell text-btn" data-digest-model="${escAttr(m.model)}">${escHtml(m.model)}</button></td><td class="right tnum">${fmtTok(m.tokens)}</td><td class="right tnum">${fmt(m.cost)}</td></tr>`);
+  const agentRows = (d.agents || []).map(a => `<tr><td>${escHtml(a.agent)}</td><td class="right tnum">${fmt(a.cost)}</td></tr>`);
+  const dayRows = (d.days || []).map(x => `<tr class="day-row" role="button" tabindex="0" data-digest-day="${escAttr(x.date)}" title="Open ${escAttr(x.date)}"><td class="tnum">${escHtml(x.date)}</td><td class="right tnum">${fmt(x.cost)}</td></tr>`);
+  body.innerHTML = `
+    <div class="digest-cards">
+      <div class="card kpi"><div class="label">List-price estimate</div><div class="value">${fmt(sp.list)}</div>${digestChangeHtml(sp.changePct, 'the week before')}</div>
+      <div class="card kpi"><div class="label">Real / unverified</div><div class="value">${fmt(sp.real)}</div><div class="sub">covered by plans ${fmt(sp.covered)}</div><div class="sub">uses each plan's status today</div></div>
+      <div class="card kpi"><div class="label">Tokens</div><div class="value">${fmtTok(tk.total)}</div>${digestChangeHtml(tk.changePct, 'the week before')}</div>
+    </div>
+    <div class="card" style="margin-bottom:1rem;">
+      <div class="card-head"><h2>Plan limits, highest reading in the week</h2></div>
+      ${table(['Plan', 'Peak', 'Week before', 'Change'], planRows, 'No plan readings were recorded that week.')}
+    </div>
+    <div class="digest-two">
+      <div class="card"><div class="card-head"><h2>Top projects</h2></div>${table(['Project', 'Sessions', 'Cost'], projRows, 'No project data that week.')}</div>
+      <div class="card"><div class="card-head"><h2>Top models</h2></div>${table(['Model', 'Tokens', 'Cost'], modelRows, 'No model data that week.')}</div>
+    </div>
+    <div class="digest-two">
+      <div class="card"><div class="card-head"><h2>By agent</h2></div>${table(['Agent', 'Cost'], agentRows, 'No spend that week.')}</div>
+      <div class="card"><div class="card-head"><h2>By day</h2></div>${table(['Day', 'Cost'], dayRows, 'No spend that week.')}</div>
+    </div>
+    <div class="muted">Costs are USD list price. Built from the same local data as the Overview. A notification points here every Monday at 09:00 while the server is running.</div>`;
+  body.querySelectorAll('[data-digest-day]').forEach(el => {
+    const go = () => openDay(el.dataset.digestDay);
+    el.onclick = go;
+    el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
+  });
+  body.querySelectorAll('[data-digest-model]').forEach(el => { el.onclick = () => openModel(el.dataset.digestModel); });
+}
+
+let appSettings = null;     // { notifications, login }
+let appSettingsAt = 0;
+let appSettingsMsg = '';
+async function loadAppSettings(force) {
+  if (!force && appSettings && Date.now() - appSettingsAt < 30000) return;
+  appSettingsAt = Date.now();
+  try {
+    const [n, l] = await Promise.all([
+      fetch('/api/notifications', { cache: 'no-store' }).then(r => r.json()),
+      fetch('/api/login-item', { cache: 'no-store' }).then(r => r.json()),
+    ]);
+    appSettings = { notifications: n, login: l };
+  } catch (e) {
+    appSettingsMsg = 'Could not read app settings: ' + (e.message || e);
+  }
+  if (tab === 'settings') renderSettingsApp(true);
+}
+function parseThresholdInput(text) {
+  const t = String(text || '').trim();
+  if (!t) return null;
+  return t.split(/[ ,]+/).filter(Boolean).map(Number);
+}
+async function postJson(url, body) {
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
+  const json = await res.json().catch(() => ({ ok: false, error: 'bad response' }));
+  if (!res.ok || json.ok === false) throw new Error(json.error || ('HTTP ' + res.status));
+  return json;
+}
+function renderSettingsApp(forceRender) {
+  const box = document.getElementById('settingsApp');
+  if (!box) return;
+  if (!forceRender && box.contains(document.activeElement)) return;  // do not wipe what the user is typing
+  loadAppSettings(false);
+  if (!appSettings) { box.innerHTML = `<div class="muted">${escHtml(appSettingsMsg || 'Loading app settings…')}</div>`; return; }
+  const ns = appSettings.notifications.settings || {};
+  const login = appSettings.login || {};
+  const plans = (data && data.planInsights) || [];
+  const per = ns.perPlan || {};
+  const planRows = plans.map(p => `<tr><td>${escHtml(p.label)}</td><td class="tnum">${escHtml(formatPct(p.pct))}% now</td>
+    <td><input type="text" data-plan-key="${escAttr(p.key)}" value="${escAttr((per[p.key] || []).join(', '))}" placeholder="default" aria-label="Thresholds for ${escAttr(p.label)}, leave empty for the default"></td></tr>`).join('');
+  const loginLine = login.enabled
+    ? `On. ${login.loaded ? 'Loaded in launchd' : 'Not loaded yet, takes effect at next login'}.`
+    : 'Off.';
+  box.innerHTML = `
+    <div class="card-head"><h2>Background and notifications</h2></div>
+    <div class="row"><label><input type="checkbox" id="loginToggle" ${login.enabled ? 'checked' : ''}> Start Agentic Spend at login</label>
+      <span class="muted" id="loginStatus" role="status">${escHtml(loginLine)}</span></div>
+    <div class="muted" style="margin-bottom:0.9rem;">Keeps the server running in the background, so plan readings and notifications carry on with the browser closed. Uses a LaunchAgent in ~/Library/LaunchAgents. Same as <code>agentic-spend login on</code>.</div>
+    <div class="row"><label><input type="checkbox" id="notifEnabled" ${ns.enabled ? 'checked' : ''}> Notify me when a plan passes a threshold</label></div>
+    <div class="row"><label for="notifThresholds">Default thresholds (%)</label>
+      <input type="text" id="notifThresholds" value="${escAttr((ns.thresholds || []).join(', '))}" aria-describedby="notifThresholdsHelp">
+      <span class="muted" id="notifThresholdsHelp">Comma separated, for example 80, 95. Each fires once per plan window.</span></div>
+    ${planRows ? `<table style="margin:0.2rem 0 0.7rem;"><tbody>${planRows}</tbody></table>` : ''}
+    <div class="row"><label><input type="checkbox" id="notifCredits" ${ns.credits ? 'checked' : ''}> Notify me when paid extra credit starts being used</label></div>
+    <div class="row"><label><input type="checkbox" id="notifDigest" ${ns.digest ? 'checked' : ''}> Monday 09:00 notification for the weekly digest</label></div>
+    <div class="row">
+      <button type="button" id="notifSave">Save</button>
+      <button type="button" id="notifTest" class="secondary">Send test notification</button>
+      <span class="muted" id="notifStatus" role="status">${escHtml(appSettingsMsg)}</span>
+    </div>
+    <div class="muted">Shown as macOS notifications while the server is running${appSettings.notifications.appActive ? '. The menu bar app is running, so it shows them' : ''}.</div>`;
+  appSettingsMsg = '';
+  const status = document.getElementById('notifStatus');
+  document.getElementById('loginToggle').onchange = async e => {
+    const want = e.target.checked;
+    const ls = document.getElementById('loginStatus');
+    ls.textContent = want ? 'Turning on…' : 'Turning off…';
+    try {
+      const r = await postJson('/api/login-item', { enabled: want });
+      appSettings.login = r.status;
+      appSettingsMsg = '';
+    } catch (err) {
+      appSettingsMsg = 'Start at login: ' + err.message;
+      await loadAppSettings(true);
+    }
+    renderSettingsApp(true);
+  };
+  document.getElementById('notifSave').onclick = async () => {
+    try {
+      const perPlan = {};
+      box.querySelectorAll('input[data-plan-key]').forEach(inp => { perPlan[inp.dataset.planKey] = parseThresholdInput(inp.value); });
+      const body = {
+        enabled: document.getElementById('notifEnabled').checked,
+        credits: document.getElementById('notifCredits').checked,
+        digest: document.getElementById('notifDigest').checked,
+        thresholds: parseThresholdInput(document.getElementById('notifThresholds').value) || [],
+        perPlan,
+      };
+      const r = await postJson('/api/notifications', body);
+      appSettings.notifications.settings = r.settings;
+      appSettingsMsg = 'Saved.';
+    } catch (err) {
+      appSettingsMsg = 'Not saved: ' + err.message;
+    }
+    renderSettingsApp(true);
+  };
+  document.getElementById('notifTest').onclick = async () => {
+    status.textContent = 'Sending…';
+    try {
+      const r = await postJson('/api/notifications/test', {});
+      const via = (r.result || {}).via;
+      status.textContent = via === 'app' ? 'Sent to the menu bar app.' : via === 'osascript' ? 'Sent. Check the top right of your screen.' : 'macOS did not accept the notification.';
+    } catch (err) {
+      status.textContent = 'Failed: ' + err.message;
+    }
+  };
+}
+
 function renderSettingsPage() {
+  renderSettingsApp(false);
   if (!lastPlansCtx) return;
   const { sources, plans, providerStatus, liveUsageSetup, unofficialToggles } = lastPlansCtx;
   const openaiOn = (providerStatus || {}).openai;
@@ -3215,7 +3574,7 @@ function renderMaxUsage(list) {
 
     return `<div class="card">
       <div class="card-head">
-        <h2>Claude usage — ${mu.label}</h2>
+        <h2>Claude usage: ${escHtml(mu.label)}</h2>
         <span class="muted">${mu.live ? 'live, ' : stale ? 'last known, ' : ''}as of ${asOf}</span>
       </div>
       ${realCostBannerHtml(mu, false)}
@@ -3231,6 +3590,7 @@ function renderMaxUsage(list) {
           <div class="usage-row-pct tnum">${weekPct}%</div>
         </div>
       </div>
+      ${planInsightHtml(planInsight('claude:' + mu.accountUuid), 'plan-insight')}
       ${rows.length ? `<div class="card-head" style="margin-top: 1.1rem;"><h2 style="font-size:0.85rem;">This week's usage, by surface</h2></div>
       ${rows.map(r => `
         <div class="breakdown-row">
@@ -3255,6 +3615,7 @@ function renderMaxUsage(list) {
   if (codexHistory.length || (data.codexLive && data.codexLive.primary)) {
     container.innerHTML += `<div class="card">
       <div class="card-head"><h2>Codex usage over time</h2></div>
+      ${planInsightHtml(planInsight('codex:primary'), 'plan-insight')}
       ${usageHistoryChartHtml(
         codexHistory,
         [{ key: 'percent', label: 'Primary window', color: 'var(--ok-text)' }],
@@ -3405,7 +3766,7 @@ function renderCacheEfficiency(windowed) {
   }
 }
 
-function drawPctBarChart(svg, rows, axisSuffix, ariaLabel) {
+function drawPctBarChart(svg, rows, axisSuffix, ariaLabel, onPick) {
   svg.innerHTML = '';
   labelSvg(svg, ariaLabel || '');
   const ns = 'http://www.w3.org/2000/svg';
@@ -3445,8 +3806,9 @@ function drawPctBarChart(svg, rows, axisSuffix, ariaLabel) {
     rect.style.fill = accentColor;
     rect.setAttribute('class', 'bar-rect');
     const title = document.createElementNS(ns, 'title');
-    title.textContent = `${r.label}: ${signedPct(value)}% of weekly limit`;
+    title.textContent = `${r.label}: ${signedPct(value)}% of weekly limit${onPick ? '. Open this day.' : ''}`;
     rect.appendChild(title);
+    if (onPick) makePickable(rect, `${r.label}, ${signedPct(value)}% of weekly limit. Open this day`, () => onPick(r));
     svg.appendChild(rect);
   });
   const labelEvery = Math.max(1, Math.ceil(rows.length / 8));
@@ -3522,7 +3884,7 @@ function renderGrokBotDailyChart(cutoff, windowEnd) {
     value: (byDate[date] && byDate[date].usedPct) || 0,
   }));
   note.textContent = `${cutoff} to ${windowEnd} · percent of weekly limit, not priced`;
-  drawPctBarChart(svg, rows, '%', `Grok Bot usage by day from ${cutoff} to ${windowEnd}, percent of weekly limit`);
+  drawPctBarChart(svg, rows, '%', `Grok Bot usage by day from ${cutoff} to ${windowEnd}, percent of weekly limit`, r => openDay(r.label));
 }
 
 function renderGrokBotWeeklyChart(cutoff, windowEnd) {
@@ -3730,6 +4092,26 @@ function update() {
   const realTokensOf = v => (v ? v.modelBreakdowns.reduce((s, mb) => s + (mb.inputTokens || 0) + (mb.outputTokens || 0), 0) : 0);
   const realTokensWin = windowed.reduce((s, d) => s + realTokensOf(d.value), 0);
   document.getElementById('realTokensWin').textContent = fmtTok(realTokensWin);
+
+  // Compare with the same-length period just before the selected range. Hidden
+  // for All, and when the data does not reach back that far.
+  const prevSpan = previousPeriod(cutoff, windowEnd);
+  const isAllRange = range >= 9999 && !customFrom && !customTo;
+  const earliestDay = days.length ? days[0].period : null;
+  const costCmpEl = document.getElementById('totalWinCmp');
+  const tokCmpEl = document.getElementById('tokensCmp');
+  costCmpEl.textContent = ''; tokCmpEl.textContent = '';
+  costCmpEl.title = ''; tokCmpEl.title = '';
+  if (!isAllRange && earliestDay && earliestDay <= prevSpan.to) {
+    const prevRows = rowsForFilter(days, data.accountSessions, agent).filter(d => d.period >= prevSpan.from && d.period <= prevSpan.to);
+    const prevCost = sum(prevRows);
+    const prevTok = prevRows.reduce((s, d) => s + realTokensOf(d.value), 0);
+    const noun = compareNoun(range, customFrom, customTo, prevSpan.days);
+    costCmpEl.textContent = compareLabel(totalWin, prevCost, noun);
+    costCmpEl.title = `${prevSpan.from} to ${prevSpan.to}: ${fmt(prevCost)} list price`;
+    tokCmpEl.textContent = compareLabel(realTokensWin, prevTok, noun);
+    tokCmpEl.title = `${prevSpan.from} to ${prevSpan.to}: ${fmtTok(prevTok)} tokens`;
+  }
   const todayTokens = document.getElementById('realTokensToday');
   if (showingPastDay) {
     todayTokens.textContent = '';
@@ -3904,6 +4286,11 @@ function update() {
   // ---- settings ----
   if (tab === 'settings') {
     renderSettingsPage();
+  }
+
+  if (tab === 'digest') {
+    if (!digestData && !digestFetching && !digestError) loadDigest();
+    renderDigest();
   }
 
   // ---- accounts (uses the same range picker as every other tab) ----

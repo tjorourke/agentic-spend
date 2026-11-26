@@ -53,6 +53,9 @@ If Homebrew refuses to load the formula ("untrusted tap"), run
 
 ```bash
 agentic-spend          # starts the server (if not already running) and opens the browser
+agentic-spend --no-open  # starts the server without opening a browser
+agentic-spend stop     # stops it
+agentic-spend login on # start at login (also: off, status)
 ```
 
 Binds to `127.0.0.1:8787` only — nothing here leaves the machine except the optional OpenAI
@@ -80,6 +83,36 @@ brew update && brew upgrade agentic-spend
 (Maintainer only, to cut a new release: tag `vX.Y.Z`, push it, download the tagged
 `.tar.gz` from GitHub, `shasum -a 256` it, and update `Formula/agentic-spend.rb`'s
 `url`/`sha256`/`version` to match before committing and pushing the formula.)
+
+## Forecasts, comparisons, notifications and the weekly digest
+
+- **Forecast.** Each plan with a weekly (or other fixed) window shows a straight-line
+  forecast next to its row on Overview and its card on Accounts: "on track for 74% by
+  Sun 09:06", or "would hit 100% around Sat 14:00" in red. Usage is 0% at a reset, so the pace
+  is measured from the window start; once this app has a day or more of readings in the
+  window it uses the slope of those readings instead. Fewer than 24 hours of readings is
+  marked "(early estimate)". Sources: Grok Bot (its saved history), Claude's 7-day window
+  (status line history), Codex's primary window (its rollout files).
+- **Compare.** The list-price and Tokens tiles show "+12% vs last week" (or vs yesterday, or
+  vs the previous N days for other ranges). Plan rows show this window's peak against the
+  previous window's peak, in percentage points. Both are hidden when there is no earlier data.
+- **Click-through.** A Daily spend bar (and a Grok Bot day bar) opens that day on the Days
+  tab. A model bar on a single-day chart opens that model. An account or agent in the
+  Spend by account legend filters the dashboard to it (click again to clear). Bars and
+  legend items work with the keyboard (Tab, then Enter or Space).
+- **Notifications.** Settings, "Background and notifications": thresholds per plan (default
+  80% and 95%), an alert when paid extra credit starts being used, and a "Send test
+  notification" button. The server checks every 10 minutes and shows each threshold once per
+  plan window (state in `~/.agentic-spend/notification-state.json`). Delivered with
+  `osascript`, or by the menu bar app when it's running.
+- **Weekly digest.** `/?tab=digest` (and `/api/digest`): last complete Monday-to-Sunday week,
+  list-price and real spend, tokens, each plan's highest reading, top projects and models,
+  and the change on the week before. A notification points to it on Mondays at 09:00 while
+  the server is running.
+- **Start at login.** Settings toggle, or `agentic-spend login on|off|status`. Writes
+  `~/Library/LaunchAgents/com.agenticspend.server.plist`, which runs
+  `agentic-spend serve` once at login (RunAtLoad, no KeepAlive), so readings and
+  notifications carry on without the browser open.
 
 ## Live Claude usage (optional, recommended)
 
