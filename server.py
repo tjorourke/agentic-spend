@@ -37,6 +37,7 @@ import model_mix
 import seat_prices
 import plan_detection
 import plan_prices
+import pricing_region
 import token_sources
 
 PORT = int(os.environ.get("AGENTIC_SPEND_PORT", "8787"))
@@ -308,9 +309,10 @@ def _plan_detection(payload):
 
 def _team_value(payload):
     try:
+        region = ((payload.get("pricingRegion") or {}).get("currency"))
         return seat_prices.team_value(payload.get("maxUsage"), payload.get("accountSessions"),
                                       seat_prices.load(), detections=payload.get("planDetection"),
-                                      daily=payload.get("daily"))
+                                      daily=payload.get("daily"), region_currency=region)
     except Exception:
         return []
 
@@ -551,6 +553,7 @@ def refresh_usage(force=False):
         payload["ccusageSources"] = ccusage_sources.present(raw.get("daily") or [], raw.get("session") or [], detection)
         payload["planDetection"] = _plan_detection(payload)
         payload["planPrices"] = plan_prices.load()
+        payload["pricingRegion"] = pricing_region.current()
         payload["teamValue"] = _team_value(payload)
         payload["planInsights"] = _plan_insights_from(payload)
         payload["sources"] = source_detection.annotate_sources(
@@ -906,6 +909,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._handle_labels_post()
         elif path == "/api/seat-prices":
             self._handle_local_post(self._seat_price_post)
+        elif path == "/api/pricing-region":
+            self._handle_local_post(self._pricing_region_post)
         elif path == "/api/grokbot":
             self._handle_grokbot_post()
         elif path == "/api/notifications":
@@ -952,6 +957,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             cached["seatPrices"] = prices
             cached["teamValue"] = _team_value(cached)
         return {"ok": True, "seatPrices": prices, "teamValue": cached.get("teamValue")}
+
+    def _pricing_region_post(self, body):
+        region = pricing_region.validate_body(body)
+        pricing_region.save(region)
+        cached = _cache.get("data") or {}
+        cached["pricingRegion"] = pricing_region.current()
+        cached["teamValue"] = _team_value(cached)
+        _cache["data"] = cached
+        return {"ok": True, "pricingRegion": cached["pricingRegion"], "teamValue": cached["teamValue"]}
+
 
     def _notifications_post(self, body):
         settings = notify.validate_settings(body, notify.load_settings())

@@ -144,11 +144,13 @@ class DashboardHelperTests(unittest.TestCase):
             "out.contact = teamValueParts({apiEquivalentUsd: 5, seat: null, plan: {detected: true, planLabel: 'ChatGPT Enterprise'}, listPrice: {contactSales: true}});",
             "out.dflt = teamValueParts({apiEquivalentUsd: 150, seat: {amount: 125, currency: 'USD', source: 'default'}, multiple: 1.2, plan: {detected: true, planLabel: 'Claude Team, Premium seat'}});",
             "out.user = teamValueParts({apiEquivalentUsd: 12.25, seat: {amount: 90, currency: 'GBP', source: 'user'}, multiple: null});",
+            "out.fb = teamValueParts({apiEquivalentUsd: 500.57, seat: {amount: 200, currency: 'USD', source: 'default'}, multiple: 2.5, listPrice: {default: {usedFallback: true, preferredCurrency: 'GBP'}}});",
         ])
         self.assertEqual(out["unknown"]["text"], "$1873.85 API-equivalent this month · unknown plan · set seat price")
         self.assertEqual(out["contact"]["text"], "$5.00 API-equivalent this month · no public price (contact sales) · set seat price")
         self.assertEqual(out["dflt"]["text"], "$150.00 API-equivalent this month vs $125.00/month list price (default) (1.2× the price)")
         self.assertEqual(out["user"]["text"], "$12.25 API-equivalent this month vs £90.00/month your price")
+        self.assertEqual(out["fb"]["text"], "$500.57 API-equivalent this month vs $200.00/month USD list price, no UK price published (2.5× the price)")
 
     def test_pace_text(self):
         out = run_js([
