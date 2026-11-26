@@ -16,7 +16,7 @@ browsed from a phone — there's no mobile layout, and none is planned.
 
 ![Overview](screenshots/overview.png?v=2)
 
-**Days** — a calendar heatmap, click a day to filter:
+**Days:** a calendar heatmap. Click a day to show that day:
 
 ![Days](screenshots/days.png?v=2)
 
@@ -135,24 +135,37 @@ match a manual plan note you've saved, the UI flags it rather than silently pref
   cost and anything genuinely unverified (an unlabeled account, sessions with no owner record) on
   top and confirmed-covered sources at the bottom, rather than in whatever order they were found.
   Hover a row for the full explanation.
-- The KPI row includes **Plan limit** — the session/week usage percentage your subscription is
-  actually bound by, shown next to the list-price dollar figures precisely because the two are
-  easy to mistake for the same thing (a subscription caps usage by a session/week multiplier, not
-  by a dollar amount). Avg/day and Peak day hide themselves on the 1-day range, where they'd just
-  repeat Spend/Today back at you.
-- **Hourly spend** — Claude's bars come from `ccusage blocks -n 1`, grouped by each request's own
+- The KPI row leads with **List-price estimate** (ccusage's USD total: tokens times published
+  prices). Under it, real and covered reuse the same subtraction as "What's actually costing you
+  money". **Plan limit** is the session/week usage percentage the subscription is actually bound
+  by, for a named account, with that session's and week's reset times. It sits next to the
+  list-price figures because a subscription caps usage by a session/week multiplier, which is a
+  different kind of number from a dollar amount. A cached plan-limit reading is labelled `cached`,
+  with the time it was read. Avg/day is list price divided by calendar days in the range, with the
+  average of days that had spend as a secondary figure when that differs. Avg/day and Peak day hide
+  themselves on a 1-day range, where they would repeat the list-price total.
+- **Hourly spend:** Claude's bars come from `ccusage blocks -n 1`, grouped by each request's own
   timestamp, so a past hour is final rather than drifting forward as a long session keeps running.
   Every other tool only has a session's last-active moment to go on, so those bars can still move.
-- **Cache efficiency** and **Where tokens went today** sit side by side. Cache efficiency is
-  uncached input / cache write / cache read / output, straight from fields ccusage already
-  provides in `modelBreakdowns`. Where tokens went today splits main thread vs. subagents vs.
-  compaction vs. auto-review, for Claude Code and Codex (the only two tools with enough local
-  transcript detail for this) — reads the raw transcripts directly, not ccusage, tokens only since
-  there's no pricing per-bucket.
+  Hourly data is collected for today. Choosing an earlier day still shows today's hourly chart,
+  with a note that it is today and not the day you picked.
+- **Cache efficiency** and **Where tokens went today** sit side by side, and each says which
+  window it uses. Cache efficiency follows the selected range: uncached input / cache write /
+  cache read / output, straight from fields ccusage already provides in `modelBreakdowns`. Where
+  tokens went today is today only. It splits main thread vs. subagents vs. compaction vs.
+  auto-review, for Claude Code and Codex (the only two tools with enough local transcript detail
+  for this). It reads the raw transcripts directly, not ccusage, tokens only, since there is no
+  pricing per bucket.
 - **Days** has a token count alongside cost for every date, with a breakdown (real vs. including
-  cache) on hover, and a native date picker to jump straight to one.
-- **Projects** (its own tab, next to Accounts) — spend per repo, using each session's real working
-  directory as recorded in its own transcript. Claude-only, same scope as Accounts.
+  cache) on hover, and a native date picker to jump straight to one. Clicking a heatmap cell, a
+  table row, the peak-day date, or a daily bar sets that one day as the range.
+- **Projects** (its own tab, next to Accounts): spend per repo, using each session's real working
+  directory as recorded in its own transcript. Claude-only, same scope as Accounts. Long paths are
+  shortened (home becomes `~`, the middle collapses) and the full path stays on the tooltip. The
+  account menu filters this tab the same way it filters Overview.
+- **Account names:** an account that still has no name can be named from its Accounts card or the
+  Settings table. The name is saved on this machine in `account-labels.json` (see
+  `account-labels.json.example`). It is not written into source.
 - **Plan usage over time** (on the Accounts page) — a chart of the 5h/weekly/30-day window
   percentage, not just the current reading. Claude's history accumulates going forward from the
   status line; Codex's is backfilled for real from its own rollout files, which already carry a
