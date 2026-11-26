@@ -31,6 +31,7 @@ import notify
 import provider_usage
 import source_detection
 import statusline_setup
+import ccusage_bin
 import token_sources
 
 PORT = int(os.environ.get("AGENTIC_SPEND_PORT", "8787"))
@@ -43,7 +44,7 @@ GROKBOT_SAMPLE_INTERVAL = 10 * 60  # seconds, while the server is running
 _sampler_stop = threading.Event()
 _sampler_thread = None
 
-CCUSAGE_VERSION = "20.1.1"  # pinned so refresh doesn't hit the npm registry every time
+CCUSAGE_VERSION = ccusage_bin.CCUSAGE_VERSION  # bundled build; see ccusage_bin.py
 HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
 FAVICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "favicon.png")
 
@@ -244,8 +245,7 @@ def fetch_claude_hourly_blocks(since_date):
     didn't work" and fall back instead of just dropping Claude."""
     try:
         result = subprocess.run(
-            ["npx", "--yes", f"ccusage@{CCUSAGE_VERSION}", "blocks", "--json",
-             "-n", "1", "--since", since_date],
+            ccusage_bin.command("blocks", "--json", "-n", "1", "--since", since_date),
             capture_output=True, text=True, timeout=60, check=True,
         )
         return json.loads(result.stdout)
@@ -398,8 +398,7 @@ def _with_grok_sources(sources, grok_report, plans, grokbot=None):
 def refresh_usage(force=False):
     try:
         result = subprocess.run(
-            ["npx", "--yes", f"ccusage@{CCUSAGE_VERSION}", "--sections", "daily,session",
-             "--json", "--by-agent"],
+            ccusage_bin.command("--sections", "daily,session", "--json", "--by-agent"),
             capture_output=True, text=True, timeout=60, check=True,
         )
         raw = json.loads(result.stdout)
@@ -490,10 +489,11 @@ def refresh_usage(force=False):
         )
         return payload
     except FileNotFoundError as e:
-        if getattr(e, "filename", None) == "npx":
+        if getattr(e, "filename", None) in ("ccusage", "npx"):
             return {
-                "error": "Node.js (npx) is required to run ccusage and wasn't found on PATH.",
-                "errorType": "node_missing",
+                "error": str(e) if getattr(e, "filename", None) == "ccusage" else
+                         "ccusage was not found. " + ccusage_bin.describe(),
+                "errorType": "ccusage_missing",
             }
         return {"error": str(e)}
     except Exception as e:
@@ -1103,6 +1103,7 @@ if __name__ == "__main__":
     # Live Claude usage is on by default: the first start wires the status line
     # hook (recorded, so turning it off in Settings sticks) and tidies any
     # stacked or old-path entries from earlier versions.
+    print(ccusage_bin.describe())
     _auto = statusline_setup.auto_enable_once()
     if _auto.get("status") in ("enabled", "wrapped_existing", "repaired"):
         print(f"Live Claude usage: {_auto['status'].replace('_', ' ')}")

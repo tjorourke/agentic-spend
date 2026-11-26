@@ -66,8 +66,8 @@ def resolve_launcher(here=HERE, which=shutil.which, exists=os.path.exists, env=N
 
 def build_plist(program_arguments, home=None, path_env=None):
     """The LaunchAgent as a dict (plistlib-ready). launchd starts jobs with a
-    minimal PATH, so the folder holding the launcher (where Homebrew also puts
-    node and npx) is put first."""
+    minimal PATH, so the folder holding the launcher is put first (the bundled
+    ccusage is found by path, so no Node.js is needed)."""
     home = home or os.path.expanduser("~")
     log_dir = os.path.join(os.environ.get("AGENTIC_SPEND_DATA_DIR") or os.path.join(home, ".agentic-spend"))
     first = os.path.dirname(program_arguments[0])

@@ -175,7 +175,7 @@ class GetUsageStaleTests(unittest.TestCase):
     def test_refresh_failure_with_no_cache_returns_the_error(self):
         server._cache["data"] = None
         server._cache["ts"] = 0.0
-        with mock.patch.object(server, "refresh_usage", return_value={"error": "ccusage failed", "errorType": "node_missing"}):
+        with mock.patch.object(server, "refresh_usage", return_value={"error": "ccusage failed", "errorType": "ccusage_missing"}):
             result = server.get_usage(force=True)
         self.assertEqual(result["error"], "ccusage failed")
         self.assertNotIn("stale", result)

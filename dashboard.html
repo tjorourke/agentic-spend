@@ -1356,12 +1356,12 @@ async function load(force) {
   } catch (e) {
     document.getElementById('loadingOverlay').classList.add('hidden');
     const errEl = document.getElementById('err');
-    if (e.errorType === 'node_missing') {
+    if (e.errorType === 'ccusage_missing' || e.errorType === 'node_missing') {
       errEl.innerHTML =
-        '<strong>Node.js is required but wasn\'t found.</strong> Agentic Spend runs <code>ccusage</code> via ' +
-        '<code>npx</code>, which needs Node.js on your PATH.' +
-        '<div style="margin-top:0.5rem;">Install it with Homebrew: <code>brew install node</code>, or from ' +
-        '<a href="https://nodejs.org" target="_blank" rel="noopener">nodejs.org</a>, then retry below.</div>' +
+        '<strong>ccusage wasn\'t found.</strong> Agentic Spend reads your usage with <code>ccusage</code>. ' +
+        'A Homebrew install bundles it. From a git clone, install ccusage and put it on your PATH, or set ' +
+        '<code>AGENTIC_SPEND_CCUSAGE</code> to its path.' +
+        '<div style="margin-top:0.5rem;">' + escHtml(e.message || '') + '</div>' +
         '<button id="errRetryBtn" class="btn-primary" style="margin-top:0.6rem;">Retry</button>';
       document.getElementById('errRetryBtn').onclick = () => load(true);
     } else {

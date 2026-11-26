@@ -26,6 +26,7 @@ import json
 import os
 import subprocess
 
+import ccusage_bin
 import data_dir
 
 CLAUDE_PROJECTS = os.path.expanduser("~/.claude/projects")
@@ -656,10 +657,11 @@ def build_session_account_map():
     return accounts, projects
 
 
-def run_ccusage_sessions(since=None, version="20.1.1"):
-    cmd = ["npx", "--yes", f"ccusage@{version}", "session", "--json", "--by-agent"]
+def run_ccusage_sessions(since=None):
+    args = ["session", "--json", "--by-agent"]
     if since:
-        cmd += ["--since", since]
+        args += ["--since", since]
+    cmd = ccusage_bin.command(*args)
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=60, check=True)
     return json.loads(result.stdout)["session"]
 

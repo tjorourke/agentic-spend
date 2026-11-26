@@ -8,10 +8,29 @@ class AgenticSpend < Formula
   license "Apache-2.0"
 
   depends_on :macos
-  depends_on "node"
+
+  # ccusage 20 is a native binary. We bundle the build for this Mac from its
+  # npm packages (MIT, see THIRD_PARTY_NOTICES.md), so no Node.js is needed.
+  on_arm do
+    resource "ccusage" do
+      url "https://registry.npmjs.org/@ccusage/ccusage-darwin-arm64/-/ccusage-darwin-arm64-20.1.2.tgz"
+      sha256 "042f5da67678cc232bb45b4a5f81eb3370e8373d53f7d7bcf07759a0e5accac8"
+    end
+  end
+
+  on_intel do
+    resource "ccusage" do
+      url "https://registry.npmjs.org/@ccusage/ccusage-darwin-x64/-/ccusage-darwin-x64-20.1.2.tgz"
+      sha256 "1bfa504ee2fc21eb2fcffc5b80915915af0c366a6109e4c37d7b770c9a4e4728"
+    end
+  end
 
   def install
     libexec.install Dir["*"] - ["Formula", "Casks", "macos"]
+    resource("ccusage").stage do
+      (libexec/"vendor").install "bin/ccusage"
+    end
+    chmod 0755, libexec/"vendor/ccusage"
     (bin/"agentic-spend").write <<~SH
       #!/bin/bash
       set -euo pipefail
@@ -83,7 +102,11 @@ class AgenticSpend < Formula
 
   test do
     system "python3", "-c",
-           "import sys; sys.path.insert(0, '#{libexec}'); import server, account_usage, provider_usage, statusline_setup, data_dir, token_sources, grok_usage, grokbot_usage, source_detection, insights, notify, digest, login_item"
+           "import sys; sys.path.insert(0, '#{libexec}'); import server, account_usage, provider_usage, statusline_setup, data_dir, token_sources, grok_usage, grokbot_usage, source_detection, insights, notify, digest, login_item, ccusage_bin"
     assert_match "usage: agentic-spend", shell_output("#{bin}/agentic-spend --help")
+    assert_match "ccusage 20.1.2", shell_output("#{libexec}/vendor/ccusage --version")
+    assert_predicate libexec/"THIRD_PARTY_NOTICES.md", :exist?
+    system "python3", "-c",
+           "import sys; sys.path.insert(0, '#{libexec}'); import ccusage_bin; r = ccusage_bin.resolve(env={}); assert r['source'] == 'bundled', r"
   end
 end
