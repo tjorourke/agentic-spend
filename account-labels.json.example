@@ -1,0 +1,7 @@
+{
+  "_readme": "Optional names for Claude accounts this machine has already detected. Copy the shape you need into the data directory's account-labels.json (gitignored; see data_dir.py), or set the name from the Accounts cards and the Settings table, which POST /api/labels on this machine only. Keys are account ids discovered at runtime. Do not put a real email or account id into this example.",
+  "00000000-0000-4000-8000-000000000000": {
+    "label": "Work",
+    "note": null
+  }
+}

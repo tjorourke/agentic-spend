@@ -14,6 +14,7 @@ import datetime
 import http.server
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -25,6 +26,10 @@ import statusline_setup
 import token_sources
 
 PORT = int(os.environ.get("AGENTIC_SPEND_PORT", "8787"))
+_LABEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")
+_LABEL_MAX = 80
+_NOTE_MAX = 500
+_LABEL_BODY_MAX = 8192
 CACHE_TTL = 10  # seconds
 CCUSAGE_VERSION = "20.1.1"  # pinned so refresh doesn't hit the npm registry every time
 HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
@@ -349,6 +354,110 @@ def get_usage(force=False):
         return _cache["data"]
 
 
+def _hostname(host_header):
+    host = (host_header or "").strip()
+    if host.startswith("["):
+        end = host.find("]")
+        return host[1:end].lower() if end != -1 else ""
+    return host.split(":")[0].strip().lower()
+
+
+def request_is_local(host_header, origin_header, port=None):
+    """Same-machine check for the labels API. The server already binds to
+    127.0.0.1; this rejects a DNS-rebind Host and a cross-origin browser POST.
+    A missing Origin is allowed (curl, and same-origin GET, omit it)."""
+    if port is None:
+        port = PORT
+    host = _hostname(host_header)
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        return False
+    if not origin_header:
+        return True
+    origin = origin_header.strip().rstrip("/")
+    allowed = {
+        f"http://127.0.0.1:{port}",
+        f"http://localhost:{port}",
+        f"http://[::1]:{port}",
+    }
+    return origin in allowed
+
+
+def validate_label_body(body):
+    """accountUuid + label (+ optional note) for account-labels.json.
+
+    accountUuid is an id we already discovered at runtime (or the synthetic
+    unknown-session bucket). It is checked as a short token so a request
+    cannot smuggle a path or a blob. label is the display name the user typed.
+    """
+    if not isinstance(body, dict):
+        raise ValueError("JSON object required")
+    account = body.get("accountUuid")
+    if not isinstance(account, str) or not _LABEL_ID_RE.match(account.strip()):
+        raise ValueError("accountUuid is required and must be a short id")
+    raw_label = body.get("label")
+    if not isinstance(raw_label, str):
+        raise ValueError("label is required")
+    if any(ord(ch) < 32 for ch in raw_label):
+        raise ValueError("label contains invalid characters")
+    label = " ".join(raw_label.split())
+    if not label or len(label) > _LABEL_MAX:
+        raise ValueError("label must be between 1 and 80 characters")
+    note_provided = "note" in body
+    note = None
+    if note_provided:
+        note = body.get("note")
+        if note is not None:
+            if not isinstance(note, str):
+                raise ValueError("note must be a string")
+            note = note.strip()
+            if any(ord(ch) < 32 and ch not in "\n\t" for ch in note):
+                raise ValueError("note contains invalid characters")
+            if len(note) > _NOTE_MAX:
+                raise ValueError("note must be 500 characters or fewer")
+            if not note:
+                note = None
+    return account.strip(), label, note, note_provided
+
+
+def _apply_label_to_cached_usage(cached, account_uuid, entry):
+    """Patch a cached /api/usage payload so a rename shows up even when the
+    next ccusage refresh fails and the previous payload is served again.
+    dailyByBucket keys by the old label; the next successful refresh rebuilds it."""
+    for key in ("accounts", "accountSessions", "maxUsage"):
+        for row in cached.get(key) or []:
+            if isinstance(row, dict) and row.get("accountUuid") == account_uuid:
+                row["label"] = entry["label"]
+                row["note"] = entry.get("note")
+    for src in cached.get("sources") or []:
+        if not isinstance(src, dict):
+            continue
+        if src.get("tool") == "claude" and src.get("id") == account_uuid:
+            src["label"] = entry["label"]
+            mu = src.get("maxUsage")
+            if isinstance(mu, dict):
+                mu["label"] = entry["label"]
+
+
+def save_account_label(account_uuid, label, note, note_provided):
+    """Merge one account name into account-labels.json, keeping an existing
+    note when the request did not send one."""
+    with _lock:
+        labels = account_usage.load_labels()
+        existing = labels.get(account_uuid)
+        if not isinstance(existing, dict):
+            existing = {}
+        entry = {"label": label, "note": existing.get("note")}
+        if note_provided:
+            entry["note"] = note
+        labels[account_uuid] = entry
+        account_usage.save_labels(labels)
+        _cache["ts"] = 0.0
+        cached = _cache.get("data")
+        if isinstance(cached, dict):
+            _apply_label_to_cached_usage(cached, account_uuid, entry)
+        return labels
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
@@ -369,6 +478,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json(get_usage(force=force))
         elif path == "/api/token-sources":
             self._send_json(get_token_sources_cached())
+        elif path == "/api/labels":
+            self._handle_labels_get()
         elif path in ("/", "/index.html"):
             with open(HTML_PATH, "rb") as f:
                 body = f.read()
@@ -405,9 +516,58 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._handle_unofficial_toggle_post()
         elif path == "/api/grok-billing/refresh":
             self._handle_grok_billing_refresh()
+        elif path == "/api/labels":
+            self._handle_labels_post()
         else:
             self.send_response(404)
             self.end_headers()
+
+    def _client_is_local(self):
+        return request_is_local(self.headers.get("Host"), self.headers.get("Origin"))
+
+    def _read_json_object(self, max_bytes):
+        raw_len = self.headers.get("Content-Length") or "0"
+        if not str(raw_len).isdigit():
+            raise ValueError("Content-Length is invalid")
+        length = int(raw_len)
+        if length > max_bytes:
+            raise ValueError("request body is too large")
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise ValueError("invalid JSON")
+        if not isinstance(body, dict):
+            raise ValueError("JSON object required")
+        return body
+
+    def _handle_labels_get(self):
+        if not self._client_is_local():
+            self._send_json({"ok": False, "error": "This endpoint only accepts requests from this machine."}, code=403)
+            return
+        try:
+            self._send_json({"ok": True, "labels": account_usage.load_labels()})
+        except Exception as e:
+            self._send_json({"ok": False, "error": str(e)}, code=400)
+
+    def _handle_labels_post(self):
+        if not self._client_is_local():
+            self._send_json({"ok": False, "error": "This endpoint only accepts requests from this machine."}, code=403)
+            return
+        try:
+            body = self._read_json_object(_LABEL_BODY_MAX)
+            account, label, note, note_provided = validate_label_body(body)
+            labels = save_account_label(account, label, note, note_provided)
+            saved = labels.get(account) or {}
+            self._send_json({
+                "ok": True,
+                "accountUuid": account,
+                "label": saved.get("label"),
+                "note": saved.get("note"),
+                "labels": labels,
+            })
+        except Exception as e:
+            self._send_json({"ok": False, "error": str(e)}, code=400)
 
     def _handle_unofficial_toggle_post(self):
         try:
