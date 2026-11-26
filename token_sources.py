@@ -261,9 +261,40 @@ def summarize_by_source(claude_requests, codex_threads):
     return summary
 
 
-def get_token_sources(since_dt=None):
-    claude_requests = get_claude_token_sources(since_dt)
-    codex_threads = get_codex_token_sources(since_dt)
+def _as_utc(dt):
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=datetime.timezone.utc)
+    return dt.astimezone(datetime.timezone.utc)
+
+
+def row_in_window(row, since_dt=None, until_dt=None):
+    """Keep a parsed request when its timestamp sits in [since_dt, until_dt).
+
+    until_dt is exclusive. A row with no readable time is kept only when
+    there is no upper bound, so a later day cannot leak into a closed range.
+    """
+    raw = (row or {}).get("time")
+    if not raw:
+        return until_dt is None
+    try:
+        when = datetime.datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except ValueError:
+        return until_dt is None
+    when = _as_utc(when)
+    since = _as_utc(since_dt)
+    until = _as_utc(until_dt)
+    if since is not None and when < since:
+        return False
+    if until is not None and when >= until:
+        return False
+    return True
+
+
+def get_token_sources(since_dt=None, until_dt=None):
+    claude_requests = [r for r in get_claude_token_sources(since_dt) if row_in_window(r, since_dt, until_dt)]
+    codex_threads = [r for r in get_codex_token_sources(since_dt) if row_in_window(r, since_dt, until_dt)]
     return {
         "summary": summarize_by_source(claude_requests, codex_threads),
         "generatedAt": datetime.datetime.now(tz=datetime.timezone.utc).isoformat(timespec="seconds"),

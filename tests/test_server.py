@@ -1,7 +1,14 @@
+import datetime
+import json
 import os
 import sys
 import tempfile
+import threading
+import time
 import unittest
+import urllib.error
+import urllib.request
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 os.environ.setdefault("AGENTIC_SPEND_DATA_DIR", tempfile.mkdtemp(prefix="agentic-spend-test-"))
@@ -98,6 +105,170 @@ class BuildSourcesTests(unittest.TestCase):
         sources = server.build_sources(account_list, max_usage, None, False, None, {}, {}, {})
         self.assertEqual(sources[0]["kind"], "official-live")
         self.assertEqual(sources[0]["asOf"], "2026-11-24T18:00:00")
+
+
+class TokenSourcesRangeTests(unittest.TestCase):
+    def setUp(self):
+        self._saved = dict(server._token_sources_cache)
+
+    def tearDown(self):
+        server._token_sources_cache.clear()
+        server._token_sources_cache.update(self._saved)
+
+    def test_long_span_is_capped_at_90_days(self):
+        since, until, _since_dt, _until_dt, capped = server.parse_token_sources_range(
+            "since=2020-01-01&until=2026-11-26", today=datetime.date(2026, 11, 26),
+        )
+        self.assertTrue(capped)
+        self.assertEqual(until, datetime.date(2026, 11, 26))
+        self.assertEqual((until - since).days + 1, 90)
+
+    def test_bad_date_is_rejected(self):
+        with self.assertRaises(ValueError):
+            server.parse_token_sources_range("since=11-26-2026")
+
+    def test_ranges_are_cached_separately(self):
+        calls = []
+
+        def fake(since_dt=None, until_dt=None):
+            calls.append((since_dt, until_dt))
+            return {"summary": {"claude": {}, "codex": {}}, "generatedAt": "t"}
+
+        with mock.patch.object(server.token_sources, "get_token_sources", side_effect=fake):
+            server._token_sources_cache.clear()
+            first = server.get_token_sources_cached("since=2026-11-01&until=2026-11-07")
+            second = server.get_token_sources_cached("since=2026-11-20&until=2026-11-26")
+            again = server.get_token_sources_cached("since=2026-11-01&until=2026-11-07")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(first["since"], "2026-11-01")
+        self.assertEqual(second["until"], "2026-11-26")
+        self.assertIs(again, first)
+
+
+class GetUsageStaleTests(unittest.TestCase):
+    def setUp(self):
+        self._saved = dict(server._cache)
+
+    def tearDown(self):
+        server._cache.clear()
+        server._cache.update(self._saved)
+
+    def test_forced_refresh_failure_returns_cached_payload_with_flag(self):
+        server._cache["data"] = {"generatedAt": "2026-11-20T10:00:00", "daily": []}
+        server._cache["ts"] = time.time()
+        with mock.patch.object(server, "refresh_usage", return_value={"error": "ccusage failed"}):
+            result = server.get_usage(force=True)
+        self.assertTrue(result["stale"])
+        self.assertEqual(result["refreshError"], "ccusage failed")
+        self.assertEqual(result["generatedAt"], "2026-11-20T10:00:00")
+        self.assertNotIn("stale", server._cache["data"])
+        self.assertNotIn("refreshError", server._cache["data"])
+
+    def test_successful_refresh_is_not_stale(self):
+        with mock.patch.object(server, "refresh_usage", return_value={"generatedAt": "2026-11-26T12:00:00", "daily": []}):
+            result = server.get_usage(force=True)
+        self.assertFalse(result["stale"])
+        self.assertNotIn("refreshError", result)
+        self.assertEqual(server._cache["data"]["generatedAt"], "2026-11-26T12:00:00")
+
+    def test_refresh_failure_with_no_cache_returns_the_error(self):
+        server._cache["data"] = None
+        server._cache["ts"] = 0.0
+        with mock.patch.object(server, "refresh_usage", return_value={"error": "ccusage failed", "errorType": "node_missing"}):
+            result = server.get_usage(force=True)
+        self.assertEqual(result["error"], "ccusage failed")
+        self.assertNotIn("stale", result)
+
+
+class LabelValidationTests(unittest.TestCase):
+    def test_accepts_a_short_name(self):
+        account, label, note, note_provided = server.validate_label_body({
+            "accountUuid": "acct-1",
+            "label": "  Work laptop  ",
+        })
+        self.assertEqual(account, "acct-1")
+        self.assertEqual(label, "Work laptop")
+        self.assertIsNone(note)
+        self.assertFalse(note_provided)
+
+    def test_rejects_blank_path_and_control_characters(self):
+        with self.assertRaises(ValueError):
+            server.validate_label_body({"accountUuid": "acct-1", "label": "   "})
+        with self.assertRaises(ValueError):
+            server.validate_label_body({"accountUuid": "../etc/passwd", "label": "Work"})
+        with self.assertRaises(ValueError):
+            server.validate_label_body({"accountUuid": "acct-1", "label": "bad\nname"})
+        with self.assertRaises(ValueError):
+            server.validate_label_body({"accountUuid": "acct-1", "label": "x" * 81})
+
+    def test_save_preserves_an_existing_note(self):
+        server.save_account_label("acct-9", "Work", "checked by hand", True)
+        server.save_account_label("acct-9", "Home", None, False)
+        saved = server.account_usage.load_labels()["acct-9"]
+        self.assertEqual(saved["label"], "Home")
+        self.assertEqual(saved["note"], "checked by hand")
+
+    def test_request_is_local_rejects_a_foreign_origin(self):
+        self.assertTrue(server.request_is_local("127.0.0.1:8787", None))
+        self.assertTrue(server.request_is_local("localhost:8787", "http://localhost:8787"))
+        self.assertFalse(server.request_is_local("127.0.0.1:8787", "https://example.com"))
+        self.assertFalse(server.request_is_local("evil.example", None))
+        self.assertTrue(server.request_is_local("[::1]:8787", None))
+
+
+class LabelEndpointTests(unittest.TestCase):
+    def setUp(self):
+        self.httpd = server.http.server.ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+        self.port = self.httpd.server_address[1]
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+        # Isolate this test's labels from LabelValidationTests, which shares
+        # the process-wide data dir set up before import.
+        labels_path = server.account_usage.LABELS_PATH
+        if os.path.exists(labels_path):
+            os.remove(labels_path)
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+
+    def _request(self, method, path, body=None, headers=None):
+        data = None if body is None else json.dumps(body).encode()
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}{path}",
+            data=data,
+            headers=headers or {},
+            method=method,
+        )
+        try:
+            with urllib.request.urlopen(req) as res:
+                return res.status, json.load(res)
+        except urllib.error.HTTPError as e:
+            payload = e.read().decode()
+            return e.code, json.loads(payload) if payload else {}
+
+    def test_post_then_get_round_trip(self):
+        code, payload = self._request(
+            "POST", "/api/labels",
+            {"accountUuid": "acct-1", "label": "Work"},
+            {"Content-Type": "application/json"},
+        )
+        self.assertEqual(code, 200)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["label"], "Work")
+        code, payload = self._request("GET", "/api/labels")
+        self.assertEqual(code, 200)
+        self.assertEqual(payload["labels"]["acct-1"]["label"], "Work")
+
+    def test_foreign_origin_is_forbidden(self):
+        code, payload = self._request(
+            "POST", "/api/labels",
+            {"accountUuid": "acct-1", "label": "Work"},
+            {"Content-Type": "application/json", "Origin": "https://example.com"},
+        )
+        self.assertEqual(code, 403)
+        self.assertFalse(payload["ok"])
+        self.assertFalse(os.path.exists(server.account_usage.LABELS_PATH))
 
 
 if __name__ == "__main__":

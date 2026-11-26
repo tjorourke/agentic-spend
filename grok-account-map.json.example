@@ -1,0 +1,10 @@
+{
+  "_readme": "Written by grok_usage.py in the data directory (gitignored). Sessions do not record the signed-in account. watermark is the newest updatedAt already seen. A session updated after that is tagged with the account in ~/.grok/auth.json at that moment. Older sessions stay unattributed until then. Do not put a real email in this example.",
+  "watermark": null,
+  "sessions": {
+    "00000000-0000-4000-8000-000000000000": {
+      "email": null,
+      "updatedAt": "2026-01-01T00:00:00Z"
+    }
+  }
+}

@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -115,6 +116,19 @@ class ComputeAccountsTests(unittest.TestCase):
         found_unknown = [s for s in account_sessions if s["totalCost"] == 2.0][0]
         self.assertEqual(found_known["project"], "/Users/tom/code/agentic-spend")
         self.assertEqual(found_unknown["project"], "Unattributed (no cwd recorded)")
+
+
+class LoadLabelsTests(unittest.TestCase):
+    def test_readme_key_is_ignored_and_old_string_shape_still_loads(self):
+        with open(account_usage.LABELS_PATH, "w") as f:
+            json.dump({
+                "_readme": "not an account",
+                "acct-1": "Work",
+            }, f)
+        labels = account_usage.load_labels()
+        self.assertNotIn("_readme", labels)
+        self.assertEqual(labels["acct-1"], {"label": "Work", "note": None})
+        os.remove(account_usage.LABELS_PATH)
 
 
 if __name__ == "__main__":

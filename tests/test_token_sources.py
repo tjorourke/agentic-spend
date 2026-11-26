@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import sys
@@ -186,6 +187,17 @@ class SummarizeBySourceTests(unittest.TestCase):
         self.assertEqual(summary["claude"]["main"]["requests"], 2)
         self.assertEqual(summary["claude"]["subagent"]["uncached"], 1)
         self.assertEqual(summary["codex"]["main"]["uncached"], 7)
+
+
+class RowWindowTests(unittest.TestCase):
+    def test_until_is_exclusive_and_undated_rows_stay_out_of_a_closed_range(self):
+        since = datetime.datetime(2026, 11, 20, tzinfo=datetime.timezone.utc)
+        until = datetime.datetime(2026, 11, 21, tzinfo=datetime.timezone.utc)
+        self.assertTrue(token_sources.row_in_window({"time": "2026-11-20T12:00:00Z"}, since, until))
+        self.assertFalse(token_sources.row_in_window({"time": "2026-11-21T00:00:00Z"}, since, until))
+        self.assertFalse(token_sources.row_in_window({"time": "2026-11-19T23:00:00Z"}, since, until))
+        self.assertFalse(token_sources.row_in_window({}, since, until))
+        self.assertTrue(token_sources.row_in_window({}, since, None))
 
 
 if __name__ == "__main__":

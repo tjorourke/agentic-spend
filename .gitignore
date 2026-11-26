@@ -6,6 +6,7 @@ usage-snapshots.json
 plans.json
 provider-keys.json
 .statusline-backup.json
+grok-account-map.json
 
 # Server runtime
 .server.pid

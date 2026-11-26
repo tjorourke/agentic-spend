@@ -14,17 +14,24 @@ import datetime
 import http.server
 import json
 import os
+import re
 import subprocess
 import threading
 import time
+import urllib.parse
 
 import account_usage
 import data_dir
+import grok_usage
 import provider_usage
 import statusline_setup
 import token_sources
 
 PORT = int(os.environ.get("AGENTIC_SPEND_PORT", "8787"))
+_LABEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")
+_LABEL_MAX = 80
+_NOTE_MAX = 500
+_LABEL_BODY_MAX = 8192
 CACHE_TTL = 10  # seconds
 CCUSAGE_VERSION = "20.1.1"  # pinned so refresh doesn't hit the npm registry every time
 HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dashboard.html")
@@ -36,8 +43,9 @@ _provider_cost_cache = {"ts": 0.0, "data": None}
 PROVIDER_COST_TTL = 300  # seconds — real API calls to OpenAI, don't hammer it every 10s
 _codex_live_cache = {"ts": 0.0, "data": None}
 CODEX_LIVE_TTL = 60  # seconds — spawning `codex app-server` has real overhead, don't do it every request
-_token_sources_cache = {"ts": 0.0, "data": None}
-TOKEN_SOURCES_TTL = 120  # seconds — parsing every transcript from today takes real time; kept off the 10s /api/usage path entirely
+_token_sources_cache = {}  # (since_iso, until_iso) -> {"ts", "data"}
+TOKEN_SOURCES_TTL = 120  # seconds — parsing transcripts takes real time; kept off the 10s /api/usage path entirely
+TOKEN_SOURCES_MAX_DAYS = 90
 GROK_BILLING_CACHE_PATH = data_dir.path("grok-billing-cache.json")
 
 
@@ -90,21 +98,70 @@ def get_codex_live(force=False):
     return snap
 
 
-def get_token_sources_cached():
-    """Scoped to today only (local midnight) — parsing every transcript ever
-    written takes several seconds, not something to do on every poll. Its
-    own TTL, well away from /api/usage's 10s cache, since this is genuinely
-    expensive compared to everything else this server does."""
+def parse_token_sources_range(query, today=None):
+    """Query string without the leading '?'.
+
+    Returns (since_date, until_date, since_dt, until_dt, capped). until_dt is
+    exclusive: the start of the day after until_date, in local time. A span
+    longer than TOKEN_SOURCES_MAX_DAYS is clipped to that many days ending
+    on until_date, and capped is True.
+    """
+    today = today or datetime.date.today()
+    params = urllib.parse.parse_qs(query or "", keep_blank_values=False)
+
+    def one(name):
+        vals = params.get(name) or []
+        text = vals[0].strip() if vals and vals[0] else ""
+        return text or None
+
+    def parse_day(text, label):
+        if text is None:
+            return None
+        try:
+            return datetime.date.fromisoformat(text)
+        except ValueError:
+            raise ValueError(f"{label} must be YYYY-MM-DD")
+
+    until = parse_day(one("until"), "until") or today
+    since = parse_day(one("since"), "since") or until
+    if since > until:
+        since, until = until, since
+    capped = False
+    if (until - since).days + 1 > TOKEN_SOURCES_MAX_DAYS:
+        since = until - datetime.timedelta(days=TOKEN_SOURCES_MAX_DAYS - 1)
+        capped = True
+    since_dt = datetime.datetime.combine(since, datetime.time.min).astimezone()
+    until_dt = datetime.datetime.combine(until + datetime.timedelta(days=1), datetime.time.min).astimezone()
+    return since, until, since_dt, until_dt, capped
+
+
+def get_token_sources_cached(query=""):
+    """Token destinations for one inclusive date range, cached per range.
+
+    Parsing every transcript ever written takes several seconds, so All is
+    capped at TOKEN_SOURCES_MAX_DAYS and each range has its own TTL, away
+    from /api/usage.
+    """
+    since, until, since_dt, until_dt, capped = parse_token_sources_range(query)
+    key = (since.isoformat(), until.isoformat())
     now = time.time()
-    if _token_sources_cache["data"] is not None and (now - _token_sources_cache["ts"]) < TOKEN_SOURCES_TTL:
-        return _token_sources_cache["data"]
-    since = datetime.datetime.combine(datetime.date.today(), datetime.time())
+    expired = [k for k, entry in _token_sources_cache.items() if now - entry["ts"] >= TOKEN_SOURCES_TTL]
+    for old in expired:
+        _token_sources_cache.pop(old, None)
+    hit = _token_sources_cache.get(key)
+    if hit is not None and now - hit["ts"] < TOKEN_SOURCES_TTL:
+        return hit["data"]
     try:
-        result = token_sources.get_token_sources(since_dt=since)
+        result = token_sources.get_token_sources(since_dt=since_dt, until_dt=until_dt)
     except Exception as e:
-        result = {"error": str(e)}
-    _token_sources_cache["data"] = result
-    _token_sources_cache["ts"] = now
+        return {"error": str(e)}
+    result = dict(result)
+    result["since"] = since.isoformat()
+    result["until"] = until.isoformat()
+    result["capped"] = capped
+    if capped:
+        result["capNote"] = f"All is capped at the last {TOKEN_SOURCES_MAX_DAYS} days so this stays fast."
+    _token_sources_cache[key] = {"ts": now, "data": result}
     return result
 
 
@@ -268,6 +325,39 @@ def build_sources(account_list, max_usage_list, codex_live, grok_on, grok_billin
     return sources
 
 
+def _with_grok_sources(sources, grok_report, plans):
+    sources = list(sources)
+    if grok_report.get("found"):
+        known = all(day.get("costKnown") for day in grok_report.get("days") or [])
+        sources.append({
+            "id": "grok-cli",
+            "tool": "grok-cli",
+            "provider": "xai",
+            "label": "Grok CLI",
+            "plan": None,
+            "kind": "local-live",
+            "asOf": datetime.datetime.now().isoformat(timespec="seconds"),
+            "note": grok_usage.COST_NOTE,
+            "costKnown": known,
+        })
+    bot = (plans or {}).get("grok-bot") or {}
+    sources.append({
+        "id": "grok-bot",
+        "tool": "grok-bot",
+        "provider": "xai",
+        "label": "Grok Bot",
+        "plan": bot.get("plan"),
+        "kind": "manual" if bot else "none",
+        "asOf": bot.get("asOf"),
+        "note": bot.get("note") or "No token or cost feed. Usage stays in the Grok Bot app.",
+        "coveredByPlan": False,
+        "weeklyLimitPercent": bot.get("weeklyLimitPercent"),
+        "resetsAt": bot.get("resetsAt"),
+        "grokBot": True,
+    })
+    return sources
+
+
 def refresh_usage(force=False):
     try:
         result = subprocess.run(
@@ -277,14 +367,27 @@ def refresh_usage(force=False):
         )
         raw = json.loads(result.stdout)
 
+        grok_report = grok_usage.collect(current_email=account_usage.detect_grok_email())
+        daily_rows = raw.get("daily") or []
+        session_rows = raw.get("session") or []
+        if grok_report["found"]:
+            daily_rows = grok_usage.merge_daily(daily_rows, grok_report["days"])
+            session_rows = [row for row in session_rows if row.get("agent") != "grok"]
+
         labels = account_usage.seed_labels_from_snapshots(
             account_usage.seed_labels_from_current_account(account_usage.load_labels())
         )
         account_usage.save_labels(labels)
         session_account_map, session_project_map = account_usage.build_session_account_map()
         account_list, no_account_data, daily_by_bucket, account_sessions = account_usage.compute_accounts(
-            raw.get("session", []), session_account_map, labels, session_project_map,
+            session_rows, session_account_map, labels, session_project_map,
         )
+        if grok_report["found"]:
+            for row in grok_report["sessions"]:
+                custom = labels.get(row["accountUuid"]) or {}
+                if custom.get("label"):
+                    row["label"] = custom["label"]
+            account_sessions = list(account_sessions) + grok_report["sessions"]
 
         max_usage = account_usage.get_max_usage_snapshots()
         plans = account_usage.load_plans()
@@ -299,14 +402,14 @@ def refresh_usage(force=False):
 
         return {
             "generatedAt": datetime.datetime.now().isoformat(timespec="seconds"),
-            "daily": raw.get("daily", []),
+            "daily": daily_rows,
             "totals": raw.get("totals", {}),
             "accounts": account_list,
             "noAccountData": no_account_data,
             "dailyByBucket": daily_by_bucket,
             "accountSessions": account_sessions,
             "maxUsage": max_usage,
-            "hourly": build_hourly(raw.get("session", []), claude_blocks),
+            "hourly": build_hourly(session_rows, claude_blocks),
             "plans": plans,
             "providerStatus": provider_usage.get_provider_statuses(),
             "agentProvider": agent_provider,
@@ -319,10 +422,10 @@ def refresh_usage(force=False):
                 "claude": account_usage.get_usage_history(),
                 "codex": provider_usage.get_codex_rate_limit_history(),
             },
-            "sources": build_sources(
+            "sources": _with_grok_sources(build_sources(
                 account_list, max_usage, codex_live, unofficial_toggles.get("grok"),
                 grok_billing, plans, no_account_data, agent_provider,
-            ),
+            ), grok_report, plans),
         }
     except FileNotFoundError as e:
         if getattr(e, "filename", None) == "npx":
@@ -336,17 +439,134 @@ def refresh_usage(force=False):
 
 
 def get_usage(force=False):
+    """Return the usage payload.
+
+    A forced refresh that fails after a previous success does not drop the
+    last good payload. The copy handed back is marked stale and carries
+    refreshError; the cache itself stays clean so a later success is not
+    stuck looking failed.
+    """
     with _lock:
         now = time.time()
         stale = _cache["data"] is None or (now - _cache["ts"] > CACHE_TTL)
         if force or stale:
             data = refresh_usage(force=force)
             if "error" not in data:
-                _cache["data"] = data
+                clean = {k: v for k, v in data.items() if k not in ("stale", "refreshError")}
+                _cache["data"] = clean
                 _cache["ts"] = now
-            elif _cache["data"] is None:
+                return dict(clean, stale=False)
+            if _cache["data"] is None:
                 return data
-        return _cache["data"]
+            cached = dict(_cache["data"])
+            cached["stale"] = True
+            cached["refreshError"] = data.get("error") or "refresh failed"
+            return cached
+        return dict(_cache["data"], stale=False)
+
+
+def _hostname(host_header):
+    host = (host_header or "").strip()
+    if host.startswith("["):
+        end = host.find("]")
+        return host[1:end].lower() if end != -1 else ""
+    return host.split(":")[0].strip().lower()
+
+
+def request_is_local(host_header, origin_header, port=None):
+    """Same-machine check for the labels API. The server already binds to
+    127.0.0.1; this rejects a DNS-rebind Host and a cross-origin browser POST.
+    A missing Origin is allowed (curl, and same-origin GET, omit it)."""
+    if port is None:
+        port = PORT
+    host = _hostname(host_header)
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        return False
+    if not origin_header:
+        return True
+    origin = origin_header.strip().rstrip("/")
+    allowed = {
+        f"http://127.0.0.1:{port}",
+        f"http://localhost:{port}",
+        f"http://[::1]:{port}",
+    }
+    return origin in allowed
+
+
+def validate_label_body(body):
+    """accountUuid + label (+ optional note) for account-labels.json.
+
+    accountUuid is an id we already discovered at runtime (or the synthetic
+    unknown-session bucket). It is checked as a short token so a request
+    cannot smuggle a path or a blob. label is the display name the user typed.
+    """
+    if not isinstance(body, dict):
+        raise ValueError("JSON object required")
+    account = body.get("accountUuid")
+    if not isinstance(account, str) or not _LABEL_ID_RE.match(account.strip()):
+        raise ValueError("accountUuid is required and must be a short id")
+    raw_label = body.get("label")
+    if not isinstance(raw_label, str):
+        raise ValueError("label is required")
+    if any(ord(ch) < 32 for ch in raw_label):
+        raise ValueError("label contains invalid characters")
+    label = " ".join(raw_label.split())
+    if not label or len(label) > _LABEL_MAX:
+        raise ValueError("label must be between 1 and 80 characters")
+    note_provided = "note" in body
+    note = None
+    if note_provided:
+        note = body.get("note")
+        if note is not None:
+            if not isinstance(note, str):
+                raise ValueError("note must be a string")
+            note = note.strip()
+            if any(ord(ch) < 32 and ch not in "\n\t" for ch in note):
+                raise ValueError("note contains invalid characters")
+            if len(note) > _NOTE_MAX:
+                raise ValueError("note must be 500 characters or fewer")
+            if not note:
+                note = None
+    return account.strip(), label, note, note_provided
+
+
+def _apply_label_to_cached_usage(cached, account_uuid, entry):
+    """Patch a cached /api/usage payload so a rename shows up even when the
+    next ccusage refresh fails and the previous payload is served again.
+    dailyByBucket keys by the old label; the next successful refresh rebuilds it."""
+    for key in ("accounts", "accountSessions", "maxUsage"):
+        for row in cached.get(key) or []:
+            if isinstance(row, dict) and row.get("accountUuid") == account_uuid:
+                row["label"] = entry["label"]
+                row["note"] = entry.get("note")
+    for src in cached.get("sources") or []:
+        if not isinstance(src, dict):
+            continue
+        if src.get("tool") == "claude" and src.get("id") == account_uuid:
+            src["label"] = entry["label"]
+            mu = src.get("maxUsage")
+            if isinstance(mu, dict):
+                mu["label"] = entry["label"]
+
+
+def save_account_label(account_uuid, label, note, note_provided):
+    """Merge one account name into account-labels.json, keeping an existing
+    note when the request did not send one."""
+    with _lock:
+        labels = account_usage.load_labels()
+        existing = labels.get(account_uuid)
+        if not isinstance(existing, dict):
+            existing = {}
+        entry = {"label": label, "note": existing.get("note")}
+        if note_provided:
+            entry["note"] = note
+        labels[account_uuid] = entry
+        account_usage.save_labels(labels)
+        _cache["ts"] = 0.0
+        cached = _cache.get("data")
+        if isinstance(cached, dict):
+            _apply_label_to_cached_usage(cached, account_uuid, entry)
+        return labels
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -368,7 +588,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             force = "force=1" in self.path
             self._send_json(get_usage(force=force))
         elif path == "/api/token-sources":
-            self._send_json(get_token_sources_cached())
+            query = self.path.split("?", 1)[1] if "?" in self.path else ""
+            try:
+                self._send_json(get_token_sources_cached(query))
+            except ValueError as e:
+                self._send_json({"error": str(e)}, code=400)
+        elif path == "/api/labels":
+            self._handle_labels_get()
         elif path in ("/", "/index.html"):
             with open(HTML_PATH, "rb") as f:
                 body = f.read()
@@ -405,9 +631,58 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._handle_unofficial_toggle_post()
         elif path == "/api/grok-billing/refresh":
             self._handle_grok_billing_refresh()
+        elif path == "/api/labels":
+            self._handle_labels_post()
         else:
             self.send_response(404)
             self.end_headers()
+
+    def _client_is_local(self):
+        return request_is_local(self.headers.get("Host"), self.headers.get("Origin"))
+
+    def _read_json_object(self, max_bytes):
+        raw_len = self.headers.get("Content-Length") or "0"
+        if not str(raw_len).isdigit():
+            raise ValueError("Content-Length is invalid")
+        length = int(raw_len)
+        if length > max_bytes:
+            raise ValueError("request body is too large")
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            body = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise ValueError("invalid JSON")
+        if not isinstance(body, dict):
+            raise ValueError("JSON object required")
+        return body
+
+    def _handle_labels_get(self):
+        if not self._client_is_local():
+            self._send_json({"ok": False, "error": "This endpoint only accepts requests from this machine."}, code=403)
+            return
+        try:
+            self._send_json({"ok": True, "labels": account_usage.load_labels()})
+        except Exception as e:
+            self._send_json({"ok": False, "error": str(e)}, code=400)
+
+    def _handle_labels_post(self):
+        if not self._client_is_local():
+            self._send_json({"ok": False, "error": "This endpoint only accepts requests from this machine."}, code=403)
+            return
+        try:
+            body = self._read_json_object(_LABEL_BODY_MAX)
+            account, label, note, note_provided = validate_label_body(body)
+            labels = save_account_label(account, label, note, note_provided)
+            saved = labels.get(account) or {}
+            self._send_json({
+                "ok": True,
+                "accountUuid": account,
+                "label": saved.get("label"),
+                "note": saved.get("note"),
+                "labels": labels,
+            })
+        except Exception as e:
+            self._send_json({"ok": False, "error": str(e)}, code=400)
 
     def _handle_unofficial_toggle_post(self):
         try:
@@ -450,6 +725,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "note": body.get("note") or None,
                 "asOf": body.get("asOf") or datetime.date.today().isoformat(),
             }
+            if "weeklyLimitPercent" in body and body.get("weeklyLimitPercent") not in (None, ""):
+                try:
+                    pct = float(body.get("weeklyLimitPercent"))
+                except (TypeError, ValueError):
+                    raise ValueError("weeklyLimitPercent must be a number")
+                if pct < 0 or pct > 100:
+                    raise ValueError("weeklyLimitPercent must be between 0 and 100")
+                entry["weeklyLimitPercent"] = pct
+            if "resetsAt" in body:
+                reset = body.get("resetsAt")
+                entry["resetsAt"] = reset.strip() if isinstance(reset, str) and reset.strip() else None
             plans = account_usage.save_plan(agent, entry)
             with _lock:
                 _cache["ts"] = 0.0  # force next GET /api/usage to pick up the new plan

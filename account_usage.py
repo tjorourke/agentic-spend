@@ -63,8 +63,14 @@ def load_labels():
     if os.path.exists(LABELS_PATH):
         with open(LABELS_PATH) as f:
             raw = json.load(f)
-        # accept both the old {uuid: "label"} shape and {uuid: {label, note}}
-        return {k: (v if isinstance(v, dict) else {"label": v, "note": None}) for k, v in raw.items()}
+        # accept both the old {uuid: "label"} shape and {uuid: {label, note}}.
+        # Keys starting with "_" are comments (see account-labels.json.example)
+        # and are not accounts.
+        return {
+            k: (v if isinstance(v, dict) else {"label": v, "note": None})
+            for k, v in raw.items()
+            if not str(k).startswith("_")
+        }
     return {}
 
 
@@ -528,7 +534,7 @@ def main():
             print(f"    - {a}: ${c:,.2f}")
 
     print()
-    print(f"Labels file: {LABELS_PATH} — edit it to rename accounts (key = accountUuid).")
+    print(f"Labels file: {LABELS_PATH}. Edit it, or name an account in the dashboard. Key = accountUuid.")
 
 
 if __name__ == "__main__":
