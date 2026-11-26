@@ -7,7 +7,7 @@ cask "agentic-spend-app" do
   desc "Menu bar app for the Agentic Spend local AI spend dashboard"
   homepage "https://github.com/tjorourke/agentic-spend"
 
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
   depends_on formula: "tjorourke/agentic-spend/agentic-spend"
 
   app "Agentic Spend.app"
