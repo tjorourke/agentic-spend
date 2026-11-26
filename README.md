@@ -10,23 +10,23 @@ browsed from a phone — there's no mobile layout, and none is planned.
 
 ## Screenshots
 
-(Figures below are from a real run with the account/email placeholdered out.)
+(Figures below are sample data, with example names and paths, not a live account.)
 
 **Overview** — what's actually costing money vs. covered by a subscription:
 
-![Overview](screenshots/overview.png?v=2)
+![Overview](screenshots/overview.png?v=3)
 
 **Days:** a calendar heatmap. Click a day to show that day:
 
-![Days](screenshots/days.png?v=2)
+![Days](screenshots/days.png?v=3)
 
 **Accounts** — real plan-limit usage per Claude account, live from the status line:
 
-![Accounts](screenshots/accounts.png?v=2)
+![Accounts](screenshots/accounts.png?v=3)
 
 **Settings** — every source Agentic Spend found, theme toggle, live-usage setup:
 
-![Settings](screenshots/settings.png?v=2)
+![Settings](screenshots/settings.png?v=3)
 
 ## Prerequisites
 
@@ -140,15 +140,18 @@ match a manual plan note you've saved, the UI flags it rather than silently pref
   money". **Plan limit** is the session/week usage percentage the subscription is actually bound
   by, for a named account, with that session's and week's reset times. It sits next to the
   list-price figures because a subscription caps usage by a session/week multiplier, which is a
-  different kind of number from a dollar amount. A cached plan-limit reading is labelled `cached`,
-  with the time it was read. Avg/day is list price divided by calendar days in the range, with the
-  average of days that had spend as a secondary figure when that differs. Avg/day and Peak day hide
-  themselves on a 1-day range, where they would repeat the list-price total.
+  different kind of number from a dollar amount. The tile follows the header filter: a Claude
+  account shows that account, Codex shows Codex's own window, and any other tool says it is not
+  applicable. A cached plan-limit reading is labelled `cached`, with the time it was read. The
+  Tokens tile is input plus output, excluding cache. Avg/day is list price divided by calendar
+  days in the range, with the average of days that had spend as a secondary figure when that
+  differs. Avg/day and Peak day hide themselves on a 1-day range, where they would repeat the
+  list-price total. Picking a past day also hides the Today tile, so that number is not read as
+  the day you picked.
 - **Hourly spend:** Claude's bars come from `ccusage blocks -n 1`, grouped by each request's own
   timestamp, so a past hour is final rather than drifting forward as a long session keeps running.
   Every other tool only has a session's last-active moment to go on, so those bars can still move.
-  Hourly data is collected for today. Choosing an earlier day still shows today's hourly chart,
-  with a note that it is today and not the day you picked.
+  Hourly data is collected for today only. Choosing an earlier day hides the hourly card.
 - **Cache efficiency** and **Where tokens went today** sit side by side, and each says which
   window it uses. Cache efficiency follows the selected range: uncached input / cache write /
   cache read / output, straight from fields ccusage already provides in `modelBreakdowns`. Where
@@ -157,15 +160,20 @@ match a manual plan note you've saved, the UI flags it rather than silently pref
   for this). It reads the raw transcripts directly, not ccusage, tokens only, since there is no
   pricing per bucket.
 - **Days** has a token count alongside cost for every date, with a breakdown (real vs. including
-  cache) on hover, and a native date picker to jump straight to one. Clicking a heatmap cell, a
-  table row, the peak-day date, or a daily bar sets that one day as the range.
+  cache) on hover. Clicking a heatmap cell, a table row, the peak-day date, or a daily bar sets
+  that one day as the range and shows a "Showing 24 Nov 2026" chip. Back returns to the previous
+  range. The header dates are the only date control. Spend by account uses the same header filter
+  as Daily spend.
 - **Projects** (its own tab, next to Accounts): spend per repo, using each session's real working
   directory as recorded in its own transcript. Claude-only, same scope as Accounts. Long paths are
   shortened (home becomes `~`, the middle collapses) and the full path stays on the tooltip. The
   account menu filters this tab the same way it filters Overview.
-- **Account names:** an account that still has no name can be named from its Accounts card or the
-  Settings table. The name is saved on this machine in `account-labels.json` (see
-  `account-labels.json.example`). It is not written into source.
+- **Account names:** an account that still has no name can be named from its Accounts card, from
+  its estimate row on Overview, or from the Settings table. A named account can still be renamed
+  from its card. The name is saved on this machine in `account-labels.json` (see
+  `account-labels.json.example`). It is not written into source. The sidebar has the theme toggle
+  and an "updated" time taken from the server. If a refresh fails, that stamp says the figure is
+  cached.
 - **Plan usage over time** (on the Accounts page) — a chart of the 5h/weekly/30-day window
   percentage, not just the current reading. Claude's history accumulates going forward from the
   status line; Codex's is backfilled for real from its own rollout files, which already carry a
