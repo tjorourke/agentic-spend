@@ -1,6 +1,6 @@
 cask "agentic-spend-app" do
-  version "1.7.1"
-  sha256 "216665ff5dcbc59c0d50a0a363b850896fd8074edf2502952188de35983575ad"
+  version "1.7.2"
+  sha256 "a487f722b3526047e58a377d81e6243bf1875fdac1f5ae70b2c47ef243812390"
 
   url "https://github.com/tjorourke/agentic-spend/releases/download/v#{version}/Agentic-Spend-#{version}.zip"
   name "Agentic Spend"
