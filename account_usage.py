@@ -76,8 +76,7 @@ def load_labels():
 
 
 def save_labels(labels):
-    with open(LABELS_PATH, "w") as f:
-        json.dump(labels, f, indent=2, sort_keys=True)
+    data_dir.atomic_write_json(LABELS_PATH, labels)
 
 
 def load_plans():
@@ -110,8 +109,7 @@ def save_plan(agent, entry):
         with open(PLANS_PATH) as f:
             raw = json.load(f)
     raw[agent] = entry
-    with open(PLANS_PATH, "w") as f:
-        json.dump(raw, f, indent=2, sort_keys=True)
+    data_dir.atomic_write_json(PLANS_PATH, raw)
     return raw
 
 

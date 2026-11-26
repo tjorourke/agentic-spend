@@ -120,7 +120,7 @@ brew update && brew upgrade agentic-spend
 `.tar.gz` from GitHub, `shasum -a 256` it, and update `Formula/agentic-spend.rb`'s
 `url`/`sha256`/`version` to match before committing and pushing the formula.)
 
-## Forecasts, comparisons, notifications and the weekly digest
+## Forecasts, comparisons, notifications and the weekly report
 
 - **Forecast.** Each plan with a weekly (or other fixed) window shows a straight-line
   forecast next to its row on Overview and its card on Accounts: "on track for 74% by
@@ -136,15 +136,16 @@ brew update && brew upgrade agentic-spend
   tab. A model bar on a single-day chart opens that model. An account or agent in the
   Spend by account legend filters the dashboard to it (click again to clear). Bars and
   legend items work with the keyboard (Tab, then Enter or Space).
-- **Notifications.** Settings, "Background and notifications": thresholds per plan (default
-  80% and 95%), an alert when paid extra credit starts being used, and a "Send test
+- **Notifications.** Settings, "Background and notifications": thresholds per plan, whole
+  percentages from 1 to 100 (default 80% and 95%), an alert when paid extra credit starts being used, and a "Send test
   notification" button. The server checks every 10 minutes and shows each threshold once per
   plan window (state in `~/.agentic-spend/notification-state.json`). Delivered with
   `osascript`, or by the menu bar app when it's running.
-- **Weekly digest.** `/?tab=digest` (and `/api/digest`): last complete Monday-to-Sunday week,
-  list-price and real spend, tokens, each plan's highest reading, top projects and models,
-  and the change on the week before. A notification points to it on Mondays at 09:00 while
-  the server is running.
+- **Weekly report.** `/?tab=digest` (and `/api/digest?week=YYYY-MM-DD`): one complete
+  Monday-to-Sunday week, usage value at API prices and real spend, tokens, each plan's highest
+  reading, top projects and models, and the change on the week before. Previous and Next (or the
+  week menu) step back through every week in your history; a week with no usage says so. A
+  notification points to it on Mondays at 09:00 while the server is running.
 - **Start at login.** Settings toggle, or `agentic-spend login on|off|status`. Writes
   `~/Library/LaunchAgents/com.agenticspend.server.plist`, which runs
   `agentic-spend serve` once at login (RunAtLoad, no KeepAlive), so readings and
@@ -215,6 +216,40 @@ brew update && brew upgrade agentic-spend
   (excluding tax). On 26 Nov 2026, [claude.com/pricing](https://claude.com/pricing) still
   showed US dollars from a UK Mac, and neither ChatGPT's nor OpenCode's pricing pages could
   be read as a published UK pound list, so no GBP rows are shipped for those.
+
+## Version 1.8.0
+
+- **One Save in Settings.** Every field on the Settings page (account names, pricing region,
+  seat prices, OpenCode backend billing, the manual note, the OpenAI Admin key, notifications
+  and start at login) is saved by one **Save settings** button, in one request to
+  `POST /api/settings`. The server checks every section first and writes nothing if any part is
+  wrong; each file is written to a temp file and renamed into place. The bar says when you have
+  unsaved changes, and a background refresh no longer wipes what you typed. (In 1.7.2 each
+  account name had its own Save, and saving one re-drew the page and cleared the other box.)
+- **OpenCode backends.** OpenCode sends each prompt to a backend. The server reads the provider
+  behind every model call from OpenCode's own history (`opencode.db`, read-only) and how you
+  signed in from `auth.json` (credential type only, never the key), then splits OpenCode's
+  ccusage cost by backend: for example "Google AI Studio (Gemini API key), pay as you go". API
+  keys and cloud billing (Bedrock, Vertex) count as real spend at list price; subscription
+  logins, company gateways and free tiers do not. A custom provider (a company gateway or a
+  local proxy) can't be classified from local files, so Settings > OpenCode backends lets you
+  choose who pays; a choice there always wins. Stored in `~/.agentic-spend/opencode-providers.json`
+  (see `opencode-providers.json.example`).
+- **Clearer names.** "Spend by account/model/day/project" are now "Usage value by ... (API
+  prices)": what the usage would cost at published API prices, not what you were charged. The
+  Overview cost card is "Plans and real spend", with a headline list-price figure over a bar split
+  into covered by subscriptions (green) and real / unverified spend (red).
+- **Overview.** The single-account "Plan limit" tile is gone (every plan's limits are already in
+  "Plans and real spend"). The Models tab is folded into Overview: Model mix now splits each
+  model by the account it ran under (your names from Settings; Codex, OpenCode and Grok under
+  their own name; Claude sessions with no account record as Unassigned), and the full sortable
+  model table sits under it. Old `?tab=models` links land there.
+- **Projects** show the accounts and models behind each project, with tokens and usage value,
+  when you click a row.
+- **Table or Graph.** One switch in the top bar shows the Weekly report cards, Model mix and
+  Projects as tables or as bars, with the same figures. The choice is remembered in the browser.
+- **Look.** Light grey side navigation with icons, a white main area with a thin top bar (page
+  title and Refresh), and a wider layout (up to 1600px, more on very large screens).
 
 ## Live Claude usage (on by default)
 

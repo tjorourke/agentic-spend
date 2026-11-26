@@ -14,16 +14,20 @@
 </script>
 <style>
   :root {
-    --bg: #f5f4fa;
+    --bg: #fafafa;
+    --surface: #fafafa;
+    --sidebar: #f5f5f6;
     --card: #ffffff;
-    --border: #e6e4ec;
-    --text: #1f1b2e;
-    --muted: #767489;
-    --accent: #7c3aed;
-    --accent-soft: #ede9fe;
-    --accent-soft-text: #6d28d9;
-    --row-hover: #f6f4fd;
-    --nav-hover: #ece9f5;
+    --border: #e6e6e9;
+    --border-soft: #efeff1;
+    --text: #18181b;
+    --muted: #71717a;
+    --accent: #4b5bd6;
+    --accent-soft: #eceefb;
+    --accent-soft-text: #3442b0;
+    --row-hover: #f6f6f7;
+    --nav-hover: #ececee;
+    --nav-active: #e6e6e9;
     --err-bg: #fef2f2; --err-border: #fecaca; --err-text: #b91c1c;
     --banner-bg: #eef2ff; --banner-border: #c7d2fe; --banner-text: #3730a3;
     --ok-bg: #ecfdf5; --ok-border: #a7f3d0; --ok-text: #047857;
@@ -33,16 +37,20 @@
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   [data-theme="dark"] {
-    --bg: #15131f;
-    --card: #1e1b2c;
-    --border: #322e45;
-    --text: #ece9f7;
-    --muted: #9692ab;
-    --accent: #a78bfa;
-    --accent-soft: #2f2a47;
-    --accent-soft-text: #c4b5fd;
-    --row-hover: #262238;
-    --nav-hover: #262238;
+    --bg: #111113;
+    --surface: #17171a;
+    --sidebar: #161618;
+    --card: #1b1b1e;
+    --border: #2c2c31;
+    --border-soft: #242428;
+    --text: #ececf0;
+    --muted: #a1a1aa;
+    --accent: #8f9cf5;
+    --accent-soft: #262a45;
+    --accent-soft-text: #c3caff;
+    --row-hover: #222226;
+    --nav-hover: #222226;
+    --nav-active: #2a2a2f;
     --err-bg: #3a1d20; --err-border: #5c2a2e; --err-text: #fca5a5;
     --banner-bg: #221f3a; --banner-border: #3a355c; --banner-text: #c7d2fe;
     --ok-bg: #16302a; --ok-border: #1f4f41; --ok-text: #6ee7b7;
@@ -55,7 +63,7 @@
     margin: 0;
     background: var(--bg);
     color: var(--text);
-    font-family: -apple-system, "Inter", system-ui, sans-serif;
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     font-size: 14px;
     display: flex;
     min-height: 100vh;
@@ -135,7 +143,7 @@
   @keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
 
   /* ---------- content ---------- */
-  .content { flex: 1; padding: 1.75rem 2rem; max-width: 1100px; position: relative; }
+  .content { flex: 1; padding: 1.75rem clamp(1rem, 2.5vw, 2.5rem); max-width: 1600px; min-width: 0; position: relative; }
   .loading-overlay {
     position: absolute; inset: 0; z-index: 50;
     display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -194,7 +202,7 @@
   }
   .segmented.custom-on button[data-range].active { background: none; color: var(--muted); }
   .segmented button:hover:not(.active) { color: var(--text); }
-  .segmented button.active { background: var(--accent); color: white; }
+  .segmented button.active { background: var(--nav-active); color: var(--text); font-weight: 600; }
   .segmented button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   /* one look for every real action button: filled purple primary, outlined secondary */
   .btn, .btn-primary {
@@ -379,8 +387,8 @@
   }
   #tokenSourcesCard .bd-tok { display: block; font-variant-numeric: tabular-nums; }
   .proj-path {
-    font-family: var(--mono); font-size: 0.78rem; max-width: 36rem;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: var(--mono); font-size: 0.78rem;
+    overflow-wrap: anywhere; white-space: normal;
   }
   .label-form { display: flex; gap: 0.4rem; align-items: center; margin-top: 0.45rem; flex-wrap: wrap; }
   .label-form input[type="text"] {
@@ -443,6 +451,38 @@
   .breakdown-row .bd-pct.bd-pct-wide { width: 150px; white-space: nowrap; }
   .breakdown-row .bd-pct.bd-pct-wide .muted { display: block; font-size: 0.72rem; }
 
+  .cost-split { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+  .cost-split-head { display: flex; align-items: baseline; gap: 0.75rem; flex-wrap: wrap; }
+  .cost-split-label { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  .cost-split-total { font-size: 2.1rem; font-weight: 700; color: var(--text); line-height: 1.1; }
+  .cost-split-bar { display: flex; height: 18px; border-radius: 9px; overflow: hidden; background: var(--border); margin: 0.6rem 0 0.7rem; }
+  .cost-split-bar .seg { display: block; height: 100%; }
+  .cost-split-bar .seg-ok { background: var(--ok-text); }
+  .cost-split-bar .seg-bad { background: var(--bad-text); }
+  .cost-split-legend { display: flex; gap: 1.5rem; flex-wrap: wrap; }
+  .cost-split-legend .leg { display: flex; align-items: baseline; gap: 0.45rem; }
+  .cost-split-legend .dot { width: 0.7rem; height: 0.7rem; border-radius: 50%; display: inline-block; align-self: center; }
+  .cost-split-legend .leg-ok .dot { background: var(--ok-text); }
+  .cost-split-legend .leg-bad .dot { background: var(--bad-text); }
+  .cost-split-legend .leg-name { font-size: 0.85rem; color: var(--muted); }
+  .cost-split-legend .leg-amt { font-size: 1.45rem; font-weight: 700; }
+  .cost-split-legend .leg-ok .leg-amt { color: var(--ok-text); }
+  .cost-split-legend .leg-bad .leg-amt { color: var(--bad-text); }
+  .cost-split-legend .leg-pct { font-size: 0.9rem; color: var(--muted); }
+  .oc-backend { display: block; margin: 0.1rem 0; }
+  .oc-backend .pill { margin: 0 0.25rem; }
+  .plan-form .row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem 0.9rem; }
+  .plan-form .row > label { display: inline-flex; align-items: center; gap: 0.3rem; }
+  .settings-save-bar { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; gap: 0.8rem; margin-top: 1rem;
+    padding: 0.75rem 1rem; background: var(--card-bg, var(--bg)); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 -4px 16px rgba(0,0,0,0.06); }
+  .settings-save-bar.dirty { border-color: var(--accent); }
+  .settings-save-bar.dirty #settingsSaveState { color: var(--text); font-weight: 600; }
+  #settingsSaveState.error { color: var(--bad-text); font-weight: 600; }
+  .pct-field { display: inline-flex; align-items: center; gap: 0.25rem; }
+  .pct-field input { width: 11rem; }
+  .pct-suffix { color: var(--muted); font-weight: 600; }
+  .field-error { color: var(--bad-text); font-size: 0.8rem; }
+  input[aria-invalid="true"] { border-color: var(--bad-text); }
   .src-row {
     display: flex; align-items: center; gap: 0.6rem;
     padding: 0.45rem 0.7rem; border-radius: 8px; margin-bottom: 0.3rem;
@@ -476,8 +516,27 @@
   .tier-badge.tier-experimental { border-color: var(--heavy-pill-text); color: var(--heavy-pill-text); }
   .pace-warn { color: var(--heavy-pill-text); font-weight: 600; }
   .src-row.src-pace-warn { border-color: var(--heavy-pill-text); }
+  .proj-row { cursor: pointer; }
+  .proj-row .stack-track { margin-top: 0.35rem; max-width: 36rem; }
+  .proj-summary { font-size: 0.75rem; margin-top: 0.15rem; }
+  .chev-toggle { display: inline-block; width: 0.9rem; color: var(--muted); }
+  .proj-detail td { background: var(--bg); }
+  .proj-detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem 2rem; padding: 0.4rem 0.2rem 0.6rem 1.2rem; }
+  .proj-detail-title { font-weight: 600; font-size: 0.8rem; margin-bottom: 0.35rem; }
+  .mini-table { width: 100%; font-size: 0.8rem; }
+  .mini-table td, .mini-table th { padding: 0.2rem 0.4rem; }
+  .stack-track { flex: 1; height: 10px; background: var(--border); border-radius: 5px; overflow: hidden; min-width: 4rem; }
+  .stack-bar { display: flex; height: 100%; border-radius: 5px; overflow: hidden; }
+  .stack-seg { display: block; height: 100%; }
+  .bucket-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.1rem; margin: 0.2rem 0 0.8rem; font-size: 0.85rem; }
+  .bucket-item { display: inline-flex; align-items: center; gap: 0.35rem; }
+  .bucket-item b { font-size: 0.95rem; }
+  .swatch { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 3px; vertical-align: middle; }
+  .mix-parts { font-size: 0.74rem; margin: -0.15rem 0 0.45rem; padding-left: calc(220px + 0.6rem); overflow-wrap: anywhere; }
+  .table-scroll { overflow-x: auto; }
+  .mix-table .total-row td { border-top: 2px solid var(--border); }
   .mix-row { display: flex; align-items: center; gap: 0.6rem; font-size: 0.8rem; margin-bottom: 0.3rem; }
-  .mix-row .mix-name { width: 220px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mix-row .mix-name { width: 220px; flex-shrink: 0; overflow-wrap: anywhere; }
   .mix-row .progress-track { flex: 1; height: 6px; }
   .mix-row .mix-cost { width: 90px; text-align: right; flex-shrink: 0; }
   .mix-row .mix-share { width: 44px; text-align: right; flex-shrink: 0; color: var(--muted); }
@@ -545,6 +604,17 @@
   svg .pick { cursor: pointer; }
   svg .pick:focus { outline: none; }
   svg .pick:focus-visible { stroke: var(--accent); stroke-width: 2px; }
+  .report-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 0.8rem; flex-wrap: wrap; margin-bottom: 1rem; }
+  .week-nav { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+  .week-nav button[disabled] { opacity: 0.45; cursor: default; }
+  .rbars { display: flex; flex-direction: column; gap: 0.45rem; }
+  .rbar-row { display: grid; grid-template-columns: minmax(8rem, 34%) 1fr auto; align-items: center; gap: 0.6rem; }
+  .rbar-row[data-digest-day] { cursor: pointer; }
+  .rbar-label { overflow-wrap: anywhere; font-size: 0.85rem; }
+  .rbar-track { position: relative; height: 12px; background: var(--border); border-radius: 6px; overflow: visible; }
+  .rbar-fill { height: 100%; background: var(--accent); border-radius: 6px; }
+  .rbar-marker { position: absolute; top: -3px; width: 2px; height: 18px; background: var(--text); opacity: 0.55; }
+  .rbar-value { font-size: 0.85rem; white-space: nowrap; text-align: right; }
   .digest-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
   .digest-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
   .settings-app .row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.5rem; font-size: 0.85rem; }
@@ -553,6 +623,45 @@
   .settings-app button.secondary { background: transparent; color: var(--text); }
   .settings-app button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .settings-app table td { padding: 0.25rem 0.6rem 0.25rem 0; font-size: 0.82rem; }
+  /* ---------- shell (1.8.0): light grey side nav, white main, thin top bar ---------- */
+  body { background: var(--card); }
+  .sidebar { background: var(--sidebar); width: 228px; padding: 1.1rem 0.75rem; }
+  .brand { padding: 0.15rem 0.45rem 1.3rem; }
+  .brand img { width: 28px; height: 28px; border-radius: 7px; }
+  nav.nav { gap: 2px; }
+  .nav-item { display: flex; align-items: center; gap: 0.6rem; min-height: 36px; padding: 0 0.6rem; border-radius: 6px;
+    color: var(--muted); font-size: 13px; font-weight: 500; }
+  .nav-item:hover { background: var(--nav-hover); color: var(--text); }
+  .nav-item.active { background: var(--nav-active); color: var(--text); font-weight: 600; }
+  .nav-icon { width: 17px; height: 17px; flex-shrink: 0; fill: none; stroke: currentColor; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+  .content { padding: 0; max-width: none; background: var(--card); }
+  .topbar { position: sticky; top: 0; z-index: 20; height: 56px; padding: 0 clamp(1rem, 2.5vw, 2rem);
+    display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+    background: var(--card); border-bottom: 1px solid var(--border); }
+  .topbar h1 { margin: 0; font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+  .topbar-actions { display: flex; align-items: center; gap: 0.6rem; }
+  .refresh-button { height: 30px; padding: 0 0.7rem; display: inline-flex; align-items: center; gap: 0.4rem;
+    color: var(--text); background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+    font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+  #refreshBtn.refresh-button { width: auto; height: 30px; font-size: 12px; }
+  .refresh-button:hover { background: var(--nav-hover); }
+  .refresh-button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  #refreshBtn.spinning { animation: none; }
+  #refreshBtn.spinning svg { animation: spin 0.7s linear infinite; }
+  .content-inner { max-width: 1600px; margin: 0 auto; padding: 1.25rem clamp(1rem, 2.5vw, 2rem) 2rem; }
+  .page-header { justify-content: flex-end; margin-bottom: 1.1rem; }
+  .card { border: 1px solid var(--border); border-radius: 8px; box-shadow: none; }
+  th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); background: var(--surface); }
+  .pill, .src-chip, .tier-badge { border-radius: 4px; font-size: 11px; font-weight: 550; }
+  .kpi .label { text-transform: uppercase; letter-spacing: 0.04em; font-size: 11px; }
+  @media (min-width: 2200px) {
+    .content-inner { max-width: 1760px; }
+  }
+  @media (max-width: 760px) {
+    .sidebar { width: 64px; padding: 0.8rem 0.4rem; }
+    .brand-text, .nav-item span, #updatedAt { display: none; }
+    .topbar { height: auto; min-height: 56px; flex-wrap: wrap; padding-block: 0.5rem; }
+  }
 </style>
 </head>
 <body>
@@ -563,19 +672,17 @@
     <span class="brand-text"><span class="brand-eyebrow">mastertheagent.com</span>Agentic Spend</span>
   </a>
   <nav class="nav" id="nav">
-    <button class="nav-item active" data-tab="overview" aria-current="page">Overview</button>
-    <button class="nav-item" data-tab="models">Models</button>
-    <button class="nav-item" data-tab="days">Days</button>
-    <button class="nav-item" data-tab="accounts">Accounts</button>
-    <button class="nav-item" data-tab="projects">Projects</button>
-    <button class="nav-item" data-tab="digest">Digest</button>
-    <button class="nav-item" data-tab="settings">Settings</button>
+    <button class="nav-item active" data-tab="overview" aria-current="page"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span>Overview</span></button>
+    <button class="nav-item" data-tab="days"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span>Days</span></button>
+    <button class="nav-item" data-tab="accounts"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21v-1a6 6 0 0 1 12 0v1"/><path d="M16 4.5a4 4 0 0 1 0 7M22 21v-1a6 6 0 0 0-4-5.6"/></svg><span>Accounts</span></button>
+    <button class="nav-item" data-tab="projects"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Projects</span></button>
+    <button class="nav-item" data-tab="digest"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/></svg><span>Weekly report</span></button>
+    <button class="nav-item" data-tab="settings"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg><span>Settings</span></button>
   </nav>
   <div class="sidebar-footer">
     <span id="updatedAt">loading…</span>
     <span class="sidebar-actions">
       <button id="themeBtn" type="button" title="Switch to dark">&#9728;</button>
-      <button id="refreshBtn" type="button" title="Refresh">&#8635;</button>
     </span>
   </div>
 </aside>
@@ -585,8 +692,21 @@
     <div class="loading-coin">$</div>
     <div class="loading-text">Loading your spend…</div>
   </div>
-  <div class="page-header">
+  <header class="topbar">
     <h1 id="pageTitle">Overview</h1>
+    <div class="topbar-actions">
+      <div class="segmented view-toggle" id="viewToggle" role="group" aria-label="Show cards as" title="Switches every card that has both views: Weekly report, Model mix and Projects">
+        <button type="button" data-view="table">Table</button>
+        <button type="button" data-view="graph">Graph</button>
+      </div>
+      <button id="refreshBtn" type="button" class="refresh-button" title="Fetch fresh data now">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></svg>
+        <span>Refresh</span>
+      </button>
+    </div>
+  </header>
+  <div class="content-inner">
+  <div class="page-header">
     <div class="header-controls" id="headerControls">
       <div class="segmented" id="rangeSeg">
         <button data-range="1">1d</button>
@@ -633,7 +753,7 @@
     <div class="card" id="grokBotTodayCard" style="display:none; margin-bottom: 1rem;"></div>
     <div class="cards">
       <div class="card kpi" id="kpiSpend" title="ccusage list price for this range: token counts times published prices, in USD. Real and covered underneath reuse the split on the card below.">
-        <div class="label">List-price estimate</div>
+        <div class="label">Usage value (API prices)</div>
         <div class="value" id="totalWin">–</div>
         <div class="sub" id="spendRealSub"></div>
         <div class="cmp" id="totalWinCmp"></div>
@@ -642,7 +762,6 @@
       <div class="card kpi" id="kpiHighestDay"><div class="label">Peak day</div><div class="value" id="maxDay">–</div><div class="sub" id="maxDaySub"></div></div>
       <div class="card kpi" id="kpiToday"><div class="label" id="todayLabel">Today</div><div class="value" id="totalToday">–</div><div class="sub" id="todaySub"></div></div>
       <div class="card kpi" id="kpiTokens"><div class="label">Tokens</div><div class="value" id="realTokensWin">–</div><div class="sub" id="tokensCaption">input + output, excluding cache</div><div class="sub" id="realTokensToday"></div><div class="cmp" id="tokensCmp"></div></div>
-      <div class="card kpi" id="kpiPlan"><div class="label">Plan limit</div><div class="value" id="planUsageVal">–</div><div class="sub" id="planUsageSub"></div></div>
     </div>
     <div class="overview-pair">
       <div class="card" id="cacheCard">
@@ -658,10 +777,45 @@
         <div id="tokenSourcesBody"></div>
       </div>
     </div>
+    <div id="model-mix"></div>
     <div class="card" id="modelMixCard" style="display:none; margin-top: 1rem;"></div>
+    <div class="card" id="allModelsCard" style="margin-top: 1rem;">
+      <div class="card-head"><h2>All models</h2><span class="muted">Sort or search; click a model for its daily usage value</span></div>
+      <div class="toolbar">
+        <input id="modelSearch" placeholder="Search models…">
+        <span class="muted" id="modelCount"></span>
+      </div>
+      <table id="modelTable">
+        <thead><tr>
+          <th data-k="model" aria-sort="none"><button type="button" class="th-sort">Model <span class="chev">&#9662;</span></button></th>
+          <th class="right" data-k="cost" aria-sort="none"><button type="button" class="th-sort">Usage value <span class="chev">&#9662;</span></button></th>
+          <th class="right" data-k="input" aria-sort="none" title="Prompt/context tokens sent to the model, excluding cache."><button type="button" class="th-sort">Input <span class="chev">&#9662;</span></button></th>
+          <th class="right" data-k="output" aria-sort="none" title="Tokens the model generated. Priced several times higher per token than input."><button type="button" class="th-sort">Output <span class="chev">&#9662;</span></button></th>
+          <th class="right" data-k="tokens" aria-sort="none" title="Input plus output only. Excludes cache read and cache create. Hover a row for the full cache breakdown."><button type="button" class="th-sort">Real total <span class="chev">&#9662;</span></button></th>
+          <th>Share</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="card" id="modelDetailCard" style="display:none; margin-top: 1rem;">
+      <div class="card-head">
+        <h2>Daily usage value — <span class="model-name" id="modelDetailTitle"></span></h2>
+        <button id="modelDetailClose" class="pill" style="cursor:pointer; border:none; background:var(--border); color:var(--text);">Close &times;</button>
+      </div>
+      <div class="muted" style="margin-bottom:0.5rem;">Heaviest days highlighted in amber; table defaults to costliest day first.</div>
+      <svg id="modelDetailChart" role="img" aria-label="Daily usage value for the selected model"></svg>
+      <table id="modelDetailTable" style="margin-top:0.8rem;">
+        <thead><tr>
+          <th data-k="period" aria-sort="none"><button type="button" class="th-sort">Date <span class="chev">&#9662;</span></button></th>
+          <th class="right" data-k="cost" aria-sort="none"><button type="button" class="th-sort">Usage value <span class="chev">&#9662;</span></button></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
     <div class="card" style="margin-top: 1rem;">
       <div class="card-head">
-        <h2>Daily spend <span id="chartMetricLabel" class="muted"></span></h2>
+        <h2>Daily usage value <span id="chartMetricLabel" class="muted"></span></h2>
         <span style="display:flex; align-items:center; gap:0.6rem;">
           <span class="segmented" id="chartMetricSeg">
             <button data-metric="cost" class="active" title="USD list price from ccusage">$ Spend</button>
@@ -671,7 +825,7 @@
         </span>
       </div>
       <div class="muted" id="chartTokensNote" style="display:none; margin-bottom:0.5rem;" title="Input, output and cache write are priced very differently per token (output costs several times more than input), so they're shown separately rather than summed.">Cache read is charted separately below — it dwarfs the other three.</div>
-      <svg id="chart" role="img" aria-label="Daily spend chart"></svg>
+      <svg id="chart" role="img" aria-label="Daily usage value chart"></svg>
       <div id="cacheReadChartWrap" style="display:none; margin-top:1.2rem; padding-top:1rem; border-top:1px solid var(--border);">
         <div class="card-head" style="margin-bottom:0.3rem;"><h2 style="font-size:0.85rem;">Cache read</h2><span class="muted" id="cacheReadChartNote"></span></div>
         <svg id="cacheReadChart" role="img" aria-label="Cache read chart"></svg>
@@ -706,49 +860,14 @@
 
     <div class="card" style="margin-top: 1rem;">
       <div class="card-head">
-        <h2>Spend by account</h2>
+        <h2>Usage value by account (API prices)</h2>
         <span class="muted" id="acctChartNote"></span>
       </div>
       <div class="acct-legend" id="acctLegend"></div>
-      <svg id="acctChart" role="img" aria-label="Spend by account chart"></svg>
+      <svg id="acctChart" role="img" aria-label="Usage value by account at API prices, chart"></svg>
     </div>
   </section>
 
-  <section id="view-models" class="view">
-    <div class="card">
-      <div class="toolbar">
-        <input id="modelSearch" placeholder="Search models…">
-        <span class="muted" id="modelCount"></span>
-      </div>
-      <table id="modelTable">
-        <thead><tr>
-          <th data-k="model" aria-sort="none"><button type="button" class="th-sort">Model <span class="chev">&#9662;</span></button></th>
-          <th class="right" data-k="cost" aria-sort="none"><button type="button" class="th-sort">Cost <span class="chev">&#9662;</span></button></th>
-          <th class="right" data-k="input" aria-sort="none" title="Prompt/context tokens sent to the model, excluding cache."><button type="button" class="th-sort">Input <span class="chev">&#9662;</span></button></th>
-          <th class="right" data-k="output" aria-sort="none" title="Tokens the model generated. Priced several times higher per token than input."><button type="button" class="th-sort">Output <span class="chev">&#9662;</span></button></th>
-          <th class="right" data-k="tokens" aria-sort="none" title="Input plus output only. Excludes cache read and cache create. Hover a row for the full cache breakdown."><button type="button" class="th-sort">Real total <span class="chev">&#9662;</span></button></th>
-          <th>Share</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-
-    <div class="card" id="modelDetailCard" style="display:none; margin-top: 1rem;">
-      <div class="card-head">
-        <h2>Daily spend — <span class="model-name" id="modelDetailTitle"></span></h2>
-        <button id="modelDetailClose" class="pill" style="cursor:pointer; border:none; background:var(--border); color:var(--text);">Close &times;</button>
-      </div>
-      <div class="muted" style="margin-bottom:0.5rem;">Heaviest days highlighted in amber; table defaults to costliest day first.</div>
-      <svg id="modelDetailChart" role="img" aria-label="Daily spend for the selected model"></svg>
-      <table id="modelDetailTable" style="margin-top:0.8rem;">
-        <thead><tr>
-          <th data-k="period" aria-sort="none"><button type="button" class="th-sort">Date <span class="chev">&#9662;</span></button></th>
-          <th class="right" data-k="cost" aria-sort="none"><button type="button" class="th-sort">Cost <span class="chev">&#9662;</span></button></th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </section>
 
   <section id="view-days" class="view">
     <div class="card">
@@ -761,7 +880,7 @@
           <th data-k="period" aria-sort="none"><button type="button" class="th-sort">Date <span class="chev">&#9662;</span></button></th>
           <th data-k="agents" aria-sort="none"><button type="button" class="th-sort">Agents <span class="chev">&#9662;</span></button></th>
           <th class="right" data-k="tokens" aria-sort="none"><button type="button" class="th-sort">Tokens <span class="chev">&#9662;</span></button></th>
-          <th class="right" data-k="totalCost" aria-sort="none" title="USD list price"><button type="button" class="th-sort">Cost <span class="chev">&#9662;</span></button></th>
+          <th class="right" data-k="totalCost" aria-sort="none" title="USD list price"><button type="button" class="th-sort">Usage value <span class="chev">&#9662;</span></button></th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -769,7 +888,7 @@
   </section>
 
   <section id="view-accounts" class="view">
-    <p class="tab-intro">Spend by account. USD list price unless a currency is shown.</p>
+    <p class="tab-intro">Usage value by account: what the same usage would cost at the providers' published API prices (USD), not money you were charged. Rows showing a currency code are real account balances.</p>
     <div id="grokBotCards" style="display:flex; flex-direction:column; gap:1rem; margin-bottom:1rem;"></div>
     <div class="muted" style="margin-bottom: 0.8rem;" id="maxUsageIntro"></div>
     <div id="maxUsageContainer" style="display:flex; flex-direction:column; gap:1rem; margin-bottom:1rem;"></div>
@@ -791,15 +910,16 @@
   </section>
 
   <section id="view-projects" class="view">
-    <p class="tab-intro">Spend per repo for Claude Code and the Grok CLI.</p>
+    <p class="tab-intro">Usage value per repo for Claude Code and the Grok CLI, at the providers' published API prices (USD), not money charged. Click a project for its models and accounts.</p>
     <div class="muted" id="projRangeNote" style="margin-bottom: 0.8rem;"></div>
     <div class="card">
+      <div id="projLegend"></div>
       <table id="projectsTable">
         <thead><tr>
           <th data-k="project" aria-sort="none"><button type="button" class="th-sort">Project <span class="chev">&#9662;</span></button></th>
           <th class="right" data-k="sessions" aria-sort="none"><button type="button" class="th-sort">Sessions <span class="chev">&#9662;</span></button></th>
           <th class="right" data-k="tokens" aria-sort="none" title="Input plus output, excluding cache."><button type="button" class="th-sort">Tokens <span class="chev">&#9662;</span></button></th>
-          <th class="right" data-k="cost" aria-sort="none" title="USD list price"><button type="button" class="th-sort">Cost <span class="chev">&#9662;</span></button></th>
+          <th class="right" data-k="cost" aria-sort="none" title="At API prices, USD"><button type="button" class="th-sort">Usage value <span class="chev">&#9662;</span></button></th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -814,13 +934,18 @@
 
   <section id="view-digest" class="view">
     <p class="tab-intro" id="digestIntro">Last complete week, Monday to Sunday.</p>
-    <div id="digestBody"><div class="muted">Loading the digest…</div></div>
+    <div id="digestBody"><div class="muted">Loading the weekly report…</div></div>
   </section>
 
   <section id="view-settings" class="view">
     <div class="card" id="settingsBody"></div>
     <div class="card settings-app" id="settingsApp" style="margin-top: 1rem;"></div>
+    <div class="settings-save-bar" id="settingsSaveBar">
+      <button type="button" id="settingsSaveBtn" class="btn-primary">Save settings</button>
+      <span id="settingsSaveState" class="muted" role="status">No unsaved changes.</span>
+    </div>
   </section>
+  </div>
 </main>
 
 <script>
@@ -1397,9 +1522,23 @@ function planInsightHtml(p, cls) {
   return `<div class="${cls}">${parts.map(x => `<span class="${x.warn ? 'warn' : ''}" title="${escAttr(x.title)}">${escHtml(x.text)}</span>`).join('')}</div>`;
 }
 
+let pendingScrollId = null;
+const expandedProjects = new Set();
+function scrollToPending() {
+  if (!pendingScrollId) return;
+  const el = document.getElementById(pendingScrollId);
+  pendingScrollId = null;
+  if (el) requestAnimationFrame(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+}
 function readUrlState() {
   const p = new URLSearchParams(location.search);
   tab = p.get('tab') || 'overview';
+  // The Models tab was folded into Overview's Model mix in 1.8.0; old links
+  // (?tab=models) land on that section instead.
+  if (tab === 'models') { tab = 'overview'; pendingScrollId = p.get('model') ? 'modelDetailCard' : 'model-mix'; }
+  if (tab === 'report') tab = 'digest';
+  const v = p.get('view');   // ?view=graph|table sets the Table/Graph switch (handy for links)
+  if (v === 'graph' || v === 'table') localStorage.setItem('weeklyReportView', v);
   range = parseInt(p.get('range') || '7', 10);
   agent = p.get('agent') || 'all';
   selectedModel = p.get('model') || null;
@@ -1468,7 +1607,11 @@ async function load(force) {
 }
 
 function paintPlanLimit() {
+  // The Plan limit tile was removed in 1.8.0: it showed one account's
+  // reading only, and every plan's limits are already listed (all of them)
+  // in the Plans and real spend card below it.
   const tile = document.getElementById('kpiPlan');
+  if (!tile) return;
   const val = document.getElementById('planUsageVal');
   const sub = document.getElementById('planUsageSub');
   const claudeOk = sourcePresent('claude');
@@ -1568,8 +1711,12 @@ function paintTab(t) {
     else b.removeAttribute('aria-current');
   });
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + t));
-  document.getElementById('pageTitle').textContent = { overview: 'Overview', models: 'Spend by model', days: 'Spend by day', accounts: 'Spend by account', projects: 'Spend by project', digest: 'Weekly digest', settings: 'Settings' }[t];
+  document.getElementById('pageTitle').textContent = { overview: 'Overview', models: 'Usage value by model (API prices)', days: 'Usage value by day (API prices)', accounts: 'Usage value by account (API prices)', projects: 'Usage value by project (API prices)', digest: 'Weekly report', settings: 'Settings' }[t];
   const noRange = t === 'settings' || t === 'digest';
+  const vt = document.getElementById('viewToggle');
+  if (vt) vt.style.display = (t === 'overview' || t === 'projects' || t === 'digest') ? '' : 'none';
+  const ph = document.querySelector('.page-header');
+  if (ph) ph.style.display = (t === 'settings' || t === 'digest') ? 'none' : '';
   document.getElementById('agentSel').style.display = (t === 'accounts' || noRange) ? 'none' : '';
   document.getElementById('rangeSeg').style.display = noRange ? 'none' : '';
   const customBtn = document.getElementById('customToggle');
@@ -1587,6 +1734,8 @@ function setTab(t) {
 }
 
 document.querySelectorAll('.nav-item').forEach(b => b.onclick = () => setTab(b.dataset.tab));
+document.querySelectorAll('#viewToggle [data-view]').forEach(b => b.onclick = () => setReportView(b.dataset.view));
+setTimeout(paintViewToggle, 0);  // REPORT_VIEW_KEY is declared further down
 document.getElementById('refreshBtn').onclick = () => load(true);
 
 function setTheme(theme) {
@@ -1820,10 +1969,12 @@ function openDay(period) {
 function openModel(name) {
   if (!name) return;
   selectedModel = name;
-  tab = 'models';
-  paintTab('models');
+  tab = 'overview';
+  paintTab('overview');
   syncUrl();
   update();
+  pendingScrollId = 'modelDetailCard';
+  scrollToPending();
 }
 function setAgentFilter(value) {
   const sel = document.getElementById('agentSel');
@@ -1860,14 +2011,14 @@ function drawChart(rows) {
 
   if (!rows.length || rows.every(r => !(r.value && r.value.totalCost > 0))) {
     chartNote.textContent = rows.length ? (rows.length === 1 ? rows[0].period : `${rows[0].period} → ${rows[rows.length - 1].period}`) + ' · no spend yet' : 'No data in this range';
-    labelSvg(svg, `Daily spend chart, ${fmt(0)} in this range`);
+    labelSvg(svg, `Daily usage value chart, ${fmt(0)} in this range`);
     drawEmptyChart(svg, rows.map(r => r.period), fmt(0), { axisZeroText: '$0' });
     return;
   }
 
   if (rows.length === 1) {
     chartNote.textContent = rows[0].period;
-    labelSvg(svg, `Spend by model on ${rows[0].period}, USD list price`);
+    labelSvg(svg, `Usage value by model on ${rows[0].period}, at API prices`);
     const v = rows[0].value;
     const models = Object.entries(v.modelBreakdowns.reduce((acc, mb) => {
       acc[mb.modelName] = (acc[mb.modelName] || 0) + mb.cost; return acc;
@@ -1904,7 +2055,7 @@ function drawChart(rows) {
   }
 
   chartNote.textContent = `${rows[0].period} → ${rows[rows.length - 1].period}`;
-  labelSvg(svg, `Daily spend from ${rows[0].period} to ${rows[rows.length - 1].period}, USD list price. Choose a bar to show that day.`);
+  labelSvg(svg, `Daily usage value from ${rows[0].period} to ${rows[rows.length - 1].period}, USD list price. Choose a bar to show that day.`);
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900, H = 220, padL = 46, padB = 22, padT = 10;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -1913,7 +2064,7 @@ function drawChart(rows) {
   const modelTotals = {};
   rows.forEach(r => r.value.modelBreakdowns.forEach(mb => { modelTotals[mb.modelName] = (modelTotals[mb.modelName] || 0) + mb.cost; }));
   const topModels = Object.entries(modelTotals).sort((a, b) => b[1] - a[1]).slice(0, 5).map(e => e[0]);
-  const palette = ['#7c3aed', '#a78bfa', '#c4b5fd', '#f0abfc', '#fbcfe8', '#e5e7eb'];
+  const palette = ['#4b5bd6', '#8b97e8', '#c3c9f3', '#9ca3af', '#d1d5db', '#e5e7eb'];
 
   const max = Math.max(...rows.map(r => r.value.totalCost), 0.01);
   const niceMax = max * 1.15;
@@ -2034,7 +2185,7 @@ function drawHourlyChart(rows, extraNote) {
     rect.setAttribute('width', Math.max(bw * 0.76, 1));
     rect.setAttribute('height', Math.max(h, 0.5));
     rect.setAttribute('class', 'bar-rect');
-    rect.style.fill = '#7c3aed';
+    rect.style.fill = '#4b5bd6';
     const title = document.createElementNS(ns, 'title');
     title.textContent = `${r.hourLabel}: ${fmt(r.cost)}`;
     rect.appendChild(title);
@@ -2124,7 +2275,7 @@ function drawHourlyTokensChart(rows, extraNote) {
   });
 }
 
-const TOKEN_COLORS = { input: '#7c3aed', output: '#f59e0b', cacheWrite: '#c4b5fd', cacheRead: '#10b981' };
+const TOKEN_COLORS = { input: '#4b5bd6', output: '#f59e0b', cacheWrite: '#c3c9f3', cacheRead: '#10b981' };
 const TOKEN_LABELS = { input: 'Input', output: 'Output', cacheWrite: 'Cache write', cacheRead: 'Cache read' };
 
 function tokensOfDay(value) {
@@ -2345,7 +2496,7 @@ function drawCacheReadChart(rows) {
   });
 }
 
-const ACCOUNT_PALETTE = ['#7c3aed', '#14b8a6', '#f59e0b', '#ef4444', '#3b82f6', '#ec4899', '#84cc16', '#8b5cf6'];
+const ACCOUNT_PALETTE = ['#4b5bd6', '#14b8a6', '#f59e0b', '#ef4444', '#3b82f6', '#ec4899', '#84cc16', '#8b5cf6'];
 
 function fillCalendarDays(rows, cutoff, windowEnd, blank) {
   if (!cutoff || !windowEnd || cutoff > windowEnd) return rows.slice();
@@ -2427,7 +2578,7 @@ function drawAccountChart(rows) {
   const note = document.getElementById('acctChartNote');
   const legend = document.getElementById('acctLegend');
   svg.innerHTML = '';
-  labelSvg(svg, 'Spend by account, USD list price');
+  labelSvg(svg, 'Usage value by account, at API prices');
 
   // every bucket key seen anywhere in the window — these are whatever real
   // identities (emails) or "<agent> (no account data)" labels the server found,
@@ -2453,7 +2604,7 @@ function drawAccountChart(rows) {
 
   if (!rows.length || !buckets.length) {
     note.textContent = 'No spend in this range';
-    labelSvg(svg, `Spend by account, ${fmt(0)} in this range`);
+    labelSvg(svg, `Usage value by account, ${fmt(0)} in this range`);
     drawEmptyChart(svg, rows.map(r => r.period), fmt(0), { axisZeroText: '$0' });
     return;
   }
@@ -2620,8 +2771,15 @@ function nameableAccounts() {
 
 const labelStatusByUuid = {};
 
+const labelDrafts = {};   // typed but not yet saved, so a re-render never wipes them
+function settingsLabelInputHtml(accountUuid, currentLabel, unnamed) {
+  const saved = unnamed ? '' : (currentLabel || '');
+  const value = Object.prototype.hasOwnProperty.call(labelDrafts, accountUuid) ? labelDrafts[accountUuid] : saved;
+  return `<input type="text" class="settings-field" data-label-uuid="${escAttr(accountUuid)}" data-saved="${escAttr(saved)}" maxlength="80" autocomplete="off" aria-label="Name for ${escAttr(accountUuid)}" placeholder="Name this account" value="${escAttr(value)}" style="min-width:16rem;">`;
+}
 function labelFormHtml(accountUuid, currentLabel, unnamed) {
-  const value = unnamed ? '' : (currentLabel || '');
+  const saved = unnamed ? '' : (currentLabel || '');
+  const value = Object.prototype.hasOwnProperty.call(labelDrafts, accountUuid) ? labelDrafts[accountUuid] : saved;
   const remembered = labelStatusByUuid[accountUuid];
   const statusText = remembered ? remembered.text : '';
   return `<form class="label-form" data-uuid="${escAttr(accountUuid)}">
@@ -2640,7 +2798,7 @@ function accountNamesSectionHtml() {
     const unnamed = isUnlabelledAccount(a);
     return `<tr>
       <td><div>${escHtml(unnamed ? 'No name yet' : a.label)}</div><div class="muted tnum">${escHtml(a.accountUuid)}</div></td>
-      <td>${labelFormHtml(a.accountUuid, a.label, unnamed)}</td>
+      <td>${settingsLabelInputHtml(a.accountUuid, a.label, unnamed)}</td>
     </tr>`;
   }).join('');
   return intro + `<table class="settings-label-table" style="margin-bottom:0.9rem;">
@@ -2684,6 +2842,7 @@ async function saveAccountLabel(accountUuid, label, statusEl) {
     const json = await res.json();
     if (!res.ok || !json.ok) throw new Error(json.error || 'Could not save the name');
     labelStatusByUuid[accountUuid] = { text: 'Saved on this machine.' };
+    delete labelDrafts[accountUuid];
     applyLabelLocally(accountUuid, json.label || name, json.note == null ? null : json.note);
     update();
     load(true);
@@ -2878,14 +3037,13 @@ const AGENT_PLAN_TIERS = {
   grok: ['Free', 'Plus', 'Premium', 'Super', 'Ultra', 'SuperGrok (legacy)', 'SuperGrok Heavy (legacy)'],
   codex: ['Free', 'Go', 'Plus', 'Pro 100', 'Pro 200', 'Pro 500', 'Business', 'Enterprise', 'API (pay-as-you-go org)'],
   gemini: ['Free', 'Google AI Pro', 'Google AI Ultra', 'API (pay-as-you-go)'],
-  opencode: ['Routes to multiple backends — check the backend model\'s own plan'],
 };
 
 function planAgentOptionsHtml(sources) {
   // Only tools with no automatic (official-live/official-cached) source of
   // their own — those get a row in the summary table above instead.
   const all = (sources || [])
-    .filter(s => s.tool !== 'claude' && !s.grokBot && s.kind !== 'local-live' && s.kind !== 'official-live' && s.kind !== 'official-cached')
+    .filter(s => s.tool !== 'claude' && !s.grokBot && s.kind !== 'local-live' && s.kind !== 'official-live' && s.kind !== 'official-cached' && s.kind !== 'backends')
     .map(s => s.tool);
   return [...new Set(all)].sort().map(a => `<option value="${a}">${a}</option>`).join('');
 }
@@ -2916,29 +3074,6 @@ function currentPlanName() {
   return tierSel.value === '__custom__' ? document.getElementById('planNameCustom').value : tierSel.value;
 }
 
-async function savePlanForm() {
-  const agent = document.getElementById('planAgentSelect').value;
-  const status = document.getElementById('planFormStatus');
-  status.textContent = 'Saving…';
-  try {
-    const res = await fetch('/api/plans', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        agent,
-        plan: currentPlanName(),
-        coveredByPlan: document.getElementById('planCovered').checked,
-        note: document.getElementById('planNote').value,
-        asOf: document.getElementById('planAsOf').value,
-      }),
-    });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    status.textContent = 'Saved.';
-    load(true);
-  } catch (e) {
-    status.textContent = 'Error: ' + e.message;
-  }
-}
 
 async function deletePlanForm() {
   const agent = document.getElementById('planAgentSelect').value;
@@ -2958,25 +3093,6 @@ async function deletePlanForm() {
   }
 }
 
-async function saveProviderKeyForm() {
-  const provider = 'openai'; // only provider with a real-cost API wired up so far
-  const apiKey = document.getElementById('providerApiKey').value;
-  const status = document.getElementById('providerKeyStatus');
-  status.textContent = 'Saving…';
-  try {
-    const res = await fetch('/api/provider-keys', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, apiKey }),
-    });
-    const json = await res.json();
-    if (!json.ok) throw new Error(json.error);
-    document.getElementById('providerApiKey').value = '';
-    providerKeyMessage = json.warning || 'Key saved and verified against OpenAI\'s Costs API.';
-    load(true);
-  } catch (e) {
-    status.textContent = 'Error: ' + e.message;
-  }
-}
 
 async function removeProviderKeyForm() {
   const provider = 'openai';
@@ -2994,6 +3110,65 @@ async function removeProviderKeyForm() {
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
   }
+}
+
+// OpenCode routes each prompt to a backend (Gemini API key, Bedrock, a
+// company gateway...). The server reads OpenCode's own history for the
+// provider behind every model call; this splits ccusage's per-model OpenCode
+// cost across those backends for the selected range. Mirrors
+// opencode_backends.split_cost / real_and_covered on the server.
+function opencodeSplit(s, days, cutoff, today) {
+  const ob = s.opencodeBackends || {};
+  const shares = ob.daily || {};
+  const byProvider = {}, models = {};
+  (days || []).filter(d => d.period >= cutoff && d.period <= today).forEach(d => {
+    const day = String(d.period).slice(0, 10);
+    (d.agents || []).forEach(sub => {
+      if (sub.agent !== 'opencode') return;
+      (sub.modelBreakdowns || []).forEach(mb => {
+        const split = (shares[day] || {})[mb.modelName] || {};
+        const entries = Object.entries(split);
+        if (!entries.length) entries.push(['', 1]);
+        entries.forEach(([p, share]) => {
+          const c = (mb.cost || 0) * share;
+          byProvider[p] = (byProvider[p] || 0) + c;
+          models[p] = models[p] || {};
+          models[p][mb.modelName] = (models[p][mb.modelName] || 0) + c;
+        });
+      });
+    });
+  });
+  let real = 0, covered = 0, unknown = 0;
+  Object.entries(byProvider).forEach(([p, c]) => {
+    const flag = p ? ((ob.providers || {})[p] || {}).realSpend : null;
+    if (flag === true) real += c; else if (flag === false) covered += c; else unknown += c;
+  });
+  return { byProvider, models, real, covered, unknown };
+}
+
+function opencodeBackendRow(s, estimate, split) {
+  const ob = s.opencodeBackends || {};
+  const parts = Object.entries(split.byProvider).filter(([, c]) => c > 0.005).sort((a, b) => b[1] - a[1]);
+  const anyUnknown = parts.some(([p]) => !p || ((ob.providers || {})[p] || {}).realSpend == null);
+  const lines = parts.map(([p, c]) => {
+    const info = p ? (ob.providers || {})[p] || { label: p, billingLabel: 'billing not known', realSpend: null } : { label: 'backend not in OpenCode history', billingLabel: 'billing not known', realSpend: null };
+    const modelList = Object.entries(split.models[p] || {}).sort((a, b) => b[1] - a[1]).map(([m, v]) => `${m} ${fmt(v)}`).join(', ');
+    const pill = info.realSpend === true ? 'pill-heavy' : '';
+    const unknownTip = info.realSpend == null ? ' Choose who pays for this backend in Settings → OpenCode backends.' : '';
+    return `<div class="oc-backend" title="${escAttr((info.detectedFrom ? 'Detected from: ' + info.detectedFrom + '.' : '') + (info.setInSettings ? ' Billing set by you in Settings.' : '') + unknownTip)}">
+      <b>${escHtml(info.label)}</b> <span class="pill ${pill}">${escHtml(info.billingLabel)}${info.setInSettings ? ' (set in Settings)' : ''}</span>
+      <span class="muted">${escHtml(modelList)}</span> <span class="tnum">${fmt(c)}</span></div>`;
+  }).join('');
+  const chip = anyUnknown ? srcChip('CHECK', 'manual', 'At least one backend could not be classified automatically. Pick its billing in Settings → OpenCode backends.')
+    : srcChip('DETECTED', 'live', "Provider and billing read from OpenCode's own history and auth.json.");
+  const real = split.real + split.unknown;
+  const cls = real > 0.005 ? 'src-bad' : (anyUnknown ? '' : 'src-ok');
+  return { cls, html: `
+    ${chip}
+    <span class="src-label">OpenCode</span>
+    <span class="src-extra">${lines}${anyUnknown ? '<button type="button" class="text-btn" data-goto-settings>Set billing in Settings</button>' : ''}</span>
+    <span class="src-amount tnum">${fmt(real)}${split.covered > 0.005 ? ` <span class="muted">+ ${fmt(split.covered)} covered</span>` : ''}</span>
+  `, title: `OpenCode spend split by the backend each model call went to, USD list price for this range. Pay-as-you-go and cloud billing count as real spend; subscriptions, company keys and free tiers do not.` };
 }
 
 let lastPlansCtx = null;
@@ -3040,6 +3215,31 @@ function withTierBadge(row, s) {
   return { ...row, html: row.html.replace(/(<span class="src-label">[\s\S]*?<\/span>)/, '$1' + badge) };
 }
 
+// Headline list-price figure over a stacked bar: covered (green) versus
+// real / unverified (red). Same three numbers as before, just drawn.
+function costSplitHtml(estimateTotal, coveredTotal, realTotal) {
+  const pct = v => estimateTotal > 0 ? (v / estimateTotal) * 100 : 0;
+  const pctLabel = v => estimateTotal > 0 ? (v / estimateTotal * 100 < 1 && v > 0.005 ? '<1' : Math.round(v / estimateTotal * 100)) + '%' : '0%';
+  const covPct = pct(coveredTotal), realPct = pct(realTotal);
+  return `
+    <div class="cost-split" title="USD list price for the selected range. Claude rows showing another currency are that account's own balance, not this list price.">
+      <div class="cost-split-head">
+        <span class="cost-split-label">USD list price</span>
+        <span class="cost-split-total tnum" data-cost-total>${fmt(estimateTotal)}</span>
+      </div>
+      <div class="cost-split-bar" role="img" aria-label="Covered by subscriptions ${fmt(coveredTotal)}, real or unverified ${fmt(realTotal)}">
+        <span class="seg seg-ok" style="width:${covPct.toFixed(2)}%"></span>
+        <span class="seg seg-bad" style="width:${realPct.toFixed(2)}%; min-width:${realTotal > 0.005 ? '4px' : '0'}"></span>
+      </div>
+      <div class="cost-split-legend">
+        <div class="leg leg-ok"><span class="dot"></span><span class="leg-name">Covered by subscriptions</span>
+          <span class="leg-amt tnum" data-cost-covered>${fmt(coveredTotal)}</span><span class="leg-pct tnum">${pctLabel(coveredTotal)}</span></div>
+        <div class="leg leg-bad"><span class="dot"></span><span class="leg-name">Real / unverified spend</span>
+          <span class="leg-amt tnum" data-cost-real>${fmt(realTotal)}</span><span class="leg-pct tnum">${pctLabel(realTotal)}</span></div>
+      </div>
+    </div>`;
+}
+
 function renderRealCostOverview(sources, accountSessions, days, cutoff, today, plans, providerStatus, providerCosts, liveUsageSetup, unofficialToggles, totalWin) {
   const box = document.getElementById('realCostOverview');
   const openaiCost = (providerCosts || {}).openai;
@@ -3074,6 +3274,11 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
   rows.forEach(({ s, estimate }) => {
     // Grok Bot reports a weekly share, not dollars.
     if (s.grokBot) return;
+    if (s.kind === 'backends') {
+      const sp = opencodeSplit(s, days, cutoff, today);
+      realTotal += sp.real + sp.unknown;
+      return;
+    }
     if (hasGrokCli && s.kind === 'unofficial-live' && s.tool === 'grok') {
       const extra = (s.grokBilling && s.grokBilling.onDemandUsedUsd) || 0;
       if (extra > 0) realTotal += extra;
@@ -3095,21 +3300,15 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
   // the bottom, so the rows worth a second look aren't buried under ones
   // that aren't.
   const rendered = rows
-    .map(({ s, estimate, modelDetail }) => withTierBadge(sourceRow(s, estimate, modelDetail, openaiCost), s))
+    .map(({ s, estimate, modelDetail }) => withTierBadge(
+      s.kind === 'backends' ? opencodeBackendRow(s, estimate, opencodeSplit(s, days, cutoff, today)) : sourceRow(s, estimate, modelDetail, openaiCost), s))
     .sort((a, b) => SRC_ROW_WEIGHT[a.cls.split(' ')[0]] - SRC_ROW_WEIGHT[b.cls.split(' ')[0]]);
   const bannersHtml = rendered.map(({ cls, html, title }) => `<div class="src-row ${cls}" title="${escAttr(title)}">${html}</div>`).join('');
 
   box.innerHTML = `
-    <div class="card-head"><h2>What's actually costing you money</h2></div>
+    <div class="card-head"><h2>Plans and real spend</h2></div>
     ${bannersHtml}
-    <div class="muted" style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid var(--border);">
-      USD list price <b class="tnum" style="color:var(--text);">${fmt(estimateTotal)}</b>
-      &nbsp;&minus;&nbsp; covered by subscriptions <b class="tnum" style="color:var(--ok-text);">${fmt(coveredTotal)}</b>
-      &nbsp;=&nbsp; real / unverified <b class="tnum" style="color:${realTotal > 0.005 ? 'var(--bad-text)' : 'var(--ok-text)'};">${fmt(realTotal)}</b>
-    </div>
-    <div class="muted" style="margin-top:0.35rem;">
-      Those three amounts are USD list price, the same split as the list-price tile above. A Claude row with a currency code, for example GBP credits, is that account's own balance, not this list price.
-    </div>
+    ${costSplitHtml(estimateTotal, coveredTotal, realTotal)}
   `;
   box.querySelectorAll('[data-goto-settings]').forEach(b => { b.onclick = () => setTab('settings'); });
   return { visible: true, realTotal, estimateTotal, coveredTotal };
@@ -3221,6 +3420,7 @@ const KIND_BADGE = {
   'unofficial-live': { bg: 'var(--ok-bg)', fg: 'var(--ok-text)', text: 'unofficial live' },
   'manual': { bg: 'var(--neutral-bg)', fg: 'var(--text)', text: 'manual note' },
   'local-live': { bg: 'var(--ok-bg)', fg: 'var(--ok-text)', text: 'local' },
+  'backends': { bg: 'var(--ok-bg)', fg: 'var(--ok-text)', text: 'backends detected' },
   'none': { bg: 'var(--neutral-bg)', fg: 'var(--muted)', text: 'no data' },
 };
 
@@ -3295,35 +3495,15 @@ function pricingRegionSectionHtml() {
   const autoNote = pr.source === 'auto'
     ? (detected ? `Detected from this Mac: ${pr.label}.` : "This Mac's region could not be read, so United States (USD) is used until you choose.")
     : (detected ? `This Mac's region is ${detected === 'UK' ? 'United Kingdom (GBP)' : 'United States (USD)'}.` : '');
-  const opt = (code, label) => `<label style="margin-right:1rem;"><input type="radio" name="pricingRegion" value="${code}" ${pr.region === code ? 'checked' : ''}> ${label}</label>`;
+  const picked = pr.source === 'user' ? pr.region : 'auto';
+  const opt = (code, label) => `<label style="margin-right:1rem;"><input type="radio" class="settings-field" name="pricingRegion" value="${code}" ${picked === code ? 'checked' : ''}> ${label}</label>`;
   return `
     <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">
       Pricing region <span class="muted" title="Used when an account's billing currency is not known. If the provider publishes a price in that currency it is the default; otherwise the US dollar list price is shown, never a converted amount.">(?)</span>
     </div>
-    <div class="row">${opt('UK', 'United Kingdom (GBP)')}${opt('US', 'United States (USD)')}
-      <button class="btn" id="pricingRegionSave">Save</button>
-      ${pr.source === 'user' ? "<button class=\"btn\" id=\"pricingRegionAuto\">Use this Mac's region</button>" : ''}
+    <div class="row">${opt('auto', "This Mac's region")}${opt('UK', 'United Kingdom (GBP)')}${opt('US', 'United States (USD)')}
       <span class="muted" id="pricingRegionStatus">${escHtml(autoNote)}</span>
     </div>`;
-}
-async function savePricingRegion(region) {
-  const status = document.getElementById('pricingRegionStatus');
-  if (status) status.textContent = 'Saving…';
-  try {
-    const res = await fetch('/api/pricing-region', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ region }),
-    });
-    const json = await res.json();
-    if (!res.ok || !json.ok) throw new Error(json.error || 'Could not save the pricing region');
-    if (json.pricingRegion) data.pricingRegion = json.pricingRegion;
-    if (json.teamValue) data.teamValue = json.teamValue;
-    renderSettingsPage();
-    const again = document.getElementById('pricingRegionStatus');
-    if (again) again.textContent = region ? 'Saved on this machine.' : "Back to this Mac's region.";
-  } catch (e) {
-    if (status) status.textContent = e.message;
-  }
 }
 function seatPriceSectionHtml() {
   const list = (data && data.teamValue) || [];
@@ -3333,7 +3513,7 @@ function seatPriceSectionHtml() {
     const user = tv.userSeat;
     const curHtml = cur
       ? `<span class="muted" title="This account's billing currency, from its own usage-credit reading.">${escHtml(cur)}</span><input type="hidden" data-seat-currency="${escAttr(key)}" value="${escAttr(cur)}">`
-      : `<select data-seat-currency="${escAttr(key)}">${['USD', 'GBP', 'EUR'].map(c => `<option${(user ? user.currency : ((tv.seat && tv.seat.currency) || ((data && data.pricingRegion && data.pricingRegion.currency) || 'USD'))) === c ? ' selected' : ''}>${c}</option>`).join('')}</select>`;
+      : `<select class="settings-field" data-seat-currency="${escAttr(key)}">${['USD', 'GBP', 'EUR'].map(c => `<option${(user ? user.currency : ((tv.seat && tv.seat.currency) || ((data && data.pricingRegion && data.pricingRegion.currency) || 'USD'))) === c ? ' selected' : ''}>${c}</option>`).join('')}</select>`;
     const plan = tv.plan || {};
     const planHtml = `${escHtml(plan.planLabel || 'unknown plan')}${plan.evidence && plan.evidence.length ? ` <span class="muted" title="${escAttr('Read from local files: ' + plan.evidence.join('; '))}">(?)</span>` : ''}`;
     return `<tr>
@@ -3341,11 +3521,9 @@ function seatPriceSectionHtml() {
       <td>${planHtml}</td>
       <td>${listPriceCellHtml(tv)}</td>
       <td><div class="seat-row" style="margin:0;">
-        <input type="number" min="0.01" step="0.01" data-seat-amount="${escAttr(key)}" value="${user ? escAttr(user.amount) : ''}" placeholder="${tv.seat && tv.seat.source === 'default' ? 'list price' : 'set seat price'}" style="width:120px;">
+        <input type="number" class="settings-field" min="0.01" step="0.01" data-seat-amount="${escAttr(key)}" value="${user ? escAttr(user.amount) : ''}" placeholder="${tv.seat && tv.seat.source === 'default' ? 'list price' : 'set seat price'}" style="width:120px;" title="Leave empty to use the list price">
         <span>${curHtml} / month</span>
-        <button class="btn" data-seat-save="${escAttr(key)}">Save</button>
-        ${user ? `<button class="btn" data-seat-remove="${escAttr(key)}" title="Go back to the list price (default)">Use list price</button>` : ''}
-        <span class="muted" data-seat-status="${escAttr(key)}"></span>
+        ${user ? `<button type="button" class="btn" data-seat-clear="${escAttr(key)}" title="Empty the box, so the list price is used after you save">Use list price</button>` : ''}
       </div></td>
     </tr>`;
   }).join('');
@@ -3368,29 +3546,6 @@ function seatPriceSectionHtml() {
   return pricingRegionSectionHtml() + plansBlock;
 }
 
-async function saveSeatPrice(accountUuid, remove) {
-  const status = document.querySelector(`[data-seat-status="${CSS.escape(accountUuid)}"]`);
-  const amountEl = document.querySelector(`[data-seat-amount="${CSS.escape(accountUuid)}"]`);
-  const curEl = document.querySelector(`[data-seat-currency="${CSS.escape(accountUuid)}"]`);
-  const amount = remove ? null : parseFloat(amountEl && amountEl.value);
-  if (!remove && !(amount > 0)) { if (status) status.textContent = 'Enter a price above 0.'; return; }
-  if (status) status.textContent = 'Saving…';
-  try {
-    const res = await fetch('/api/seat-prices', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accountUuid, amount, currency: curEl ? curEl.value : null }),
-    });
-    const json = await res.json();
-    if (!res.ok || !json.ok) throw new Error(json.error || 'Could not save the seat price');
-    data.seatPrices = json.seatPrices;
-    if (json.teamValue) data.teamValue = json.teamValue;
-    renderSettingsPage();
-    const again = document.querySelector(`[data-seat-status="${CSS.escape(accountUuid)}"]`);
-    if (again) again.textContent = remove ? 'Back to the list price (default).' : 'Saved on this machine.';
-  } catch (e) {
-    if (status) status.textContent = e.message;
-  }
-}
 
 function ccusageSourcesHtml() {
   const list = (data && data.ccusageSources) || [];
@@ -3439,11 +3594,14 @@ function settingsSourcesHtml(sources) {
 let digestData = null;
 let digestFetching = false;
 let digestError = null;
-async function loadDigest() {
+let digestWeek = null;   // Monday (YYYY-MM-DD) being shown; null = last complete week
+async function loadDigest(week) {
+  if (week !== undefined) digestWeek = week;
   if (digestFetching) return;
   digestFetching = true;
+  const asked = digestWeek;
   try {
-    const res = await fetch('/api/digest', { cache: 'no-store' });
+    const res = await fetch('/api/digest' + (asked ? '?week=' + encodeURIComponent(asked) : ''), { cache: 'no-store' });
     const json = await res.json();
     if (json.error) throw new Error(json.error);
     digestData = json;
@@ -3452,6 +3610,7 @@ async function loadDigest() {
     digestError = e.message || String(e);
   } finally {
     digestFetching = false;
+    if (asked !== digestWeek) { loadDigest(); return; }   // user moved on while this was loading
     if (tab === 'digest') renderDigest();
   }
 }
@@ -3460,54 +3619,136 @@ function digestChangeHtml(pct, noun) {
   const r = Math.round(pct);
   return `<div class="sub">${r === 0 ? 'same as' : (r > 0 ? '+' : '-') + Math.abs(r) + '% vs'} ${escHtml(noun)}</div>`;
 }
+
+// One switch for every Weekly report card: table or graph. Same figures in
+// both; the graph only adds bars. Remembered in localStorage.
+const REPORT_VIEW_KEY = 'weeklyReportView';
+function reportView() { return localStorage.getItem(REPORT_VIEW_KEY) === 'graph' ? 'graph' : 'table'; }
+function setReportView(v) {
+  localStorage.setItem(REPORT_VIEW_KEY, v === 'graph' ? 'graph' : 'table');
+  paintViewToggle();
+  if (tab === 'digest') renderDigest(); else update();
+}
+function paintViewToggle() {
+  const v = reportView();
+  document.querySelectorAll('#viewToggle [data-view]').forEach(b => {
+    const on = b.dataset.view === v;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
+}
+
+// Bars for one card: rows = [{label, labelHtml?, value, display, extra?}].
+function reportBarsHtml(rows, empty, opts) {
+  if (!rows.length) return `<div class="muted">${escHtml(empty)}</div>`;
+  const max = (opts && opts.max) || Math.max(0, ...rows.map(r => r.value || 0)) || 1;
+  return `<div class="rbars">${rows.map(r => `
+    <div class="rbar-row"${r.attrs || ''}>
+      <div class="rbar-label" title="${escAttr(r.title || r.label)}">${r.labelHtml || escHtml(r.label)}</div>
+      <div class="rbar-track"><div class="rbar-fill" style="width:${Math.max(0, Math.min(100, (r.value || 0) / max * 100)).toFixed(2)}%"></div>${r.marker != null ? `<div class="rbar-marker" style="left:${Math.min(100, r.marker / max * 100).toFixed(2)}%" title="week before"></div>` : ''}</div>
+      <div class="rbar-value tnum">${r.display}${r.extra ? ` <span class="muted">${r.extra}</span>` : ''}</div>
+    </div>`).join('')}</div>`;
+}
+
+function shiftWeek(monday, days) {
+  const d = new Date(monday + 'T12:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 function renderDigest() {
   const body = document.getElementById('digestBody');
   const intro = document.getElementById('digestIntro');
   if (!body) return;
-  if (digestError) { body.innerHTML = `<div class="card">Could not build the digest: ${escHtml(digestError)}</div>`; return; }
-  if (!digestData) { body.innerHTML = '<div class="muted">Loading the digest…</div>'; return; }
+  const view = reportView();
+  if (digestError && !digestData) { body.innerHTML = `<div class="card">Could not build the weekly report: ${escHtml(digestError)}</div>`; return; }
+  if (!digestData) { body.innerHTML = '<div class="muted">Loading the weekly report…</div>'; return; }
   const d = digestData;
   const range = `${formatShownDate(d.weekStart)} to ${formatShownDate(d.weekEnd)}`;
-  intro.textContent = `Last complete week, ${range}. Compared with the week before.`;
+  const isLatest = d.weekStart === d.latestWeekStart;
+  intro.textContent = `${isLatest ? 'Last complete week' : 'Week'}, ${range}. Compared with the week before.`;
+  const canPrev = d.earliestWeekStart ? d.weekStart > d.earliestWeekStart : false;
+  const weekOptions = [];
+  if (d.earliestWeekStart) {
+    for (let w = d.latestWeekStart; w >= d.earliestWeekStart && weekOptions.length < 104; w = shiftWeek(w, -7)) {
+      weekOptions.push(`<option value="${w}" ${w === d.weekStart ? 'selected' : ''}>${escHtml(formatShownDate(w))} to ${escHtml(formatShownDate(shiftWeek(w, 6)))}</option>`);
+    }
+  }
+  const toolbar = `
+    <div class="report-toolbar">
+      <div class="week-nav" role="group" aria-label="Choose a week">
+        <button type="button" class="btn" id="weekPrev" ${canPrev ? '' : 'disabled'} aria-label="Previous week">&larr; Previous</button>
+        <select id="weekSelect" aria-label="Week">${weekOptions.join('') || `<option>${escHtml(range)}</option>`}</select>
+        <button type="button" class="btn" id="weekNext" ${isLatest ? 'disabled' : ''} aria-label="Next week">Next &rarr;</button>
+        ${isLatest ? '' : '<button type="button" class="btn" id="weekLatest">Latest week</button>'}
+        ${digestFetching ? '<span class="muted">Loading…</span>' : ''}
+      </div>
+    </div>`;
   const sp = d.spend || {}, tk = d.tokens || {};
   const table = (head, rows, empty) => rows.length
     ? `<table><thead><tr>${head.map((h, i) => `<th class="${i ? 'right' : ''}">${escHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`
     : `<div class="muted">${escHtml(empty)}</div>`;
-  const planRows = (d.plans || []).map(p => `<tr><td>${escHtml(p.label)}</td><td class="right tnum">${escHtml(formatPct(p.peakPct))}%</td>
+  const pick = (tableHtml, graphHtml) => view === 'graph' ? graphHtml : tableHtml;
+  const plans = d.plans || [];
+  const delta = p => p.deltaPct == null ? '–' : (p.deltaPct > 0 ? '+' : p.deltaPct < 0 ? '-' : '') + formatPct(Math.abs(p.deltaPct)) + ' pts';
+  const planTable = table(['Plan', 'Peak', 'Week before', 'Change'], plans.map(p => `<tr><td>${escHtml(p.label)}</td><td class="right tnum">${escHtml(formatPct(p.peakPct))}%</td>
     <td class="right tnum">${p.previousPeakPct == null ? '–' : escHtml(formatPct(p.previousPeakPct)) + '%'}</td>
-    <td class="right tnum">${p.deltaPct == null ? '–' : (p.deltaPct > 0 ? '+' : p.deltaPct < 0 ? '-' : '') + escHtml(formatPct(Math.abs(p.deltaPct))) + ' pts'}</td></tr>`);
-  const projRows = (d.topProjects || []).map(p => {
+    <td class="right tnum">${escHtml(delta(p))}</td></tr>`), 'No plan readings were recorded that week.');
+  const planGraph = reportBarsHtml(plans.map(p => ({ label: p.label, value: p.peakPct, marker: p.previousPeakPct,
+    display: escHtml(formatPct(p.peakPct)) + '%', extra: p.previousPeakPct == null ? '' : 'week before ' + escHtml(formatPct(p.previousPeakPct)) + '%, ' + escHtml(delta(p)) })),
+    'No plan readings were recorded that week.', { max: 100 });
+  const projects = d.topProjects || [];
+  const projTable = table(['Project', 'Sessions', 'Usage value'], projects.map(p => {
     const path = shortenPath(p.project);
     return `<tr><td class="proj-path" title="${escAttr(path.full)}">${escHtml(path.short)}</td><td class="right tnum">${p.sessions}</td><td class="right tnum">${fmt(p.cost)}</td></tr>`;
-  });
-  const modelRows = (d.topModels || []).map(m => `<tr><td><button type="button" class="model-name model-name-cell text-btn" data-digest-model="${escAttr(m.model)}">${escHtml(m.model)}</button></td><td class="right tnum">${fmtTok(m.tokens)}</td><td class="right tnum">${fmt(m.cost)}</td></tr>`);
-  const agentRows = (d.agents || []).map(a => `<tr><td>${escHtml(a.agent)}</td><td class="right tnum">${fmt(a.cost)}</td></tr>`);
-  const dayRows = (d.days || []).map(x => `<tr class="day-row" role="button" tabindex="0" data-digest-day="${escAttr(x.date)}" title="Open ${escAttr(x.date)}"><td class="tnum">${escHtml(x.date)}</td><td class="right tnum">${fmt(x.cost)}</td></tr>`);
+  }), 'No project data that week.');
+  const projGraph = reportBarsHtml(projects.map(p => { const path = shortenPath(p.project); return { label: path.short, title: path.full, value: p.cost, display: fmt(p.cost), extra: p.sessions + ' sessions' }; }), 'No project data that week.');
+  const models = d.topModels || [];
+  const modelTable = table(['Model', 'Tokens', 'Usage value'], models.map(m => `<tr><td><button type="button" class="model-name model-name-cell text-btn" data-digest-model="${escAttr(m.model)}">${escHtml(m.model)}</button></td><td class="right tnum">${fmtTok(m.tokens)}</td><td class="right tnum">${fmt(m.cost)}</td></tr>`), 'No model data that week.');
+  const modelGraph = reportBarsHtml(models.map(m => ({ label: m.model, labelHtml: `<button type="button" class="model-name text-btn" data-digest-model="${escAttr(m.model)}">${escHtml(m.model)}</button>`, value: m.cost, display: fmt(m.cost), extra: fmtTok(m.tokens) + ' tokens' })), 'No model data that week.');
+  const agents = d.agents || [];
+  const agentTable = table(['Agent', 'Usage value'], agents.map(a => `<tr><td>${escHtml(a.agent)}</td><td class="right tnum">${fmt(a.cost)}</td></tr>`), 'No usage that week.');
+  const agentGraph = reportBarsHtml(agents.map(a => ({ label: a.agent, value: a.cost, display: fmt(a.cost) })), 'No usage that week.');
+  const days = d.days || [];
+  const dayTable = table(['Day', 'Usage value'], days.map(x => `<tr class="day-row" role="button" tabindex="0" data-digest-day="${escAttr(x.date)}" title="Open ${escAttr(x.date)}"><td class="tnum">${escHtml(x.date)}</td><td class="right tnum">${fmt(x.cost)}</td></tr>`), 'No usage that week.');
+  const dayGraph = reportBarsHtml(days.map(x => ({ label: x.date, value: x.cost, display: fmt(x.cost), attrs: ` role="button" tabindex="0" data-digest-day="${escAttr(x.date)}" title="Open ${escAttr(x.date)}"` })), 'No usage that week.');
+  const noData = d.hasData === false
+    ? `<div class="card report-empty" style="margin-bottom:1rem;">No usage was recorded for ${escHtml(range)}. Pick another week above.</div>` : '';
   body.innerHTML = `
+    ${toolbar}
+    ${digestError ? `<div class="card" style="margin-bottom:1rem; color:var(--bad-text);">${escHtml(digestError)}</div>` : ''}
+    ${noData}
     <div class="digest-cards">
-      <div class="card kpi"><div class="label">List-price estimate</div><div class="value">${fmt(sp.list)}</div>${digestChangeHtml(sp.changePct, 'the week before')}</div>
-      <div class="card kpi"><div class="label">Real / unverified</div><div class="value">${fmt(sp.real)}</div><div class="sub">covered by plans ${fmt(sp.covered)}</div><div class="sub">uses each plan's status today</div></div>
+      <div class="card kpi"><div class="label">Usage value (API prices)</div><div class="value">${fmt(sp.list)}</div>${digestChangeHtml(sp.changePct, 'the week before')}</div>
+      <div class="card kpi"><div class="label">Real / unverified spend</div><div class="value">${fmt(sp.real)}</div><div class="sub">covered by plans ${fmt(sp.covered)}</div><div class="sub">uses each plan's status today</div></div>
       <div class="card kpi"><div class="label">Tokens</div><div class="value">${fmtTok(tk.total)}</div>${digestChangeHtml(tk.changePct, 'the week before')}</div>
     </div>
-    <div class="card" style="margin-bottom:1rem;">
+    <div class="card" style="margin-bottom:1rem;" data-report-card="plans">
       <div class="card-head"><h2>Plan limits, highest reading in the week</h2></div>
-      ${table(['Plan', 'Peak', 'Week before', 'Change'], planRows, 'No plan readings were recorded that week.')}
+      ${pick(planTable, planGraph)}
     </div>
     <div class="digest-two">
-      <div class="card"><div class="card-head"><h2>Top projects</h2></div>${table(['Project', 'Sessions', 'Cost'], projRows, 'No project data that week.')}</div>
-      <div class="card"><div class="card-head"><h2>Top models</h2></div>${table(['Model', 'Tokens', 'Cost'], modelRows, 'No model data that week.')}</div>
+      <div class="card" data-report-card="projects"><div class="card-head"><h2>Top projects</h2></div>${pick(projTable, projGraph)}</div>
+      <div class="card" data-report-card="models"><div class="card-head"><h2>Top models</h2></div>${pick(modelTable, modelGraph)}</div>
     </div>
     <div class="digest-two">
-      <div class="card"><div class="card-head"><h2>By agent</h2></div>${table(['Agent', 'Cost'], agentRows, 'No spend that week.')}</div>
-      <div class="card"><div class="card-head"><h2>By day</h2></div>${table(['Day', 'Cost'], dayRows, 'No spend that week.')}</div>
+      <div class="card" data-report-card="agents"><div class="card-head"><h2>By agent</h2></div>${pick(agentTable, agentGraph)}</div>
+      <div class="card" data-report-card="days"><div class="card-head"><h2>By day</h2></div>${pick(dayTable, dayGraph)}</div>
     </div>
-    <div class="muted">Costs are USD list price. Built from the same local data as the Overview. A notification points here every Monday at 09:00 while the server is running.</div>`;
+    <div class="muted">Usage value is at the providers' published API prices (USD), from the same local data as the Overview. A notification points here every Monday at 09:00 while the server is running.</div>`;
   body.querySelectorAll('[data-digest-day]').forEach(el => {
     const go = () => openDay(el.dataset.digestDay);
     el.onclick = go;
     el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } };
   });
   body.querySelectorAll('[data-digest-model]').forEach(el => { el.onclick = () => openModel(el.dataset.digestModel); });
+  const prev = document.getElementById('weekPrev'), next = document.getElementById('weekNext');
+  if (prev) prev.onclick = () => loadDigest(shiftWeek(d.weekStart, -7));
+  if (next) next.onclick = () => { const w = shiftWeek(d.weekStart, 7); loadDigest(w >= d.latestWeekStart ? null : w); };
+  const latest = document.getElementById('weekLatest');
+  if (latest) latest.onclick = () => loadDigest(null);
+  const sel = document.getElementById('weekSelect');
+  if (sel) sel.onchange = () => loadDigest(sel.value === d.latestWeekStart ? null : sel.value);
 }
 
 let appSettings = null;     // { notifications, login }
@@ -3527,10 +3768,22 @@ async function loadAppSettings(force) {
   }
   if (tab === 'settings') renderSettingsApp(true);
 }
+const NOTIFY_DEFAULT_THRESHOLDS = [80, 95];  // notify.py DEFAULT_THRESHOLDS
 function parseThresholdInput(text) {
   const t = String(text || '').trim();
   if (!t) return null;
-  return t.split(/[ ,]+/).filter(Boolean).map(Number);
+  return t.split(/[ ,%]+/).filter(Boolean).map(Number);
+}
+// Whole percentages 1-100, at most five. Returns an error message or ''.
+function thresholdError(text) {
+  const t = String(text || '').trim();
+  if (!t) return '';
+  const parts = t.split(/[ ,%]+/).filter(Boolean);
+  if (parts.some(x => !/^\d+$/.test(x))) return 'Whole numbers only, for example 80, 95.';
+  const nums = parts.map(Number);
+  if (nums.some(n => n < 1 || n > 100)) return 'Each threshold must be from 1 to 100%.';
+  if (new Set(nums).size > 5) return 'Up to five thresholds.';
+  return '';
 }
 async function postJson(url, body) {
   const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body || {}) });
@@ -3542,72 +3795,41 @@ function renderSettingsApp(forceRender) {
   const box = document.getElementById('settingsApp');
   if (!box) return;
   if (!forceRender && box.contains(document.activeElement)) return;  // do not wipe what the user is typing
+  if (!forceRender && settingsDirty) return;                         // or what they changed but have not saved
   loadAppSettings(false);
   if (!appSettings) { box.innerHTML = `<div class="muted">${escHtml(appSettingsMsg || 'Loading app settings…')}</div>`; return; }
   const ns = appSettings.notifications.settings || {};
   const login = appSettings.login || {};
   const plans = (data && data.planInsights) || [];
   const per = ns.perPlan || {};
+  const defaults = (ns.thresholds && ns.thresholds.length ? ns.thresholds : NOTIFY_DEFAULT_THRESHOLDS);
   const planRows = plans.map(p => `<tr><td>${escHtml(p.label)}</td><td class="tnum">${escHtml(formatPct(p.pct))}% now</td>
-    <td><input type="text" data-plan-key="${escAttr(p.key)}" value="${escAttr((per[p.key] || []).join(', '))}" placeholder="default" aria-label="Thresholds for ${escAttr(p.label)}, leave empty for the default"></td></tr>`).join('');
+    <td><span class="pct-field"><input type="text" class="settings-field threshold-input" inputmode="numeric" data-plan-key="${escAttr(p.key)}" value="${escAttr((per[p.key] || []).join(', '))}" placeholder="${escAttr(defaults.join(', '))} (default)" aria-label="Thresholds in per cent for ${escAttr(p.label)}, leave empty for the default of ${escAttr(defaults.join(' and '))}%"><span class="pct-suffix">%</span></span>
+      <span class="field-error" role="alert"></span></td></tr>`).join('');
   const loginLine = login.enabled
     ? `On. ${login.loaded ? 'Loaded in launchd' : 'Not loaded yet, takes effect at next login'}.`
     : 'Off.';
   box.innerHTML = `
     <div class="card-head"><h2>Background and notifications</h2></div>
-    <div class="row"><label><input type="checkbox" id="loginToggle" ${login.enabled ? 'checked' : ''}> Start Agentic Spend at login</label>
+    <div class="row"><label><input type="checkbox" class="settings-field" id="loginToggle" ${login.enabled ? 'checked' : ''}> Start Agentic Spend at login</label>
       <span class="muted" id="loginStatus" role="status">${escHtml(loginLine)}</span></div>
     <div class="muted" style="margin-bottom:0.9rem;">Keeps the server running in the background, so plan readings and notifications carry on with the browser closed. Uses a LaunchAgent in ~/Library/LaunchAgents. Same as <code>agentic-spend login on</code>.</div>
-    <div class="row"><label><input type="checkbox" id="notifEnabled" ${ns.enabled ? 'checked' : ''}> Notify me when a plan passes a threshold</label></div>
-    <div class="row"><label for="notifThresholds">Default thresholds (%)</label>
-      <input type="text" id="notifThresholds" value="${escAttr((ns.thresholds || []).join(', '))}" aria-describedby="notifThresholdsHelp">
-      <span class="muted" id="notifThresholdsHelp">Comma separated, for example 80, 95. Each fires once per plan window.</span></div>
+    <div class="row"><label><input type="checkbox" class="settings-field" id="notifEnabled" ${ns.enabled ? 'checked' : ''}> Notify me when a plan passes a threshold</label></div>
+    <div class="row"><label for="notifThresholds">Default thresholds</label>
+      <span class="pct-field"><input type="text" class="settings-field threshold-input" inputmode="numeric" id="notifThresholds" value="${escAttr((ns.thresholds || []).join(', '))}" placeholder="${escAttr(NOTIFY_DEFAULT_THRESHOLDS.join(', '))}" aria-describedby="notifThresholdsHelp"><span class="pct-suffix">%</span></span>
+      <span class="field-error" role="alert"></span>
+      <span class="muted" id="notifThresholdsHelp">Whole numbers from 1 to 100, comma separated, up to five (for example 80, 95). Each fires once per plan window. Leave a plan's box below empty to use these.</span></div>
     ${planRows ? `<table style="margin:0.2rem 0 0.7rem;"><tbody>${planRows}</tbody></table>` : ''}
-    <div class="row"><label><input type="checkbox" id="notifCredits" ${ns.credits ? 'checked' : ''}> Notify me when paid extra credit starts being used</label></div>
-    <div class="row"><label><input type="checkbox" id="notifDigest" ${ns.digest ? 'checked' : ''}> Monday 09:00 notification for the weekly digest</label></div>
-    <div class="row"><label><input type="checkbox" id="notifPace" ${ns.pace !== false ? 'checked' : ''}> Warn once per Claude 5-hour window when it is on pace to run out before it resets</label></div>
+    <div class="row"><label><input type="checkbox" class="settings-field" id="notifCredits" ${ns.credits ? 'checked' : ''}> Notify me when paid extra credit starts being used</label></div>
+    <div class="row"><label><input type="checkbox" class="settings-field" id="notifDigest" ${ns.digest ? 'checked' : ''}> Monday 09:00 notification for the weekly report</label></div>
+    <div class="row"><label><input type="checkbox" class="settings-field" id="notifPace" ${ns.pace !== false ? 'checked' : ''}> Warn once per Claude 5-hour window when it is on pace to run out before it resets</label></div>
     <div class="row">
-      <button type="button" id="notifSave">Save</button>
       <button type="button" id="notifTest" class="secondary">Send test notification</button>
       <span class="muted" id="notifStatus" role="status">${escHtml(appSettingsMsg)}</span>
     </div>
     <div class="muted">Shown as macOS notifications while the server is running${appSettings.notifications.appActive ? '. The menu bar app is running, so it shows them' : ''}.</div>`;
   appSettingsMsg = '';
   const status = document.getElementById('notifStatus');
-  document.getElementById('loginToggle').onchange = async e => {
-    const want = e.target.checked;
-    const ls = document.getElementById('loginStatus');
-    ls.textContent = want ? 'Turning on…' : 'Turning off…';
-    try {
-      const r = await postJson('/api/login-item', { enabled: want });
-      appSettings.login = r.status;
-      appSettingsMsg = '';
-    } catch (err) {
-      appSettingsMsg = 'Start at login: ' + err.message;
-      await loadAppSettings(true);
-    }
-    renderSettingsApp(true);
-  };
-  document.getElementById('notifSave').onclick = async () => {
-    try {
-      const perPlan = {};
-      box.querySelectorAll('input[data-plan-key]').forEach(inp => { perPlan[inp.dataset.planKey] = parseThresholdInput(inp.value); });
-      const body = {
-        enabled: document.getElementById('notifEnabled').checked,
-        credits: document.getElementById('notifCredits').checked,
-        digest: document.getElementById('notifDigest').checked,
-        pace: document.getElementById('notifPace').checked,
-        thresholds: parseThresholdInput(document.getElementById('notifThresholds').value) || [],
-        perPlan,
-      };
-      const r = await postJson('/api/notifications', body);
-      appSettings.notifications.settings = r.settings;
-      appSettingsMsg = 'Saved.';
-    } catch (err) {
-      appSettingsMsg = 'Not saved: ' + err.message;
-    }
-    renderSettingsApp(true);
-  };
   document.getElementById('notifTest').onclick = async () => {
     status.textContent = 'Sending…';
     try {
@@ -3620,9 +3842,133 @@ function renderSettingsApp(forceRender) {
   };
 }
 
+function opencodeBackendsSectionHtml() {
+  const ob = (data && data.opencodeBackends) || {};
+  const providers = Object.values(ob.providers || {});
+  if (!ob.found || !providers.length) return '';
+  const opts = [['', 'Detected automatically'], ['payg', 'Pay as you go (real spend)'], ['cloud', 'Cloud account billing (real spend)'],
+    ['subscription', 'Covered by a subscription'], ['company', 'Paid by someone else (company)'], ['free', 'Free tier']];
+  const rows = providers.sort((a, b) => (a.realSpend == null ? 0 : 1) - (b.realSpend == null ? 0 : 1) || a.label.localeCompare(b.label)).map(p => {
+    const models = Object.entries(ob.models || {}).filter(([, m]) => (m.providers || []).includes(p.provider)).map(([k]) => k);
+    const current = p.setInSettings ? p.billing : '';
+    const detected = p.setInSettings ? '' : (p.billing === 'unknown' ? '<b style="color:var(--bad-text);">not known: please choose</b>' : escHtml(p.billingLabel));
+    return `<tr>
+      <td><div><b>${escHtml(p.label)}</b></div><div class="muted tnum">${escHtml(p.provider)}</div></td>
+      <td class="muted" title="${escAttr(models.join(', '))}">${escHtml(models.slice(0, 3).join(', '))}${models.length > 3 ? ` +${models.length - 3}` : ''}</td>
+      <td>${detected}<div class="muted" style="font-size:0.75rem;">${escHtml(p.detectedFrom || '')}</div></td>
+      <td><select class="settings-field" data-oc-provider="${escAttr(p.provider)}">${opts.map(([v, l]) => `<option value="${v}" ${v === current ? 'selected' : ''}>${escHtml(l)}</option>`).join('')}</select></td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">
+      OpenCode backends <span class="muted" title="OpenCode sends each prompt to a backend. The backend is read from OpenCode's own history; billing comes from how you signed in (auth.json) or the provider's own billing model. Override it here if it is wrong, for example a Gemini key on the free tier.">(?)</span>
+    </div>
+    <table class="settings-label-table" style="margin-bottom:0.6rem;"><thead><tr><th>Backend</th><th>Models</th><th>Detected billing</th><th>Who pays</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+let settingsDirty = false;
+let settingsSaveMsg = '';
+function setSettingsDirty(dirty) {
+  settingsDirty = dirty;
+  const bar = document.getElementById('settingsSaveBar');
+  const st = document.getElementById('settingsSaveState');
+  if (bar) bar.classList.toggle('dirty', dirty);
+  if (st) st.textContent = dirty ? 'You have unsaved changes.' : (settingsSaveMsg || 'No unsaved changes.');
+}
+let planFormDirty = false;
+
+function collectSettingsForm() {
+  const body = {};
+  const errors = [];
+  const labels = {};
+  document.querySelectorAll('#settingsBody [data-label-uuid]').forEach(inp => {
+    const v = inp.value.replace(/\s+/g, ' ').trim();
+    if (v && v !== inp.dataset.saved) labels[inp.dataset.labelUuid] = v;
+  });
+  body.labels = labels;
+  const region = document.querySelector('#settingsBody input[name="pricingRegion"]:checked');
+  if (region) body.pricingRegion = region.value;
+  const seats = {};
+  document.querySelectorAll('#settingsBody [data-seat-amount]').forEach(inp => {
+    const key = inp.getAttribute('data-seat-amount');
+    const cur = document.querySelector(`#settingsBody [data-seat-currency="${CSS.escape(key)}"]`);
+    const raw = inp.value.trim();
+    if (raw && !(parseFloat(raw) > 0)) errors.push('Seat price for ' + key + ' must be above 0.');
+    seats[key] = { amount: raw ? parseFloat(raw) : null, currency: cur ? cur.value : null };
+  });
+  if (Object.keys(seats).length) body.seatPrices = seats;
+  const oc = {};
+  document.querySelectorAll('#settingsBody [data-oc-provider]').forEach(sel => { oc[sel.dataset.ocProvider] = sel.value; });
+  if (Object.keys(oc).length) body.opencodeProviders = oc;
+  const agentSel = document.getElementById('planAgentSelect');
+  if (agentSel && planFormDirty) {
+    body.plan = {
+      agent: agentSel.value, plan: currentPlanName(),
+      coveredByPlan: document.getElementById('planCovered').checked,
+      note: document.getElementById('planNote').value,
+      asOf: document.getElementById('planAsOf').value,
+    };
+  }
+  const key = document.getElementById('providerApiKey');
+  if (key && key.value.trim()) body.openaiKey = key.value.trim();
+  if (document.getElementById('notifEnabled')) {
+    const perPlan = {};
+    document.querySelectorAll('#settingsApp input[data-plan-key]').forEach(inp => {
+      const err = thresholdError(inp.value);
+      if (err) errors.push(err);
+      perPlan[inp.dataset.planKey] = parseThresholdInput(inp.value);
+    });
+    const defErr = thresholdError(document.getElementById('notifThresholds').value);
+    if (defErr) errors.push(defErr);
+    body.notifications = {
+      enabled: document.getElementById('notifEnabled').checked,
+      credits: document.getElementById('notifCredits').checked,
+      digest: document.getElementById('notifDigest').checked,
+      pace: document.getElementById('notifPace').checked,
+      thresholds: parseThresholdInput(document.getElementById('notifThresholds').value) || NOTIFY_DEFAULT_THRESHOLDS,
+      perPlan,
+    };
+    body.login = document.getElementById('loginToggle').checked;
+  }
+  return { body, errors: [...new Set(errors)] };
+}
+
+async function saveSettingsForm() {
+  const st = document.getElementById('settingsSaveState');
+  const btn = document.getElementById('settingsSaveBtn');
+  const { body, errors } = collectSettingsForm();
+  if (errors.length) { st.textContent = 'Not saved. ' + errors.join(' '); st.classList.add('error'); return; }
+  st.classList.remove('error');
+  st.textContent = 'Saving…';
+  btn.disabled = true;
+  try {
+    const r = await postJson('/api/settings', body);
+    Object.keys(body.labels || {}).forEach(id => { delete labelDrafts[id]; applyLabelLocally(id, body.labels[id], null); });
+    if (appSettings) {
+      if (r.notifications) appSettings.notifications.settings = r.notifications;
+      if (r.login) appSettings.login = r.login;
+    }
+    const keyEl = document.getElementById('providerApiKey');
+    if (keyEl) keyEl.value = '';
+    planFormDirty = false;
+    settingsSaveMsg = (r.saved && r.saved.length ? 'Saved on this machine.' : 'Nothing had changed.') + (r.warnings && r.warnings.length ? ' ' + r.warnings.join(' ') : '');
+    setSettingsDirty(false);
+    renderSettingsApp(true);
+    renderSettingsPage();
+    load(true);
+  } catch (e) {
+    st.textContent = 'Not saved: ' + e.message;
+    st.classList.add('error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function renderSettingsPage() {
   renderSettingsApp(false);
   if (!lastPlansCtx) return;
+  // A background refresh must never wipe changes that have not been saved.
+  if (settingsDirty && document.getElementById('settingsBody').childElementCount) return;
   const { sources, plans, providerStatus, liveUsageSetup, unofficialToggles } = lastPlansCtx;
   const openaiOn = (providerStatus || {}).openai;
   const grokOn = (unofficialToggles || {}).grok;
@@ -3651,8 +3997,7 @@ function renderSettingsPage() {
         <textarea id="planNote" rows="2" style="width:100%;" placeholder="e.g. tool's own usage page shows $0 additional usage this month"></textarea>
       </label>
       <div style="display:flex; align-items:center; gap:0.6rem; margin-top:0.5rem;">
-        <button id="planSaveBtn" class="segmented-btn">Save</button>
-        <button id="planDeleteBtn" style="display:none;">Remove entry</button>
+        <button type="button" id="planDeleteBtn" style="display:none;">Remove entry</button>
         <span class="muted" id="planFormStatus"></span>
       </div>
   ` : '';
@@ -3664,7 +4009,6 @@ function renderSettingsPage() {
       </div>
       <div style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:flex-end;">
         <label>Admin API key<br><input id="providerApiKey" type="password" placeholder="${openaiOn ? '•••••••• (set, enter a new one to replace)' : 'sk-admin-…'}" style="width:260px;"></label>
-        <button id="providerSaveBtn" class="btn-primary">Save key</button>
         ${openaiOn ? '<button id="providerRemoveBtn" class="btn">Remove key</button>' : ''}
         <span class="muted" id="providerKeyStatus"></span>
       </div>
@@ -3677,7 +4021,7 @@ function renderSettingsPage() {
       </div>
       <div style="display:flex; align-items:center; gap:0.6rem; flex-wrap:wrap;">
         <label style="display:flex; align-items:center; gap:0.4rem;">
-          <input type="checkbox" id="grokToggle" ${grokOn ? 'checked' : ''}> enable
+          <input type="checkbox" id="grokToggle" ${grokOn ? 'checked' : ''}> enable <span class="muted">(applies straight away)</span>
         </label>
         ${grokOn ? '<button id="grokRefreshBtn" class="btn">Refresh now</button>' : ''}
         <span class="muted" id="grokToggleStatus">${grokOn && grokBilling ? 'last fetched ' + (grokBilling.fetchedAt ? new Date(grokBilling.fetchedAt).toLocaleString() : 'never') : ''}</span>
@@ -3696,6 +4040,8 @@ function renderSettingsPage() {
       ${accountNamesSectionHtml()}
 
       ${seatPriceSectionHtml()}
+
+      ${opencodeBackendsSectionHtml()}
 
       ${themeSectionHtml()}
 
@@ -3718,33 +4064,28 @@ function renderSettingsPage() {
 
   const providerStatusEl = document.getElementById('providerKeyStatus');
   if (providerStatusEl && providerKeyMessage) providerStatusEl.textContent = providerKeyMessage;
-  const providerSaveBtn = document.getElementById('providerSaveBtn');
-  if (providerSaveBtn) providerSaveBtn.onclick = saveProviderKeyForm;
   const removeBtn = document.getElementById('providerRemoveBtn');
   if (removeBtn) removeBtn.onclick = removeProviderKeyForm;
   const sel = document.getElementById('planAgentSelect');
   if (sel) {
-    sel.onchange = () => fillPlanForm(sel.value, plans);
+    sel.onchange = () => { fillPlanForm(sel.value, plans); planFormDirty = false; };
     fillPlanForm(sel.value, plans);
     const tierSel = document.getElementById('planTierSelect');
     if (tierSel) tierSel.onchange = e => {
       document.getElementById('planNameCustom').style.display = e.target.value === '__custom__' ? '' : 'none';
     };
-    const planSaveBtn = document.getElementById('planSaveBtn');
-    if (planSaveBtn) planSaveBtn.onclick = savePlanForm;
+    ['planTierSelect', 'planNameCustom', 'planCovered', 'planNote', 'planAsOf'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.classList.add('settings-field'); el.addEventListener('input', () => { planFormDirty = true; }); el.addEventListener('change', () => { planFormDirty = true; }); }
+    });
     const planDeleteBtn = document.getElementById('planDeleteBtn');
     if (planDeleteBtn) planDeleteBtn.onclick = deletePlanForm;
   }
 
-  const prSave = document.getElementById('pricingRegionSave');
-  if (prSave) prSave.onclick = () => {
-    const picked = document.querySelector('input[name="pricingRegion"]:checked');
-    savePricingRegion(picked ? picked.value : 'UK');
-  };
-  const prAuto = document.getElementById('pricingRegionAuto');
-  if (prAuto) prAuto.onclick = () => savePricingRegion(null);
-  document.querySelectorAll('[data-seat-save]').forEach(b => { b.onclick = () => saveSeatPrice(b.getAttribute('data-seat-save'), false); });
-  document.querySelectorAll('[data-seat-remove]').forEach(b => { b.onclick = () => saveSeatPrice(b.getAttribute('data-seat-remove'), true); });
+  document.querySelectorAll('[data-seat-clear]').forEach(b => { b.onclick = () => {
+    const inp = document.querySelector(`[data-seat-amount="${CSS.escape(b.getAttribute('data-seat-clear'))}"]`);
+    if (inp) { inp.value = ''; setSettingsDirty(true); }
+  }; });
   if (document.getElementById('grokBotSettingsNote')) fillGrokBotSettingsNote();
   const grokToggle = document.getElementById('grokToggle');
   if (grokToggle) grokToggle.onchange = e => toggleGrokLive(e.target.checked);
@@ -4119,21 +4460,118 @@ const CACHE_SEGMENTS = [
 // ccusage's modelBreakdowns already separates these four token kinds (no
 // overlap between them) — this just sums and displays what's already there,
 // rather than re-deriving anything from raw transcripts.
+// ---- Model mix by account -------------------------------------------------
+// Who each model's usage ran under. Claude and Grok sessions carry an account
+// (named in Settings); the per-model Claude/Grok cost from ccusage's daily
+// data is split across those accounts by each account's share of that model
+// in the session data for the same range, so the parts always add up to the
+// model's total exactly. Usage with no session account goes to Unassigned.
+// Other tools (Codex, OpenCode...) have no account in their logs and are
+// listed under the tool itself.
+const ACCOUNT_BUCKET_COLOURS = ['#4f6bed', '#e08a2e', '#2f9e6e', '#b0489b', '#d64545', '#7a7f8a', '#3aa6c4', '#8a6d3b', '#6c5fd1', '#9aa52c'];
+const AGENT_BUCKET_NAMES = { codex: 'Codex', opencode: 'OpenCode', grok: 'Grok', gemini: 'Gemini CLI', amp: 'Amp', qwen: 'Qwen', droid: 'Droid' };
+function accountBucketName(row) {
+  if (row.agent === 'grok') return (!row.accountUuid || row.accountUuid === 'grok-unattributed') ? 'Grok' : 'Grok · ' + (row.label || row.accountUuid);
+  if (!row.accountUuid || row.accountUuid === 'unknown-session') return 'Unassigned';
+  return row.label || row.accountUuid;
+}
+function modelAccountSplit(days, accountSessions, cutoff, end, filterValue) {
+  const models = {};      // model -> bucket -> cost
+  const add = (m, b, c) => { if (!c) return; (models[m] = models[m] || {})[b] = (models[m][b] || 0) + c; };
+  if (typeof filterValue === 'string' && filterValue.startsWith('account:')) {
+    const uuid = filterValue.slice('account:'.length);
+    (accountSessions || []).filter(r => r.accountUuid === uuid && r.period >= cutoff && r.period <= end)
+      .forEach(r => (r.modelBreakdowns || []).forEach(mb => add(mb.modelName, accountBucketName(r), mb.cost || 0)));
+    return finishAccountSplit(models);
+  }
+  const pool = { claude: {}, grok: {} };
+  (days || []).filter(d => d.period >= cutoff && d.period <= end).forEach(d => {
+    (d.agents || []).forEach(sub => {
+      if (filterValue && filterValue !== 'all' && sub.agent !== filterValue) return;
+      (sub.modelBreakdowns || []).forEach(mb => {
+        if (!mb.modelName) return;
+        const c = Number(mb.cost) || 0;
+        if (pool[sub.agent]) pool[sub.agent][mb.modelName] = (pool[sub.agent][mb.modelName] || 0) + c;
+        else add(mb.modelName, AGENT_BUCKET_NAMES[sub.agent] || sub.agent, c);
+      });
+    });
+  });
+  const shares = { claude: {}, grok: {} };
+  (accountSessions || []).filter(r => r.period >= cutoff && r.period <= end).forEach(r => {
+    const ag = r.agent === 'grok' ? 'grok' : 'claude';
+    (r.modelBreakdowns || []).forEach(mb => {
+      const byB = (shares[ag][mb.modelName] = shares[ag][mb.modelName] || {});
+      byB[accountBucketName(r)] = (byB[accountBucketName(r)] || 0) + (mb.cost || 0);
+    });
+  });
+  ['claude', 'grok'].forEach(ag => Object.entries(pool[ag]).forEach(([m, total]) => {
+    const sh = shares[ag][m] || {};
+    const sum = Object.values(sh).reduce((a, b) => a + b, 0);
+    if (sum <= 0) { add(m, ag === 'grok' ? 'Grok' : 'Unassigned', total); return; }
+    Object.entries(sh).forEach(([b, v]) => add(m, b, total * v / sum));
+  }));
+  return finishAccountSplit(models);
+}
+function finishAccountSplit(models) {
+  const totals = {};
+  Object.values(models).forEach(byB => Object.entries(byB).forEach(([b, c]) => { totals[b] = (totals[b] || 0) + c; }));
+  // Named accounts first (largest first), then tools, Unassigned last.
+  const rank = b => b === 'Unassigned' ? 2 : (Object.values(AGENT_BUCKET_NAMES).includes(b) || b.startsWith('Grok')) ? 1 : 0;
+  const buckets = Object.entries(totals).filter(([, c]) => c > 0.0049)
+    .sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1])
+    .map(([name, total], i) => ({ name, total, colour: name === 'Unassigned' ? '#a3a8b3' : ACCOUNT_BUCKET_COLOURS[i % ACCOUNT_BUCKET_COLOURS.length] }));
+  return { models, buckets };
+}
+function stackedBarHtml(byBucket, buckets, total, max) {
+  const width = max > 0 ? Math.max(1, 100 * total / max) : 0;
+  const segs = buckets.map(b => {
+    const c = byBucket[b.name] || 0;
+    if (c <= 0) return '';
+    return `<span class="stack-seg" style="width:${(100 * c / (total || 1)).toFixed(3)}%; background:${b.colour};" title="${escAttr(b.name)}: ${escAttr(fmt(c))}"></span>`;
+  }).join('');
+  return `<div class="stack-track"><div class="stack-bar" style="width:${width.toFixed(2)}%">${segs}</div></div>`;
+}
+function bucketLegendHtml(buckets) {
+  return `<div class="bucket-legend">${buckets.map(b => `<span class="bucket-item"><span class="swatch" style="background:${b.colour};"></span>${escHtml(b.name)} <b class="tnum">${fmt(b.total)}</b></span>`).join('')}</div>`;
+}
+
 function renderModelMix(windowed, cutoff, windowEnd) {
   const card = document.getElementById('modelMixCard');
   if (!card) return;
   const m = modelMixSummary(windowed, data && data.modelMix);
   if (!m.rows.length) { card.style.display = 'none'; return; }
   card.style.display = '';
+  const split = modelAccountSplit(data.daily || [], data.accountSessions, cutoff, windowEnd, agent);
+  const buckets = split.buckets;
   const top = m.rows.slice(0, 8);
-  const rest = m.rows.slice(8).reduce((a, r) => a + r.cost, 0);
+  const restRows = m.rows.slice(8);
+  const rest = restRows.reduce((a, r) => a + r.cost, 0);
   const max = top[0].cost || 1;
-  const rowHtml = r => `<div class="mix-row">
+  // Scale each model's split to the figure shown, so rounding in ccusage's
+  // per-agent rows can never make the parts disagree with the total.
+  const byBucketFor = r => {
+    const raw = split.models[r.model] || {};
+    const sum = Object.values(raw).reduce((a, b) => a + b, 0);
+    if (sum <= 0) return { Unassigned: r.cost };
+    const out = {};
+    Object.entries(raw).forEach(([b, c]) => { out[b] = c * r.cost / sum; });
+    return out;
+  };
+  const view = reportView();
+  const rowHtml = r => {
+    const byB = byBucketFor(r);
+    const parts = buckets.filter(b => byB[b.name] > 0.0049).map(b => `${escHtml(b.name)} ${fmt(byB[b.name])}`).join(' · ');
+    return `<div class="mix-row">
       <span class="mix-name" title="${escAttr(r.model)}">${escHtml(r.model)}${r.opus ? ' <span class="tier-badge">Opus</span>' : ''}</span>
-      <div class="progress-track"><div class="progress-fill" style="width:${Math.max(1, Math.round(100 * r.cost / max))}%"></div></div>
+      ${stackedBarHtml(byB, buckets, r.cost, max)}
       <span class="mix-cost tnum">${fmt(r.cost)}</span>
       <span class="mix-share tnum">${Math.round(r.share * 100)}%</span>
-    </div>`;
+    </div>${parts && buckets.length > 1 ? `<div class="mix-parts muted">${parts}</div>` : ''}`;
+  };
+  const textTable = `<div class="table-scroll"><table class="mix-table"><thead><tr><th>Model</th>${buckets.map(b => `<th class="right"><span class="swatch" style="background:${b.colour};"></span> ${escHtml(b.name)}</th>`).join('')}<th class="right">Total</th><th class="right">Share</th></tr></thead><tbody>
+    ${m.rows.map(r => { const byB = byBucketFor(r); return `<tr><td>${escHtml(r.model)}</td>${buckets.map(b => `<td class="right tnum">${byB[b.name] > 0.0049 ? fmt(byB[b.name]) : '–'}</td>`).join('')}<td class="right tnum"><b>${fmt(r.cost)}</b></td><td class="right tnum">${Math.round(r.share * 100)}%</td></tr>`; }).join('')}
+    <tr class="total-row"><td><b>Total</b></td>${buckets.map(b => `<td class="right tnum"><b>${fmt(b.total)}</b></td>`).join('')}<td class="right tnum"><b>${fmt(m.total)}</b></td><td></td></tr>
+    </tbody></table></div>`;
   let est;
   if (!m.opusCost) {
     est = 'No Opus usage in this range, so there is nothing to compare.';
@@ -4146,9 +4584,11 @@ function renderModelMix(windowed, cutoff, windowEnd) {
       <div class="muted" style="margin-top:0.3rem;">Priced by ccusage at LiteLLM rates (Sonnet's rates applied to the Opus tokens). An estimate only: a different model would not produce the same tokens or always do the same work.</div>`;
   }
   card.innerHTML = `
-    <div class="card-head"><h2>Model mix</h2><span class="muted">Spend by model, ${escHtml(cutoff)} to ${escHtml(windowEnd)}, USD list price</span></div>
-    ${top.map(rowHtml).join('')}
-    ${rest > 0 ? `<div class="mix-row muted"><span class="mix-name">${m.rows.length - 8} more models</span><div class="progress-track" style="background:none;"></div><span class="mix-cost tnum">${fmt(rest)}</span><span class="mix-share tnum">${Math.round(100 * rest / (m.total || 1))}%</span></div>` : ''}
+    <div class="card-head"><h2>Model mix</h2><span class="muted">Usage value by model at API prices, ${escHtml(cutoff)} to ${escHtml(windowEnd)}, split by the account it ran under</span></div>
+    ${bucketLegendHtml(buckets)}
+    ${view === 'graph' ? `${top.map(rowHtml).join('')}
+    ${rest > 0 ? `<div class="mix-row muted"><span class="mix-name">${restRows.length} more models</span><div class="stack-track" style="background:none;"></div><span class="mix-cost tnum">${fmt(rest)}</span><span class="mix-share tnum">${Math.round(100 * rest / (m.total || 1))}%</span></div>` : ''}` : textTable}
+    <div class="muted" style="font-size:0.78rem; margin-top:0.3rem;" title="Claude and Grok usage is split across accounts by each account's share of that model in ccusage's session data for this range. Unassigned is Claude usage from sessions with no account record.">Accounts use the names from Settings. Unassigned: Claude sessions with no account record.</div>
     <div class="mix-estimate">${est}</div>
   `;
 }
@@ -4416,6 +4856,7 @@ function renderGrokBotHourlyChart(today) {
 
 function update() {
   if (!data) return;
+  if (pendingScrollId) setTimeout(scrollToPending, 0);
   const days = [...data.daily].sort((a, b) => a.period.localeCompare(b.period));
   const today = todayStr();
 
@@ -4811,11 +5252,25 @@ function update() {
     }
     const projAgg = {};
     sessionsInRange.forEach(s => {
-      const bucket = projAgg[s.project] || (projAgg[s.project] = { project: s.project, cost: 0, sessions: 0, tokens: 0 });
+      const bucket = projAgg[s.project] || (projAgg[s.project] = { project: s.project, cost: 0, sessions: 0, tokens: 0, models: {}, accounts: {} });
       bucket.cost += s.totalCost;
       bucket.sessions += s.sessions || 1;
-      bucket.tokens += (s.modelBreakdowns || []).reduce((sum, mb) => sum + (mb.inputTokens || 0) + (mb.outputTokens || 0), 0);
+      const acctName = accountBucketName(s);
+      const acct = bucket.accounts[acctName] || (bucket.accounts[acctName] = { cost: 0, tokens: 0 });
+      acct.cost += s.totalCost;
+      (s.modelBreakdowns || []).forEach(mb => {
+        const t = (mb.inputTokens || 0) + (mb.outputTokens || 0);
+        bucket.tokens += t;
+        acct.tokens += t;
+        const m = bucket.models[mb.modelName] || (bucket.models[mb.modelName] = { cost: 0, tokens: 0 });
+        m.cost += mb.cost || 0;
+        m.tokens += t;
+      });
     });
+    // One colour per account across every project row.
+    const acctTotals = {};
+    Object.values(projAgg).forEach(p => Object.entries(p.accounts).forEach(([n, a]) => { acctTotals[n] = (acctTotals[n] || 0) + a.cost; }));
+    const projBuckets = finishAccountSplit({ all: acctTotals }).buckets;
     const projectRows = Object.values(projAgg).sort((a, b) => {
       const k = projectSort.k;
       if (a[k] === b[k]) return 0;
@@ -4826,10 +5281,40 @@ function update() {
       ? 'Projects include Claude Code and the Grok CLI. This filter has no project rows.'
       : 'No Claude or Grok sessions in this range.';
 
+    const view = reportView();
+    document.getElementById('projLegend').innerHTML = projectRows.length ? bucketLegendHtml(projBuckets) : '';
+    const maxCost = Math.max(0, ...projectRows.map(p => p.cost)) || 1;
     document.querySelector('#projectsTable tbody').innerHTML = projectRows.map(p => {
       const path = shortenPath(p.project);
-      return `<tr><td class="proj-path" title="${escAttr(path.full)}" aria-label="${escAttr(path.full)}">${escHtml(path.short)}</td><td class="right tnum">${p.sessions}</td><td class="right tnum">${fmtTok(p.tokens)}</td><td class="right tnum">${fmt(p.cost)}</td></tr>`;
+      const open = expandedProjects.has(p.project);
+      const accounts = projBuckets.filter(b => p.accounts[b.name]).map(b => ({ name: b.name, colour: b.colour, ...p.accounts[b.name] }));
+      const models = Object.entries(p.models).map(([name, m]) => ({ name, ...m })).sort((a, b) => b.cost - a.cost);
+      const byAcct = Object.fromEntries(accounts.map(a => [a.name, a.cost]));
+      const bar = view === 'graph' ? stackedBarHtml(byAcct, projBuckets, p.cost, maxCost) : '';
+      const listTable = (title, rows, swatch) => `<div class="proj-detail-col"><div class="proj-detail-title">${title}</div><table class="mini-table"><thead><tr><th>${title === 'Models' ? 'Model' : 'Account'}</th><th class="right">Tokens</th><th class="right">Usage value</th></tr></thead><tbody>${rows.map(r => `<tr><td>${swatch && r.colour ? `<span class="swatch" style="background:${r.colour};"></span> ` : ''}${escHtml(r.name)}</td><td class="right tnum">${fmtTok(r.tokens)}</td><td class="right tnum">${fmt(r.cost)}</td></tr>`).join('')}</tbody></table></div>`;
+      const listBars = (title, rows) => `<div class="proj-detail-col"><div class="proj-detail-title">${title}</div>${reportBarsHtml(rows.map(r => ({ label: r.name, labelHtml: (r.colour ? `<span class="swatch" style="background:${r.colour};"></span> ` : '') + escHtml(r.name), value: r.cost, display: fmt(r.cost), extra: fmtTok(r.tokens) + ' tokens' })), 'None')}</div>`;
+      const detail = view === 'graph'
+        ? listBars('Accounts', accounts) + listBars('Models', models)
+        : listTable('Accounts', accounts, true) + listTable('Models', models, false);
+      const summary = `${accounts.map(a => escHtml(a.name)).join(', ')} · ${models.length} model${models.length === 1 ? '' : 's'}`;
+      return `<tr class="proj-row${open ? ' open' : ''}" data-project="${escAttr(p.project)}" tabindex="0" role="button" aria-expanded="${open}">
+          <td class="proj-path" title="${escAttr(path.full)}" aria-label="${escAttr(path.full)}"><span class="chev-toggle">${open ? '&#9662;' : '&#9656;'}</span> ${escHtml(path.short)}<div class="muted proj-summary">${summary}</div>${bar}</td>
+          <td class="right tnum">${p.sessions}</td><td class="right tnum">${fmtTok(p.tokens)}</td><td class="right tnum">${fmt(p.cost)}</td></tr>
+        <tr class="proj-detail" ${open ? '' : 'hidden'}><td colspan="4"><div class="proj-detail-grid">${detail}</div></td></tr>`;
     }).join('') || `<tr><td colspan="4" class="muted">${emptyCopy}</td></tr>`;
+    document.querySelectorAll('#projectsTable tr.proj-row').forEach(tr => {
+      const toggle = () => {
+        const key = tr.dataset.project;
+        if (expandedProjects.has(key)) expandedProjects.delete(key); else expandedProjects.add(key);
+        const open = expandedProjects.has(key);
+        tr.classList.toggle('open', open);
+        tr.setAttribute('aria-expanded', String(open));
+        tr.querySelector('.chev-toggle').innerHTML = open ? '&#9662;' : '&#9656;';
+        tr.nextElementSibling.hidden = !open;
+      };
+      tr.onclick = toggle;
+      tr.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } };
+    });
   }
 }
 
@@ -4838,6 +5323,31 @@ customOpen = !!(customFrom || customTo);
 document.querySelectorAll('#rangeSeg button[data-range]').forEach(b => b.classList.toggle('active', !customFrom && !customTo && parseInt(b.dataset.range, 10) === range));
 syncCustomRangeInputs();
 
+function onSettingsFieldChange(e) {
+  const el = e.target;
+  if (!el || !el.closest || !el.closest('#view-settings')) return;
+  if (el.id === 'providerApiKey' || (el.classList && el.classList.contains('settings-field'))) {
+    settingsSaveMsg = '';
+    setSettingsDirty(true);
+  }
+  if (el.classList && el.classList.contains('threshold-input')) {
+    const err = thresholdError(el.value);
+    const box = el.closest('td, .row') && el.closest('td, .row').querySelector('.field-error');
+    if (box) box.textContent = err;
+    el.setAttribute('aria-invalid', err ? 'true' : 'false');
+  }
+}
+document.addEventListener('input', onSettingsFieldChange);
+document.addEventListener('change', onSettingsFieldChange);
+document.getElementById('settingsSaveBtn').onclick = saveSettingsForm;
+window.addEventListener('beforeunload', e => { if (settingsDirty) { e.preventDefault(); e.returnValue = ''; } });
+document.addEventListener('input', (e) => {
+  const el = e.target;
+  if (el && el.matches && el.matches('form.label-form input[name="label"]')) {
+    const form = el.closest('form.label-form');
+    labelDrafts[form.dataset.uuid] = el.value;
+  }
+});
 document.addEventListener('submit', (e) => {
   const form = e.target && e.target.closest ? e.target.closest('form.label-form') : null;
   if (!form) return;
