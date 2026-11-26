@@ -461,9 +461,25 @@
   .src-chip.src-chip-manual { background: var(--accent-soft); color: var(--accent-soft-text); }
   .src-label { font-weight: 600; flex-shrink: 0; white-space: nowrap; }
   .src-extra {
-    flex: 1; display: flex; align-items: center; gap: 0.4rem;
-    color: var(--muted); font-size: 0.75rem; overflow: hidden; white-space: nowrap;
+    flex: 1; display: flex; align-items: center; flex-wrap: wrap; gap: 0.2rem 0.4rem;
+    color: var(--muted); font-size: 0.75rem; min-width: 0;
   }
+  .src-extra > span { white-space: nowrap; }
+  .tier-badge {
+    display: inline-block; font-size: 0.6rem; font-weight: 600; padding: 0.05rem 0.35rem; border-radius: 999px;
+    border: 1px solid var(--border); color: var(--muted); vertical-align: middle; margin-left: 0.3rem; white-space: nowrap;
+  }
+  .tier-badge.tier-beta { border-color: var(--accent-soft-text); color: var(--accent-soft-text); }
+  .tier-badge.tier-experimental { border-color: var(--heavy-pill-text); color: var(--heavy-pill-text); }
+  .pace-warn { color: var(--heavy-pill-text); font-weight: 600; }
+  .src-row.src-pace-warn { border-color: var(--heavy-pill-text); }
+  .mix-row { display: flex; align-items: center; gap: 0.6rem; font-size: 0.8rem; margin-bottom: 0.3rem; }
+  .mix-row .mix-name { width: 220px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mix-row .progress-track { flex: 1; height: 6px; }
+  .mix-row .mix-cost { width: 90px; text-align: right; flex-shrink: 0; }
+  .mix-row .mix-share { width: 44px; text-align: right; flex-shrink: 0; color: var(--muted); }
+  .mix-estimate { margin-top: 0.7rem; padding: 0.6rem 0.75rem; border-radius: 8px; background: var(--neutral-bg); border: 1px dashed var(--neutral-border); font-size: 0.8rem; }
+  .seat-row { display: flex; gap: 0.6rem; align-items: flex-end; flex-wrap: wrap; margin-bottom: 0.5rem; }
   .src-row:has(.label-form) { flex-wrap: wrap; }
   .src-row .label-form { flex-basis: 100%; margin-top: 0.35rem; }
   .src-minibar { display: inline-block; height: 6px; width: 46px; border-radius: 3px; background: var(--border); overflow: hidden; flex-shrink: 0; }
@@ -639,6 +655,7 @@
         <div id="tokenSourcesBody"></div>
       </div>
     </div>
+    <div class="card" id="modelMixCard" style="display:none; margin-top: 1rem;"></div>
     <div class="card" style="margin-top: 1rem;">
       <div class="card-head">
         <h2>Daily spend <span id="chartMetricLabel" class="muted"></span></h2>
@@ -1277,6 +1294,61 @@ function liveAgeLabel(fetchedAt, nowMs) {
   }
   const days = Math.max(1, Math.floor(age / hours));
   return 'live, ' + days + ' day' + (days === 1 ? '' : 's') + ' old';
+}
+function fmtCurrencyAmount(amount, currency) {
+  const sym = { GBP: '\u00a3', USD: '$', EUR: '\u20ac' }[String(currency || '').toUpperCase()];
+  const n = Number(amount || 0).toFixed(2);
+  return sym ? sym + n : n + ' ' + String(currency || '');
+}
+// Team value: API-equivalent (ccusage, USD list price, month to date) next to
+// the seat fee you entered. No default price; no currency conversion.
+function teamValueParts(tv) {
+  if (!tv) return null;
+  const api = '$' + Number(tv.apiEquivalentUsd || 0).toFixed(2);
+  if (!tv.seat) return { api, seat: null, multiple: null, text: `${api} API-equivalent this month · set seat price` };
+  const seat = fmtCurrencyAmount(tv.seat.amount, tv.seat.currency) + '/month';
+  const multiple = tv.multiple != null ? `${Number(tv.multiple).toFixed(1)}\u00d7 the seat` : null;
+  return { api, seat, multiple, text: `${api} API-equivalent this month vs seat ${seat}` + (multiple ? ` (${multiple})` : '') };
+}
+// 5-hour window pace line. fmtTime turns an ISO time into "16:40".
+function paceText(p, fmtTime) {
+  if (!p) return '';
+  const t = fmtTime || (iso => iso);
+  if ((p.currentPct || 0) >= 100) return `Session (5-hour) limit reached, resets ${t(p.resetAt)}`;
+  if (p.warn && p.hitsLimitAt) return `Session pace ${p.ratePerHour}%/h: would hit 100% around ${t(p.hitsLimitAt)}, before the ${t(p.resetAt)} reset`;
+  if (p.idle) return `Session (5-hour): no Claude use in the last 30 minutes`;
+  const proj = Math.min(100, Math.round(p.projectedPct || 0));
+  const early = p.thin ? ' (early estimate)' : '';
+  return `Session pace ${p.ratePerHour}%/h: on track for ${proj}% by the ${t(p.resetAt)} reset${early}`;
+}
+// Spend by model in the selected rows, and the estimated saving had the Opus
+// spend been priced at Sonnet's LiteLLM rates (ratio from ccusage's own
+// repriced run, applied per day and model so filters still work).
+function modelMixSummary(windowed, mix) {
+  const spend = {};
+  let total = 0, opusCost = 0, saving = 0, priced = 0;
+  const opus = new Set((mix && mix.opusModels) || []);
+  const byDay = (mix && mix.repricedByDay) || {};
+  (windowed || []).forEach(d => {
+    ((d.value && d.value.modelBreakdowns) || []).forEach(mb => {
+      const c = Number(mb.cost) || 0;
+      if (!mb.modelName) return;
+      spend[mb.modelName] = (spend[mb.modelName] || 0) + c;
+      total += c;
+      if (opus.has(mb.modelName)) {
+        opusCost += c;
+        const r = (byDay[d.period] || {})[mb.modelName];
+        if (r && r.calculated > 0) {
+          saving += c * (1 - r.atSonnet / r.calculated);
+          priced += c;
+        }
+      }
+    });
+  });
+  const rows = Object.entries(spend).filter(e => e[1] > 0).sort((a, b) => b[1] - a[1])
+    .map(([model, cost]) => ({ model, cost, share: total ? cost / total : 0, opus: opus.has(model) }));
+  return { rows, total, opusCost, saving, priced, atSonnet: opusCost - saving,
+           sonnetModel: (mix && mix.sonnetModel) || null, error: (mix && mix.error) || null };
 }
 // </pure-helpers>
 
@@ -2659,20 +2731,29 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
       : 'No usage-credit data cached for this account yet.';
     const chip = mu.live ? srcChip(mu.liveLabel || liveAgeLabel(mu.fetchedAt) || 'live', 'live', 'From the status line — a real server-reported rate_limits reading.') : '';
     const sess = mu.session || {}, week = mu.week || {};
-    const sw = (letter, which, win) => {
+    const sw = (word, which, win) => {
       if (win.percent == null && !win.note) return '';
       const tip = [planWindowLabel(which), win.note].filter(Boolean).join(' — ');
       const pct = win.percent != null ? `${win.percent}%` : '–';
-      return `<span title="${escAttr(tip)}"><abbr title="${escAttr(planWindowLabel(which))}">${letter}</abbr> ${srcMiniBar(win.percent)} ${pct}${win.note ? ` <span class="muted">${escHtml(win.note)}</span>` : ''}</span>`;
+      return `<span title="${escAttr(tip)}">${word} ${srcMiniBar(win.percent)} ${pct}${win.note ? ` <span class="muted">${escHtml(win.note)}</span>` : ''}</span>`;
     };
-    const extra = [sw('S', 'session', sess), sw('W', 'week', week)].filter(Boolean).join('&nbsp;&nbsp;');
+    const extra = [sw('Session', 'session', sess), sw('Weekly', 'week', week)].filter(Boolean).join('');
+    const insight = planInsight('claude:' + s.id);
+    const pace = insight && insight.sessionPace;
+    const paceLine = pace ? paceText(pace, iso => fmtWhenShort(iso)) : '';
+    const tv = ((data && data.teamValue) || []).find(t => t.accountUuid === s.id);
+    const tvp = teamValueParts(tv);
+    const tvHtml = tvp ? `<span title="API-equivalent: ccusage's list-price cost for this account's sessions since ${escAttr(tv.monthStart)} (US dollars, by each session's last-active day). Seat: the monthly price you entered in Settings, in the account's billing currency. Not converted between currencies.">${escHtml(tvp.api)} API-equivalent this month · ${tvp.seat ? 'seat ' + escHtml(tvp.seat) + (tvp.multiple ? ' (' + escHtml(tvp.multiple) + ')' : '') : '<button type="button" class="text-btn" data-goto-settings="seat">set seat price</button>'}</span>` : '';
+    const paceHtml = paceLine ? `<span class="${pace.warn ? 'pace-warn' : ''}" title="From the status line's 5-hour readings${pace.block ? ' and ccusage\'s active block (burn rate $' + Number(pace.block.costPerHour || 0).toFixed(2) + '/h)' : ''}; basis: ${escAttr(pace.basis)}.">${escHtml(paceLine)}</span>` : '';
+    const extraLine = (tvHtml || paceHtml) ? `<span class="src-insight">${[tvHtml, paceHtml].filter(Boolean).join('')}</span>` : '';
     const titleBits = [note, sess.note && `Session (5-hour): ${sess.percent != null ? sess.percent + '%' : '–'} (${sess.note})`, week.note && `Weekly (7-day): ${week.percent != null ? week.percent + '%' : '–'} (${week.note})`, 'Same numbers as claude.ai Settings → Usage.'].filter(Boolean);
-    return { cls, html: `
+    return { cls: cls + (pace && pace.warn ? ' src-pace-warn' : ''), html: `
       ${chip}
       <span class="src-label">${escHtml(mu.label)}</span>
       <span class="src-extra">${extra}</span>
       <span class="src-amount tnum">${hasOverage ? fmtCredits(c.usedMinor, c.currency, c.exponent) : 'unknown'}</span>
-      ${planInsightHtml(planInsight('claude:' + s.id), 'src-insight')}
+      ${planInsightHtml(insight, 'src-insight')}
+      ${extraLine}
     `, title: titleBits.join(' ') };
   }
 
@@ -2921,6 +3002,21 @@ function sourceRangeEstimate(s, accountSessions, days, cutoff, today) {
   return { estimate: cost, modelDetail };
 }
 
+function ccusageSourceInfo(tool, s) {
+  if (s && s.grokBot) return null;
+  const id = tool === 'grok-cli' ? 'grok' : tool;
+  return ((data && data.ccusageSources) || []).find(x => x.id === id) || null;
+}
+function tierBadgeHtml(info) {
+  if (!info || !info.tier) return '';
+  return `<span class="tier-badge tier-${escAttr(info.tier)}" title="${escAttr(info.tierNote || '')} Source: ccusage's own docs.">${escHtml(info.tier)}</span>`;
+}
+function withTierBadge(row, s) {
+  const badge = tierBadgeHtml(ccusageSourceInfo(s.tool, s));
+  if (!badge) return row;
+  return { ...row, html: row.html.replace(/(<span class="src-label">[\s\S]*?<\/span>)/, '$1' + badge) };
+}
+
 function renderRealCostOverview(sources, accountSessions, days, cutoff, today, plans, providerStatus, providerCosts, liveUsageSetup, unofficialToggles, totalWin) {
   const box = document.getElementById('realCostOverview');
   const openaiCost = (providerCosts || {}).openai;
@@ -2976,8 +3072,8 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
   // the bottom, so the rows worth a second look aren't buried under ones
   // that aren't.
   const rendered = rows
-    .map(({ s, estimate, modelDetail }) => sourceRow(s, estimate, modelDetail, openaiCost))
-    .sort((a, b) => SRC_ROW_WEIGHT[a.cls] - SRC_ROW_WEIGHT[b.cls]);
+    .map(({ s, estimate, modelDetail }) => withTierBadge(sourceRow(s, estimate, modelDetail, openaiCost), s))
+    .sort((a, b) => SRC_ROW_WEIGHT[a.cls.split(' ')[0]] - SRC_ROW_WEIGHT[b.cls.split(' ')[0]]);
   const bannersHtml = rendered.map(({ cls, html, title }) => `<div class="src-row ${cls}" title="${escAttr(title)}">${html}</div>`).join('');
 
   box.innerHTML = `
@@ -2992,6 +3088,7 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
       Those three amounts are USD list price, the same split as the list-price tile above. A Claude row with a currency code, for example GBP credits, is that account's own balance, not this list price.
     </div>
   `;
+  box.querySelectorAll('[data-goto-settings]').forEach(b => { b.onclick = () => setTab('settings'); });
   return { visible: true, realTotal, estimateTotal, coveredTotal };
 }
 
@@ -3130,6 +3227,67 @@ function themeSectionHtml() {
   `;
 }
 
+function seatPriceSectionHtml() {
+  const list = (data && data.teamValue) || [];
+  if (!list.length) return '';
+  const rows = list.map(tv => {
+    const cur = tv.billingCurrency;
+    const curHtml = cur
+      ? `<span class="muted" title="This account's billing currency, from its own usage-credit reading.">${escHtml(cur)}</span><input type="hidden" data-seat-currency="${escAttr(tv.accountUuid)}" value="${escAttr(cur)}">`
+      : `<select data-seat-currency="${escAttr(tv.accountUuid)}">${['GBP', 'USD', 'EUR'].map(c => `<option${tv.seat && tv.seat.currency === c ? ' selected' : ''}>${c}</option>`).join('')}</select>`;
+    return `<div class="seat-row">
+      <label>${escHtml(tv.label || tv.accountUuid)}<br>
+        <input type="number" min="0.01" step="0.01" data-seat-amount="${escAttr(tv.accountUuid)}" value="${tv.seat ? escAttr(tv.seat.amount) : ''}" placeholder="set seat price" style="width:120px;">
+      </label>
+      <span style="padding-bottom:0.4rem;">${curHtml} per month</span>
+      <button class="btn" data-seat-save="${escAttr(tv.accountUuid)}">Save</button>
+      ${tv.seat ? `<button class="btn" data-seat-remove="${escAttr(tv.accountUuid)}">Remove</button>` : ''}
+      <span class="muted" data-seat-status="${escAttr(tv.accountUuid)}"></span>
+    </div>`;
+  }).join('');
+  return `
+    <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">
+      Seat prices <span class="muted" title="Claude doesn't publish what your seat costs, so enter it here. There is no default. The Overview then shows ccusage's API-equivalent cost for the month next to it.">(?)</span>
+    </div>
+    ${rows}`;
+}
+
+async function saveSeatPrice(accountUuid, remove) {
+  const status = document.querySelector(`[data-seat-status="${CSS.escape(accountUuid)}"]`);
+  const amountEl = document.querySelector(`[data-seat-amount="${CSS.escape(accountUuid)}"]`);
+  const curEl = document.querySelector(`[data-seat-currency="${CSS.escape(accountUuid)}"]`);
+  const amount = remove ? null : parseFloat(amountEl && amountEl.value);
+  if (!remove && !(amount > 0)) { if (status) status.textContent = 'Enter a price above 0.'; return; }
+  if (status) status.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/seat-prices', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountUuid, amount, currency: curEl ? curEl.value : null }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.ok) throw new Error(json.error || 'Could not save the seat price');
+    data.seatPrices = json.seatPrices;
+    if (json.teamValue) data.teamValue = json.teamValue;
+    renderSettingsPage();
+    const again = document.querySelector(`[data-seat-status="${CSS.escape(accountUuid)}"]`);
+    if (again) again.textContent = remove ? 'Removed.' : 'Saved on this machine.';
+  } catch (e) {
+    if (status) status.textContent = e.message;
+  }
+}
+
+function ccusageSourcesHtml() {
+  const list = (data && data.ccusageSources) || [];
+  if (!list.length) return '';
+  const rows = list.map(x => `<tr>
+      <td>${escHtml(x.label)}${tierBadgeHtml(x)}</td>
+      <td class="muted">${x.hasData ? 'usage found' : 'installed, no usage yet'}</td>
+      <td><a href="${escAttr(x.docs)}" target="_blank" rel="noopener" class="muted">ccusage docs</a></td>
+    </tr>`).join('');
+  return `<div class="muted" style="font-weight:600; color:var(--text); margin:0.3rem 0;">Read through ccusage <span class="muted" title="ccusage 20.1.2 reads 20 tools. Only the ones on this Mac are listed. The badge is ccusage's own label for each source: Beta and Experimental mean its maintainers expect the tool's log format to change.">(?)</span></div>
+    <table style="margin-bottom:0.9rem;"><thead><tr><th>Source</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
 function settingsSourcesHtml(sources) {
   const det = detectionList();
   const found = det.filter(d => d.installed || d.hasData);
@@ -3152,6 +3310,7 @@ function settingsSourcesHtml(sources) {
   } else {
     html += sourcesSummaryTableHtml(foundRows);
   }
+  html += ccusageSourcesHtml();
   if (missing.length) {
     html += `<details class="not-found-sources"${found.length ? '' : ' open'}>
       <summary>Not found on this Mac</summary>
@@ -3290,6 +3449,7 @@ function renderSettingsApp(forceRender) {
     ${planRows ? `<table style="margin:0.2rem 0 0.7rem;"><tbody>${planRows}</tbody></table>` : ''}
     <div class="row"><label><input type="checkbox" id="notifCredits" ${ns.credits ? 'checked' : ''}> Notify me when paid extra credit starts being used</label></div>
     <div class="row"><label><input type="checkbox" id="notifDigest" ${ns.digest ? 'checked' : ''}> Monday 09:00 notification for the weekly digest</label></div>
+    <div class="row"><label><input type="checkbox" id="notifPace" ${ns.pace !== false ? 'checked' : ''}> Warn once per Claude 5-hour window when it is on pace to run out before it resets</label></div>
     <div class="row">
       <button type="button" id="notifSave">Save</button>
       <button type="button" id="notifTest" class="secondary">Send test notification</button>
@@ -3320,6 +3480,7 @@ function renderSettingsApp(forceRender) {
         enabled: document.getElementById('notifEnabled').checked,
         credits: document.getElementById('notifCredits').checked,
         digest: document.getElementById('notifDigest').checked,
+        pace: document.getElementById('notifPace').checked,
         thresholds: parseThresholdInput(document.getElementById('notifThresholds').value) || [],
         perPlan,
       };
@@ -3418,6 +3579,8 @@ function renderSettingsPage() {
 
       ${accountNamesSectionHtml()}
 
+      ${seatPriceSectionHtml()}
+
       ${themeSectionHtml()}
 
       ${showClaude ? liveUsageSectionHtml(liveUsageSetup) : ''}
@@ -3457,6 +3620,8 @@ function renderSettingsPage() {
     if (planDeleteBtn) planDeleteBtn.onclick = deletePlanForm;
   }
 
+  document.querySelectorAll('[data-seat-save]').forEach(b => { b.onclick = () => saveSeatPrice(b.getAttribute('data-seat-save'), false); });
+  document.querySelectorAll('[data-seat-remove]').forEach(b => { b.onclick = () => saveSeatPrice(b.getAttribute('data-seat-remove'), true); });
   if (document.getElementById('grokBotSettingsNote')) fillGrokBotSettingsNote();
   const grokToggle = document.getElementById('grokToggle');
   if (grokToggle) grokToggle.onchange = e => toggleGrokLive(e.target.checked);
@@ -3831,6 +3996,40 @@ const CACHE_SEGMENTS = [
 // ccusage's modelBreakdowns already separates these four token kinds (no
 // overlap between them) — this just sums and displays what's already there,
 // rather than re-deriving anything from raw transcripts.
+function renderModelMix(windowed, cutoff, windowEnd) {
+  const card = document.getElementById('modelMixCard');
+  if (!card) return;
+  const m = modelMixSummary(windowed, data && data.modelMix);
+  if (!m.rows.length) { card.style.display = 'none'; return; }
+  card.style.display = '';
+  const top = m.rows.slice(0, 8);
+  const rest = m.rows.slice(8).reduce((a, r) => a + r.cost, 0);
+  const max = top[0].cost || 1;
+  const rowHtml = r => `<div class="mix-row">
+      <span class="mix-name" title="${escAttr(r.model)}">${escHtml(r.model)}${r.opus ? ' <span class="tier-badge">Opus</span>' : ''}</span>
+      <div class="progress-track"><div class="progress-fill" style="width:${Math.max(1, Math.round(100 * r.cost / max))}%"></div></div>
+      <span class="mix-cost tnum">${fmt(r.cost)}</span>
+      <span class="mix-share tnum">${Math.round(r.share * 100)}%</span>
+    </div>`;
+  let est;
+  if (!m.opusCost) {
+    est = 'No Opus usage in this range, so there is nothing to compare.';
+  } else if (m.error) {
+    est = `Opus in this range: ${fmt(m.opusCost)}. No Sonnet estimate: ${escHtml(m.error)}`;
+  } else if (!m.priced) {
+    est = `Opus in this range: ${fmt(m.opusCost)}. The repriced figures are still being calculated; refresh in a moment.`;
+  } else {
+    est = `<b>Estimate:</b> had the Opus usage in this range run on <b>${escHtml(m.sonnetModel)}</b> with the same tokens, it would have cost about <b class="tnum">${fmt(m.atSonnet)}</b> instead of <b class="tnum">${fmt(m.opusCost)}</b>, a saving of about <b class="tnum">${fmt(m.saving)}</b>.
+      <div class="muted" style="margin-top:0.3rem;">Priced by ccusage at LiteLLM rates (Sonnet's rates applied to the Opus tokens). An estimate only: a different model would not produce the same tokens or always do the same work.</div>`;
+  }
+  card.innerHTML = `
+    <div class="card-head"><h2>Model mix</h2><span class="muted">Spend by model, ${escHtml(cutoff)} to ${escHtml(windowEnd)}, USD list price</span></div>
+    ${top.map(rowHtml).join('')}
+    ${rest > 0 ? `<div class="mix-row muted"><span class="mix-name">${m.rows.length - 8} more models</span><div class="progress-track" style="background:none;"></div><span class="mix-cost tnum">${fmt(rest)}</span><span class="mix-share tnum">${Math.round(100 * rest / (m.total || 1))}%</span></div>` : ''}
+    <div class="mix-estimate">${est}</div>
+  `;
+}
+
 function renderCacheEfficiency(windowed) {
   const totals = { uncached: 0, write: 0, read: 0, output: 0 };
   windowed.forEach(d => (d.value.modelBreakdowns || []).forEach(mb => {
@@ -4249,6 +4448,7 @@ function update() {
   if (tab === 'overview') {
     document.getElementById('cacheScopeNote').textContent = `Selected range, ${cutoff} to ${windowEnd}`;
     renderCacheEfficiency(windowed);
+    renderModelMix(windowed, cutoff, windowEnd);
     const tokenSpan = tokenWindow(cutoff, windowEnd);
     loadTokenSources(tokenSpan.since, tokenSpan.until);
     renderTokenSources();

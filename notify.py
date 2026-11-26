@@ -33,6 +33,7 @@ DEFAULTS = {
     "perPlan": {},
     "credits": True,
     "digest": True,
+    "pace": True,
 }
 APP_HEARTBEAT_SECONDS = 180
 SENT_RETENTION_DAYS = 60
@@ -71,7 +72,7 @@ def validate_settings(body, current=None):
     if not isinstance(body, dict):
         raise ValueError("JSON object required")
     merged = copy.deepcopy(current if isinstance(current, dict) else DEFAULTS)
-    for flag in ("enabled", "credits", "digest"):
+    for flag in ("enabled", "credits", "digest", "pace"):
         if flag in body:
             if not isinstance(body[flag], bool):
                 raise ValueError(flag + " must be true or false")
@@ -223,6 +224,13 @@ def evaluate(plans, settings, state, now=None, tz=None):
                 "message": "Passed %s%%. Resets %s.%s" % (_fmt_pct(top), _fmt_reset(plan.get("resetAt"), tz), extra),
             })
 
+        pace = plan.get("sessionPace")
+        if pace and pace.get("warn") and (settings or {}).get("pace", True):
+            pace_key = "pace|%s|%s" % (key, _window_id(pace.get("resetAt")))
+            if pace_key not in sent:
+                sent[pace_key] = now.isoformat(timespec="seconds")
+                events.append(pace_event(plan, pace, tz))
+
         credits = plan.get("credits") if (settings or {}).get("credits", True) else None
         if credits and credits.get("value") is not None:
             try:
@@ -256,6 +264,23 @@ def evaluate(plans, settings, state, now=None, tz=None):
         if ts is None or ts < cutoff:
             sent.pop(k, None)
     return events, state
+
+
+def pace_event(plan, pace, tz=None):
+    """The once-per-window 5-hour pacing notification."""
+    label = plan.get("label") or plan.get("key")
+    reset = _fmt_reset(pace.get("resetAt"), tz)
+    if float(pace.get("currentPct") or 0) >= 100:
+        message = "Session (5-hour) limit reached. It resets %s." % reset
+    else:
+        message = "At %s%% now. At this pace it hits 100%% around %s, before the %s reset." % (
+            _fmt_pct(pace.get("currentPct") or 0), _fmt_reset(pace.get("hitsLimitAt"), tz), reset)
+    return {
+        "kind": "pace",
+        "key": plan.get("key"),
+        "title": "%s: Session (5-hour) on pace to run out" % label,
+        "message": message,
+    }
 
 
 def _fmt_money(value, currency):

@@ -150,6 +150,37 @@ brew update && brew upgrade agentic-spend
   `agentic-spend serve` once at login (RunAtLoad, no KeepAlive), so readings and
   notifications carry on without the browser open.
 
+## Team value, 5-hour pacing, model mix and sources (1.7.0)
+
+- **Team value.** Each Claude subscription row (Team, Max, Pro) shows ccusage's API-equivalent
+  cost for that account this month (US-dollar list price, sessions by last-active day) next to
+  the seat fee. Claude doesn't expose seat prices, so enter yours in Settings, "Seat prices",
+  in the account's billing currency (taken from Claude's own credit reading). There is no
+  default: until you set one the row says "set seat price". Nothing is converted between
+  currencies; the "×" multiple only appears when the seat is priced in US dollars.
+- **5-hour pacing.** For the current Claude 5-hour window the server works out a pace from
+  the status line's readings (or, with one Claude account, ccusage's active block burn rate)
+  and projects when it reaches 100%. If that is before the reset, the row and the menu bar
+  turn amber and one macOS notification is sent for that window (switch off in
+  Settings, "Background and notifications"). Thin data (under 20 minutes or under 5%) and no
+  Claude activity for 30 minutes do not warn.
+- **Model mix** (Overview): spend by model for the selected range, and an estimated saving had
+  the Opus usage been priced at Sonnet's rates. ccusage does the pricing: it is run again with
+  a temporary config whose `pricingOverrides` give the Opus models the Sonnet model's LiteLLM
+  rates (from ccusage's own price cache), both runs in `--mode calculate`. It is labelled as
+  an estimate: another model would not produce the same tokens.
+- **Sources.** ccusage 20.1.2 reads 20 tools (Claude Code, Codex, OpenCode, Amp, Droid,
+  Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, GitHub Copilot CLI, Gemini CLI,
+  Antigravity, Kimi, Qwen, Grok Build CLI, ZCode, Cline, DeepSeek Harness). Each one with data
+  on this Mac gets a row and a small badge with ccusage's own tier, copied from the title of
+  its page in ccusage's docs: no tag is shown as "first-class", "(Beta)" as beta and
+  "(Experimental)" as experimental. ccusage marks a source experimental when the tool's local
+  log format is undocumented or still changing. Tools that aren't on this Mac aren't listed.
+- **ccusage telemetry.** Official ccusage builds send one anonymous ping a day (version, OS,
+  architecture and command name, never usage data; see https://ccusage.com/guide/telemetry).
+  The bundled binary is the official build. To turn it off: `ccusage telemetry disable`, or
+  set `CCUSAGE_TELEMETRY_DISABLED=1` or `DO_NOT_TRACK=1` for the server.
+
 ## Live Claude usage (on by default)
 
 **It turns itself on.** The first time the server starts and Claude Code is installed, it wires

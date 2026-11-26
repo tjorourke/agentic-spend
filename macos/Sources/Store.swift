@@ -44,6 +44,9 @@ final class Store: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         }
     }
 
+    /// True when a Claude 5-hour window is on pace to run out before it resets.
+    var paceWarning: Bool { summary?.paceWarning?.warn == true }
+
     var menuTitle: String {
         guard let top = summary?.plans.first, let pct = top.pct else {
             return serverDown ? "AS !" : "AS"

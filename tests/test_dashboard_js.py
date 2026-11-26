@@ -138,5 +138,43 @@ class DashboardHelperTests(unittest.TestCase):
         self.assertNotIn("\u2014", block)
 
 
+    def test_team_value_parts(self):
+        out = run_js([
+            "out.none = teamValueParts({apiEquivalentUsd: 1873.85, seat: null});",
+            "out.usd = teamValueParts({apiEquivalentUsd: 150, seat: {amount: 30, currency: 'USD'}, multiple: 5});",
+            "out.gbp = teamValueParts({apiEquivalentUsd: 12.25, seat: {amount: 90, currency: 'GBP'}, multiple: null});",
+        ])
+        self.assertEqual(out["none"]["text"], "$1873.85 API-equivalent this month · set seat price")
+        self.assertEqual(out["usd"]["text"], "$150.00 API-equivalent this month vs seat $30.00/month (5.0\u00d7 the seat)")
+        self.assertEqual(out["gbp"]["text"], "$12.25 API-equivalent this month vs seat \u00a390.00/month")
+
+    def test_pace_text(self):
+        out = run_js([
+            "const t = iso => iso.slice(11, 16);",
+            "out.warn = paceText({warn: true, ratePerHour: 20, currentPct: 40, hitsLimitAt: '2026-11-26T15:30:00Z', resetAt: '2026-11-26T17:00:00Z'}, t);",
+            "out.ok = paceText({warn: false, ratePerHour: 2, currentPct: 4, projectedPct: 12.4, resetAt: '2026-11-26T17:00:00Z', thin: true}, t);",
+            "out.idle = paceText({idle: true, currentPct: 50, resetAt: '2026-11-26T17:00:00Z'}, t);",
+            "out.full = paceText({currentPct: 100, resetAt: '2026-11-26T17:00:00Z'}, t);",
+        ])
+        self.assertEqual(out["warn"], "Session pace 20%/h: would hit 100% around 15:30, before the 17:00 reset")
+        self.assertEqual(out["ok"], "Session pace 2%/h: on track for 12% by the 17:00 reset (early estimate)")
+        self.assertIn("no Claude use", out["idle"])
+        self.assertEqual(out["full"], "Session (5-hour) limit reached, resets 17:00")
+
+    def test_model_mix_summary(self):
+        out = run_js([
+            "const w = [{period: '2026-11-25', value: {modelBreakdowns: [{modelName: 'claude-opus-5-5', cost: 10}, {modelName: 'claude-sonnet-5', cost: 30}]}}];",
+            "const mix = {opusModels: ['claude-opus-5-5'], sonnetModel: 'claude-sonnet-5', repricedByDay: {'2026-11-25': {'claude-opus-5-5': {calculated: 20, atSonnet: 10}}}};",
+            "out.m = modelMixSummary(w, mix);",
+            "out.none = modelMixSummary(w, null);",
+        ])
+        m = out["m"]
+        self.assertEqual([r["model"] for r in m["rows"]], ["claude-sonnet-5", "claude-opus-5-5"])
+        self.assertEqual(m["opusCost"], 10)
+        self.assertEqual(m["saving"], 5)  # half of the $10 shown, from ccusage's 20 -> 10 ratio
+        self.assertEqual(m["atSonnet"], 5)
+        self.assertEqual(out["none"]["saving"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

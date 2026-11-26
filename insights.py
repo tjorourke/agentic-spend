@@ -16,6 +16,8 @@ Stdlib only, and Python 3.9 compatible (the macOS system python3).
 """
 import datetime
 
+import pacing
+
 WEEK_SECONDS = 7 * 24 * 3600
 LOW_CONFIDENCE_HOURS = 24  # readings spanning less than this mark a forecast as low confidence
 RESET_MATCH_SECONDS = 3600  # resets reported a few seconds apart are the same window
@@ -297,8 +299,15 @@ def _window_fields(window):
     }
 
 
-def _claude_insights(max_usage, claude_history, now):
+def _claude_insights(max_usage, claude_history, now, active_block=None):
     out = []
+    now_dt = parse_time(now)
+    in_window = 0
+    for mu in max_usage or []:
+        sess = (mu or {}).get("session") or {}
+        r = parse_time(sess.get("resetsAt"))
+        if sess.get("percent") is not None and sess.get("state") != "reset" and r and now_dt and r > now_dt:
+            in_window += 1
     for mu in max_usage or []:
         uuid = mu.get("accountUuid")
         week = mu.get("week") or {}
@@ -340,6 +349,7 @@ def _claude_insights(max_usage, claude_history, now):
             "note": week.get("note"),
             "session": _window_fields(mu.get("session")),
             "week": _window_fields(week),
+            "sessionPace": _safe_pace(uuid, mu, claude_history, now, active_block, in_window == 1),
             "credits": {
                 "kind": "used", "value": credits.get("usedMinor"),
                 "currency": credits.get("currency"), "exponent": credits.get("exponent"),
@@ -347,6 +357,17 @@ def _claude_insights(max_usage, claude_history, now):
         }
         out.append(item)
     return out
+
+
+def _safe_pace(uuid, mu, claude_history, now, active_block, only_account):
+    try:
+        session = dict(mu.get("session") or {})
+        if not session.get("asOf"):
+            session["asOf"] = mu.get("fetchedAt")
+        return pacing.session_pace(uuid, session, claude_history, now=now,
+                                   active_block=active_block, only_claude_account=only_account)
+    except Exception:
+        return None
 
 
 def _codex_insights(codex_live, codex_history, now):
@@ -388,14 +409,14 @@ def _codex_insights(codex_live, codex_history, now):
 
 
 def build_plan_insights(grokbot=None, max_usage=None, claude_history=None, codex_live=None,
-                        codex_history=None, now=None):
+                        codex_history=None, now=None, claude_active_block=None):
     """One entry per plan window with a current reading. Keys:
     grok-bot:<accountId>, claude:<accountUuid>, codex:primary."""
     now = parse_time(now) or datetime.datetime.now(tz=_UTC)
     out = []
     for builder in (
         lambda: _grokbot_insights(grokbot, now),
-        lambda: _claude_insights(max_usage, claude_history, now),
+        lambda: _claude_insights(max_usage, claude_history, now, claude_active_block),
         lambda: _codex_insights(codex_live, codex_history, now),
     ):
         try:

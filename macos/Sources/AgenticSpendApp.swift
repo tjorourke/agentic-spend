@@ -36,6 +36,9 @@ struct MenuContent: View {
                     let note = week.note.map { " · \($0)" } ?? ""
                     Text("Weekly (7-day)  \(Fmt.pct(week.percent))\(note)")
                 }
+                if let pace = plan.sessionPace {
+                    Text((pace.warn == true ? "⚠︎ " : "") + Fmt.paceLine(pace))
+                }
                 let line = Fmt.forecastLine(plan)
                 if !line.isEmpty && line != plan.note {
                     Text(line)

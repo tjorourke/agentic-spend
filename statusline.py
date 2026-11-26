@@ -153,6 +153,16 @@ def merge_live_record(previous, new, now=None):
     out = dict(new)
     for prefix in ("fiveHour", "sevenDay"):
         if out.get(f"{prefix}Percent") is not None:
+            # Same window, lower figure: an idle session re-sending the
+            # reading from its own last API response. Within one window the
+            # real figure never goes down, so keep the higher one.
+            prev_pct = previous.get(f"{prefix}Percent")
+            prev_reset = _as_epoch(previous.get(f"{prefix}ResetsAt"))
+            new_reset = _as_epoch(out.get(f"{prefix}ResetsAt"))
+            if (prev_pct is not None and prev_reset is not None and new_reset is not None
+                    and abs(prev_reset - new_reset) <= SAME_WINDOW_SECONDS and prev_reset > now_ts
+                    and out[f"{prefix}Percent"] < prev_pct):
+                out[f"{prefix}Percent"] = prev_pct
             continue
         prev_pct = previous.get(f"{prefix}Percent")
         prev_reset = _as_epoch(previous.get(f"{prefix}ResetsAt"))
@@ -162,6 +172,51 @@ def merge_live_record(previous, new, now=None):
             out[f"{prefix}Percent"] = prev_pct
             out[f"{prefix}ResetsAt"] = previous.get(f"{prefix}ResetsAt")
     return out
+
+
+SAME_WINDOW_SECONDS = 3600
+
+
+def reading_belongs_to_other_account(acct_uuid, seven_day, live_dir=None, now=None):
+    """True when this payload's weekly window is another account's, not the
+    logged-in one's.
+
+    Claude Code hands each session the rate limits from that session's own
+    last API response, but we can only ask ~/.claude.json which account is
+    logged in now. A session still running on the account you switched away
+    from therefore sends that account's figures. The weekly reset time tells
+    them apart: if it matches another account's current weekly window and not
+    this account's, the reading is not ours and is not written."""
+    live_dir = live_dir or LIVE_DIR
+    new_reset = _as_epoch((seven_day or {}).get("resets_at"))
+    if new_reset is None:
+        return False
+    now_ts = (now or datetime.datetime.now(tz=datetime.timezone.utc)).timestamp()
+    own_reset = None
+    others = []
+    try:
+        names = os.listdir(live_dir)
+    except OSError:
+        return False
+    for name in names:
+        if not name.endswith(".json") or name.startswith("."):
+            continue
+        try:
+            with open(os.path.join(live_dir, name)) as f:
+                rec = json.load(f)
+        except (OSError, ValueError):
+            continue
+        reset = _as_epoch(rec.get("sevenDayResetsAt"))
+        if name == f"{acct_uuid}.json":
+            own_reset = reset
+        elif reset is not None and reset > now_ts:
+            others.append(reset)
+    if own_reset is not None and abs(own_reset - new_reset) <= SAME_WINDOW_SECONDS:
+        return False
+    if own_reset is not None and own_reset <= now_ts:
+        own_reset = None  # our own window has rolled over; a new reset is expected
+    matches_other = any(abs(r - new_reset) <= SAME_WINDOW_SECONDS for r in others)
+    return matches_other and (own_reset is None or abs(own_reset - new_reset) > SAME_WINDOW_SECONDS)
 
 
 def write_live_file(out_path, record):
@@ -202,6 +257,8 @@ def main():
     # --- side effect: persist for other tools to read ---
     if (five_hour or seven_day) and not os.environ.get(ACTIVE_FLAG):
         acct_uuid, email = current_account()
+        if acct_uuid and reading_belongs_to_other_account(acct_uuid, seven_day):
+            acct_uuid = None  # another account's session; do not mislabel it
         if acct_uuid:
             try:
                 os.makedirs(LIVE_DIR, exist_ok=True)

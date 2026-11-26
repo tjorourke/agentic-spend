@@ -24,6 +24,19 @@ struct PlanWindow: Decodable {
     let asOf: String?
 }
 
+/// Pace in the current Claude 5-hour window (server: pacing.py).
+struct SessionPace: Decodable {
+    let currentPct: Double?
+    let ratePerHour: Double?
+    let projectedPct: Double?
+    let hitsLimitAt: String?
+    let resetAt: String?
+    let basis: String?
+    let warn: Bool?
+    let idle: Bool?
+    let label: String?
+}
+
 struct Plan: Decodable, Identifiable {
     let key: String
     let tool: String?
@@ -36,6 +49,7 @@ struct Plan: Decodable, Identifiable {
     let note: String?
     let session: PlanWindow?
     let week: PlanWindow?
+    let sessionPace: SessionPace?
     var id: String { key }
 }
 
@@ -51,6 +65,7 @@ struct Summary: Decodable {
     let today: Today?
     let plans: [Plan]
     let dashboardUrl: String?
+    let paceWarning: SessionPace?
 }
 
 struct PendingNotification: Decodable {
@@ -139,6 +154,16 @@ enum Fmt {
             parts.append(r == 0 ? "same peak as \(noun)" : "\(r > 0 ? "+" : "-")\(abs(r)) pts vs \(noun)")
         }
         return parts.joined(separator: " · ")
+    }
+
+    /// "Session pace: would hit 100% around 16:40, before the 18:00 reset".
+    static func paceLine(_ p: SessionPace) -> String {
+        if (p.currentPct ?? 0) >= 100 { return "Session (5-hour) limit reached, resets \(when(p.resetAt))" }
+        if p.warn == true, let hit = p.hitsLimitAt {
+            return "Session pace: would hit 100% around \(when(hit)), before the \(when(p.resetAt)) reset"
+        }
+        if p.idle == true { return "Session (5-hour): no Claude use in the last 30 minutes" }
+        return "Session pace: on track for \(pct(min(100, p.projectedPct ?? 0))) by \(when(p.resetAt))"
     }
 
     static func shortName(_ plan: Plan) -> String {
