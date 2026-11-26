@@ -1100,6 +1100,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    # Live Claude usage is on by default: the first start wires the status line
+    # hook (recorded, so turning it off in Settings sticks) and tidies any
+    # stacked or old-path entries from earlier versions.
+    _auto = statusline_setup.auto_enable_once()
+    if _auto.get("status") in ("enabled", "wrapped_existing", "repaired"):
+        print(f"Live Claude usage: {_auto['status'].replace('_', ' ')}")
     start_grokbot_sampler()
     with http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Handler) as httpd:
         print(f"Serving dashboard at http://127.0.0.1:{PORT}/  (Ctrl-C to stop)")

@@ -179,16 +179,35 @@
     padding: 2px;
   }
   .segmented button {
+    -webkit-appearance: none;
+    appearance: none;
     border: none;
     background: none;
     padding: 0.35rem 0.75rem;
     border-radius: 6px;
+    font-family: inherit;
     font-size: 0.82rem;
     font-weight: 500;
+    line-height: 1.2;
     color: var(--muted);
     cursor: pointer;
   }
+  .segmented.custom-on button[data-range].active { background: none; color: var(--muted); }
+  .segmented button:hover:not(.active) { color: var(--text); }
   .segmented button.active { background: var(--accent); color: white; }
+  .segmented button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  /* one look for every real action button: filled purple primary, outlined secondary */
+  .btn, .btn-primary {
+    -webkit-appearance: none; appearance: none;
+    font-family: inherit; font-size: 0.82rem; font-weight: 600; line-height: 1.2;
+    border: 1px solid var(--border); border-radius: 7px; padding: 0.35rem 0.85rem; cursor: pointer;
+    background: var(--card); color: var(--text);
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { filter: brightness(1.08); }
+  .btn:focus-visible, .btn-primary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .banner .btn-primary { margin-left: 0.5rem; }
   select {
     border: 1px solid var(--border);
     background: var(--card);
@@ -280,6 +299,7 @@
   .bar-rect { fill: var(--accent); transition: opacity 0.1s; }
   .bar-rect:hover { opacity: 0.75; }
   .gridline { stroke: var(--border); stroke-width: 1; }
+  .axisline { stroke: var(--muted); stroke-width: 1; }
   .axis-label { font-size: 10px; fill: var(--muted); font-family: var(--mono); }
   .acct-legend { display: flex; gap: 1.4rem; margin-bottom: 0.6rem; }
   .acct-legend .item { display: flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; }
@@ -466,7 +486,6 @@
   .day-heatmap .dh-legend .dh-cell { width: 11px; height: 11px; cursor: default; }
   .custom-range { display: flex; align-items: center; gap: 0.3rem; }
   .custom-range[hidden] { display: none; }
-  #customToggle.active { background: var(--accent-soft); color: var(--accent-soft-text); }
   .custom-range input[type="date"] { padding: 0.35rem 0.4rem; border: 1px solid var(--border); border-radius: 6px; background: var(--card); color: var(--text); font: inherit; }
   .custom-range input[type="date"].is-blank { color: var(--muted); border-style: dashed; }
   .custom-range input[type="date"]:invalid { box-shadow: none; border-color: var(--border); }
@@ -555,13 +574,13 @@
         <button data-range="7" class="active">7d</button>
         <button data-range="30">30d</button>
         <button data-range="9999">All</button>
+        <button type="button" id="customToggle">Custom</button>
       </div>
-      <button type="button" id="customToggle">Custom</button>
       <span class="custom-range" id="customRange" hidden>
         <input type="date" id="customFrom" title="From date, optional" aria-label="From date, optional" aria-required="false">
         <span class="muted">–</span>
         <input type="date" id="customTo" title="To date, optional" aria-label="To date, optional" aria-required="false">
-        <button id="customRangeClear" title="Clear custom range, back to the preset above" style="display:none;">&times;</button>
+        <button id="customRangeClear" class="btn" title="Clear custom range, back to the preset above" style="display:none;">&times;</button>
       </span>
       <span class="range-chip" id="rangeChip" hidden>
         <span id="rangeChipText"></span>
@@ -1197,6 +1216,48 @@ function windowCompareSummary(cmp, noun) {
   const partial = cmp.previousPartial ? ' The previous window was only partly covered by readings.' : '';
   return { text, warn: false, title: `Peak this window ${Math.round(cmp.currentPeakPct)}%, previous window ${Math.round(cmp.previousPeakPct)}%.${partial}` };
 }
+// Show the "turn on live updates" nudge only when our hook is NOT already
+// installed (state none/other) and the Claude numbers really are cached ones.
+function shouldNudgeLive(state, haveCachedNumbers) {
+  const hookIsOurs = state === 'ours' || state === 'wraps_other';
+  return !hookIsOurs && !!haveCachedNumbers;
+}
+// Which of n columns get a text label so they never overlap.
+function emptyAxisLabelIndexes(n, maxLabels) {
+  const every = Math.max(1, Math.ceil(n / Math.max(1, maxLabels)));
+  const out = [];
+  for (let i = 0; i < n; i++) if (i % every === 0 || i === n - 1) out.push(i);
+  return out;
+}
+// Axes for a chart with nothing to plot: a zero baseline plus a zero value
+// (for example $0.00 or 0) over every column, instead of a blank box.
+// svg needs ownerDocument/createElementNS/appendChild/setAttribute (node tests fake them).
+function drawEmptyAxes(svg, labels, zeroText, opts) {
+  const o = opts || {};
+  const ns = 'http://www.w3.org/2000/svg';
+  const doc = svg.ownerDocument;
+  const W = o.width || 900, H = o.height || 170;
+  const padL = 46, padR = 10, padT = 12, padB = 24;
+  const base = H - padB, plotW = W - padL - padR;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  const add = (tag, attrs, text) => {
+    const el = doc.createElementNS(ns, tag);
+    Object.keys(attrs).forEach(k => el.setAttribute(k, attrs[k]));
+    if (text != null) el.textContent = text;
+    svg.appendChild(el);
+    return el;
+  };
+  [0.5, 1].forEach(f => add('line', { x1: padL, x2: W - padR, y1: base - (base - padT) * f, y2: base - (base - padT) * f, class: 'gridline', 'data-empty': 'grid' }));
+  add('line', { x1: padL, x2: W - padR, y1: base, y2: base, class: 'axisline', 'data-empty': 'baseline' });
+  add('text', { x: padL - 6, y: base + 4, 'text-anchor': 'end', class: 'axis-label', 'data-empty': 'y-zero' }, o.axisZeroText || zeroText);
+  const n = labels.length;
+  const colW = plotW / Math.max(1, n);
+  emptyAxisLabelIndexes(n, o.maxLabels || 8).forEach(i => {
+    const cx = padL + colW * (i + 0.5);
+    add('text', { x: cx, y: H - 6, 'text-anchor': 'middle', class: 'axis-label', 'data-empty': 'x-label' }, labels[i]);
+    add('text', { x: cx, y: base - 6, 'text-anchor': 'middle', class: 'axis-label', 'data-empty': 'zero-value' }, zeroText);
+  });
+}
 // </pure-helpers>
 
 function fmtWhenShort(iso) {
@@ -1281,7 +1342,7 @@ async function load(force) {
         '<code>npx</code>, which needs Node.js on your PATH.' +
         '<div style="margin-top:0.5rem;">Install it with Homebrew: <code>brew install node</code>, or from ' +
         '<a href="https://nodejs.org" target="_blank" rel="noopener">nodejs.org</a>, then retry below.</div>' +
-        '<button id="errRetryBtn" style="margin-top:0.6rem; border:1px solid var(--border); background:var(--accent); color:white; border-radius:7px; padding:0.35rem 0.8rem; font-size:0.82rem; font-weight:600; cursor:pointer;">Retry</button>';
+        '<button id="errRetryBtn" class="btn-primary" style="margin-top:0.6rem;">Retry</button>';
       document.getElementById('errRetryBtn').onclick = () => load(true);
     } else {
       errEl.textContent = 'Could not load usage data: ' + e.message;
@@ -1358,7 +1419,7 @@ function paintPlanLimit() {
 
 function showRefreshBanner(message) {
   const errEl = document.getElementById('err');
-  errEl.innerHTML = 'Could not refresh (' + escHtml(message) + '). Showing the last successful reading. <button id="errRetryBtn" type="button">Retry</button>';
+  errEl.innerHTML = 'Could not refresh (' + escHtml(message) + '). Showing the last successful reading. <button id="errRetryBtn" type="button" class="btn-primary">Retry</button>';
   errEl.style.display = 'block';
   document.getElementById('errRetryBtn').onclick = () => load(true);
 }
@@ -1446,6 +1507,8 @@ function syncCustomRangeInputs() {
   if (rangeEl) rangeEl.hidden = !customOpen;
   const toggle = document.getElementById('customToggle');
   if (toggle) toggle.classList.toggle('active', customOpen || custom);
+  const seg = document.getElementById('rangeSeg');
+  if (seg) seg.classList.toggle('custom-on', customOpen || custom);
   document.getElementById('customRangeClear').style.display = custom ? '' : 'none';
   syncRangeChip();
 }
@@ -1476,7 +1539,7 @@ function clearCustomRange() {
   customFrom = null;
   customTo = null;
   syncCustomRangeInputs();
-  document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('#rangeSeg button[data-range]').forEach(x => x.classList.remove('active'));
   const preset = document.querySelector('#rangeSeg button[data-range="7"]');
   if (preset) preset.classList.add('active');
   range = 7;
@@ -1488,14 +1551,14 @@ function setSingleDay(period) {
   if (!period || !/^\d{4}-\d{2}-\d{2}$/.test(period)) return;
   customFrom = period;
   customTo = period;
-  document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('#rangeSeg button[data-range]').forEach(x => x.classList.remove('active'));
   syncCustomRangeInputs();
   syncUrl();
   update();
 }
 
-document.querySelectorAll('#rangeSeg button').forEach(b => b.onclick = () => {
-  document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
+document.querySelectorAll('#rangeSeg button[data-range]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('#rangeSeg button[data-range]').forEach(x => x.classList.remove('active'));
   b.classList.add('active');
   range = parseInt(b.dataset.range, 10);
   customFrom = null; customTo = null;
@@ -1521,7 +1584,7 @@ function applyCustomRange() {
   customFrom = from || to;
   customTo = to || from;
   if (customFrom > customTo) { const t = customFrom; customFrom = customTo; customTo = t; }
-  document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
+  document.querySelectorAll('#rangeSeg button[data-range]').forEach(x => x.classList.remove('active'));
   syncCustomRangeInputs();
   syncUrl();
   update();
@@ -1619,6 +1682,12 @@ function rowsForFilter(days, accountSessions, filterValue) {
     .filter(d => d.value !== null);
 }
 
+// Zero state for a chart with nothing to plot (see drawEmptyAxes).
+function drawEmptyChart(svg, periods, zeroText, opts) {
+  const labels = periods.length ? periods.map(p => String(p).length >= 10 ? String(p).slice(5) : String(p)) : [''];
+  drawEmptyAxes(svg, labels, zeroText, Object.assign({ width: svg.clientWidth || 900 }, opts || {}));
+}
+
 function labelSvg(svg, text) {
   if (!svg) return;
   svg.setAttribute('role', 'img');
@@ -1674,9 +1743,10 @@ function drawChart(rows) {
   const chartNote = document.getElementById('chartNote');
   svg.innerHTML = '';
 
-  if (!rows.length) {
-    chartNote.textContent = 'No data in this range';
-    labelSvg(svg, 'Daily spend chart, no data in this range');
+  if (!rows.length || rows.every(r => !(r.value && r.value.totalCost > 0))) {
+    chartNote.textContent = rows.length ? (rows.length === 1 ? rows[0].period : `${rows[0].period} → ${rows[rows.length - 1].period}`) + ' · no spend yet' : 'No data in this range';
+    labelSvg(svg, `Daily spend chart, ${fmt(0)} in this range`);
+    drawEmptyChart(svg, rows.map(r => r.period), fmt(0), { axisZeroText: '$0' });
     return;
   }
 
@@ -1807,9 +1877,10 @@ function drawHourlyChart(rows, extraNote) {
   const svg = document.getElementById('hourlyChart');
   const note = document.getElementById('hourlyChartNote');
   svg.innerHTML = '';
-  if (!rows.length) {
-    note.textContent = extraNote || 'No data for today yet';
-    labelSvg(svg, `Hourly spend chart. ${note.textContent}`);
+  if (!rows.length || rows.every(r => !(r.cost > 0))) {
+    note.textContent = extraNote || 'No spend today yet';
+    labelSvg(svg, `Hourly spend chart. ${fmt(0)} so far. ${note.textContent}`);
+    drawEmptyChart(svg, rows.map(r => r.hourLabel), fmt(0), { axisZeroText: '$0', maxLabels: 12 });
     return;
   }
   const span = `${rows[0].hourLabel} → ${rows[rows.length - 1].hourLabel}`;
@@ -1871,9 +1942,10 @@ function drawHourlyTokensChart(rows, extraNote) {
   const svg = document.getElementById('hourlyChart');
   const note = document.getElementById('hourlyChartNote');
   svg.innerHTML = '';
-  if (!rows.length) {
-    note.textContent = extraNote || 'No data for today yet';
-    labelSvg(svg, `Hourly tokens chart. ${note.textContent}`);
+  if (!rows.length || rows.every(r => !((r.input || 0) + (r.output || 0) + (r.cacheWrite || 0) + (r.cacheRead || 0)))) {
+    note.textContent = extraNote || 'No tokens today yet';
+    labelSvg(svg, `Hourly tokens chart. 0 tokens so far. ${note.textContent}`);
+    drawEmptyChart(svg, rows.map(r => r.hourLabel), '0', { maxLabels: 12 });
     return;
   }
   const span = `${rows[0].hourLabel} → ${rows[rows.length - 1].hourLabel}`;
@@ -1961,9 +2033,11 @@ function drawTokensChart(rows) {
   const chartNote = document.getElementById('chartNote');
   svg.innerHTML = '';
 
-  if (!rows.length) {
-    chartNote.textContent = 'No data in this range';
-    labelSvg(svg, 'Daily tokens chart, no data in this range');
+  const tokensTotal = r => { const t = tokensOfDay(r.value); return t.input + t.output + t.cacheWrite + t.cacheRead; };
+  if (!rows.length || rows.every(r => !tokensTotal(r))) {
+    chartNote.textContent = rows.length ? (rows.length === 1 ? rows[0].period : `${rows[0].period} → ${rows[rows.length - 1].period}`) + ' · no tokens yet' : 'No data in this range';
+    labelSvg(svg, 'Daily tokens chart, 0 tokens in this range');
+    drawEmptyChart(svg, rows.map(r => r.period), '0');
     drawCacheReadChart(rows);
     return;
   }
@@ -2263,7 +2337,9 @@ function drawAccountChart(rows) {
   });
 
   if (!rows.length || !buckets.length) {
-    note.textContent = 'No data in this range';
+    note.textContent = 'No spend in this range';
+    labelSvg(svg, `Spend by account, ${fmt(0)} in this range`);
+    drawEmptyChart(svg, rows.map(r => r.period), fmt(0), { axisZeroText: '$0' });
     return;
   }
   note.textContent = `${rows[0].period} → ${rows[rows.length - 1].period} · USD list price, by each session's last-active day`;
@@ -2893,11 +2969,10 @@ function renderLiveNudge() {
   if (!sourcePresent('claude')) { box.style.display = 'none'; return; }
   const setup = (data && data.liveUsageSetup) || {};
   const state = setup.state || 'none';
-  const canEnable = state === 'none' || state === 'other';
   const cached = (data.maxUsage || []).some(m => m && m.session && m.session.percent != null && !m.live);
-  if (tab === 'overview' && canEnable && cached) {
+  if (tab === 'overview' && shouldNudgeLive(state, cached)) {
     box.style.display = '';
-    box.innerHTML = 'Your Claude limits may be out of date. Turn on live updates to refresh them every time you use Claude Code. <button type="button" id="liveNudgeBtn">Turn on</button>';
+    box.innerHTML = 'Your Claude limits may be out of date. Turn on live updates to refresh them every time you use Claude Code. <button type="button" id="liveNudgeBtn" class="btn-primary">Turn on</button>';
     document.getElementById('liveNudgeBtn').onclick = enableLiveUsage;
   } else {
     box.style.display = 'none';
@@ -2952,7 +3027,7 @@ function liveUsageSectionHtml(setup) {
       Status: ${stateText}
     </div>
     <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.9rem;">
-      ${canEnable ? '<button id="liveUsageEnableBtn">Turn on</button>' : '<button id="liveUsageDisableBtn">Turn off</button>'}
+      ${canEnable ? '<button id="liveUsageEnableBtn" class="btn-primary">Turn on</button>' : '<button id="liveUsageDisableBtn" class="btn">Turn off</button>'}
       <span class="muted" id="liveUsageStatus"></span>
     </div>
   `;
@@ -3018,7 +3093,7 @@ function themeSectionHtml() {
   return `
     <div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem; border-top:1px solid var(--border); padding-top:0.9rem;">Appearance</div>
     <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.9rem;">
-      <button id="themeBtnSettings">${dark ? '☾ Dark' : '☀ Light'} — switch to ${dark ? 'light' : 'dark'}</button>
+      <button id="themeBtnSettings" class="btn">${dark ? '☾ Dark' : '☀ Light'} — switch to ${dark ? 'light' : 'dark'}</button>
     </div>
   `;
 }
@@ -3280,8 +3355,8 @@ function renderSettingsPage() {
       </div>
       <div style="display:flex; gap:0.6rem; flex-wrap:wrap; align-items:flex-end;">
         <label>Admin API key<br><input id="providerApiKey" type="password" placeholder="${openaiOn ? '•••••••• (set, enter a new one to replace)' : 'sk-admin-…'}" style="width:260px;"></label>
-        <button id="providerSaveBtn">Save key</button>
-        ${openaiOn ? '<button id="providerRemoveBtn">Remove key</button>' : ''}
+        <button id="providerSaveBtn" class="btn-primary">Save key</button>
+        ${openaiOn ? '<button id="providerRemoveBtn" class="btn">Remove key</button>' : ''}
         <span class="muted" id="providerKeyStatus"></span>
       </div>
   ` : '';
@@ -3295,7 +3370,7 @@ function renderSettingsPage() {
         <label style="display:flex; align-items:center; gap:0.4rem;">
           <input type="checkbox" id="grokToggle" ${grokOn ? 'checked' : ''}> enable
         </label>
-        ${grokOn ? '<button id="grokRefreshBtn">Refresh now</button>' : ''}
+        ${grokOn ? '<button id="grokRefreshBtn" class="btn">Refresh now</button>' : ''}
         <span class="muted" id="grokToggleStatus">${grokOn && grokBilling ? 'last fetched ' + (grokBilling.fetchedAt ? new Date(grokBilling.fetchedAt).toLocaleString() : 'never') : ''}</span>
       </div>
   ` : '';
@@ -4405,7 +4480,7 @@ function update() {
 
 readUrlState();
 customOpen = !!(customFrom || customTo);
-document.querySelectorAll('#rangeSeg button').forEach(b => b.classList.toggle('active', !customFrom && !customTo && parseInt(b.dataset.range, 10) === range));
+document.querySelectorAll('#rangeSeg button[data-range]').forEach(b => b.classList.toggle('active', !customFrom && !customTo && parseInt(b.dataset.range, 10) === range));
 syncCustomRangeInputs();
 
 document.addEventListener('submit', (e) => {
@@ -4444,7 +4519,7 @@ dailyBody.addEventListener('keydown', (e) => {
 window.addEventListener('popstate', () => {
   suppressHistory = true;
   readUrlState();
-  document.querySelectorAll('#rangeSeg button').forEach(b => {
+  document.querySelectorAll('#rangeSeg button[data-range]').forEach(b => {
     b.classList.toggle('active', !customFrom && !customTo && parseInt(b.dataset.range, 10) === range);
   });
   syncCustomRangeInputs();
