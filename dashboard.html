@@ -468,8 +468,12 @@
   <section id="view-overview" class="view active">
     <div class="card" id="realCostOverview" style="display:none; margin-bottom: 1rem;"></div>
     <div class="cards">
-      <div class="card kpi"><div class="label">Spend</div><div class="value" id="totalWin">–</div></div>
-      <div class="card kpi" id="kpiAvgDay"><div class="label">Avg / day</div><div class="value" id="avgDay">–</div></div>
+      <div class="card kpi" id="kpiSpend" title="ccusage list price for this range: token counts times published prices, in USD. Real and covered underneath reuse the split on the card below.">
+        <div class="label">List-price estimate</div>
+        <div class="value" id="totalWin">–</div>
+        <div class="sub" id="spendRealSub"></div>
+      </div>
+      <div class="card kpi" id="kpiAvgDay"><div class="label">Avg / day</div><div class="value" id="avgDay">–</div><div class="sub" id="avgDaySub"></div></div>
       <div class="card kpi" id="kpiHighestDay"><div class="label">Peak day</div><div class="value" id="maxDay">–</div><div class="sub" id="maxDaySub"></div></div>
       <div class="card kpi"><div class="label">Today</div><div class="value" id="totalToday">–</div></div>
       <div class="card kpi"><div class="label">Tokens</div><div class="value" id="realTokensWin">–</div><div class="sub" id="realTokensToday"></div></div>
@@ -493,7 +497,7 @@
         <h2>Daily spend <span id="chartMetricLabel" class="muted"></span></h2>
         <span style="display:flex; align-items:center; gap:0.6rem;">
           <span class="segmented" id="chartMetricSeg">
-            <button data-metric="cost" class="active">$ Spend</button>
+            <button data-metric="cost" class="active" title="USD list price from ccusage">$ Spend</button>
             <button data-metric="tokens">Tokens</button>
           </span>
           <span class="muted" id="chartNote"></span>
@@ -584,6 +588,8 @@
       don't record an account in their logs, so their spend is listed separately below, not attributed.
       Claude sessions are attributed to their last-active day, so the range picker above matches the
       other tabs but is approximate for sessions spanning midnight.
+      Dollar figures on this page are USD list price. Usage credits further down use the account's
+      own currency and include the currency code.
     </div>
     <div class="muted" style="margin-bottom: 0.8rem;" id="maxUsageIntro"></div>
     <div id="maxUsageContainer" style="display:flex; flex-direction:column; gap:1rem; margin-bottom:1rem;"></div>
@@ -636,7 +642,13 @@ let selectedModel = null;
 let modelDetailSort = { k: 'cost', dir: -1 };
 
 const fmt = n => '$' + (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmtTok = n => n >= 1e9 ? (n / 1e9).toFixed(2) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(0) + 'k' : String(n);
+const fmtTok = n => {
+  n = Number(n) || 0;
+  if (n >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+  if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+  return String(Math.round(n));
+};
 const todayStr = () => {
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -647,11 +659,26 @@ const addDays = (dateStr, delta) => {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 };
 const CURRENCY_SYMBOLS = { USD: '$', GBP: '£', EUR: '€' };
+// Account currency (usage credits), not ccusage's USD list price. The ISO code
+// is part of the string so a £ figure is not read as the same unit as fmt().
 const fmtMoneyMinor = (minor, currency, exponent) => {
   if (minor == null) return '–';
-  const symbol = CURRENCY_SYMBOLS[currency] || (currency ? currency + ' ' : '$');
-  return symbol + (minor / Math.pow(10, exponent ?? 2)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const code = (currency || '').toString().toUpperCase();
+  const symbol = CURRENCY_SYMBOLS[code] || '';
+  const amount = (minor / Math.pow(10, exponent ?? 2)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (!code) return amount + ' account currency';
+  return (symbol || '') + amount + ' ' + code;
 };
+const fmtCredits = (minor, currency, exponent) => {
+  if (minor == null) return 'unknown';
+  return fmtMoneyMinor(minor, currency, exponent) + ' credits';
+};
+function inclusiveDayCount(fromStr, toStr) {
+  const a = new Date(fromStr + 'T00:00:00');
+  const b = new Date(toStr + 'T00:00:00');
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 1;
+  return Math.max(1, Math.round((b.getTime() - a.getTime()) / 86400000) + 1);
+}
 const fmtResetAt = iso => {
   if (!iso) return '';
   const d = new Date(iso);
@@ -1325,7 +1352,7 @@ function drawAccountChart(rows) {
   ).join('');
 
   if (!rows.length || !buckets.length) { note.textContent = 'No data in this range'; return; }
-  note.textContent = `${rows[0].period} → ${rows[rows.length - 1].period} · attributed by each session's last-active day`;
+  note.textContent = `${rows[0].period} → ${rows[rows.length - 1].period} · USD list price, by each session's last-active day`;
 
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900, H = 140, padL = 46, padB = 20, padT = 6;
@@ -1442,7 +1469,7 @@ function realCostBannerHtml(mu, compact) {
   return `<div class="real-cost-banner ${hasOverage ? cls : ''}">
     <span class="real-cost-label">${compact ? mu.label : 'Real cost beyond the subscription fee'}</span>
     ${staleBadgeHtml(mu, asOf)}
-    <span class="real-cost-value tnum">${hasOverage ? fmtMoneyMinor(c.usedMinor, c.currency, c.exponent) : 'unknown'}</span>
+    <span class="real-cost-value tnum">${hasOverage ? fmtCredits(c.usedMinor, c.currency, c.exponent) : 'unknown'}</span>
     <span class="muted real-cost-note">${note}</span>
     ${compact ? usageWindowsHtml(mu, asOf, mu.live ? 'live from the status line' : 'cached locally by Claude Code') : ''}
   </div>`;
@@ -1466,8 +1493,8 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
         ${srcChip('ESTIMATE', '')}
         <span class="src-label">${s.label}</span>
         <span class="src-extra"></span>
-        <span class="src-amount tnum">${fmt(estimate)}</span>
-      `, title: `${s.note} ccusage estimate shown — not verified as real or covered.` };
+        <span class="src-amount tnum">${fmt(estimate)} list</span>
+      `, title: `${s.note} ccusage USD list price shown, not verified as real or covered, and not account credits.` };
     }
     const mu = s.maxUsage;
     const c = mu.usageCredits || {};
@@ -1487,7 +1514,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
       ${chip}
       <span class="src-label">${mu.label}</span>
       <span class="src-extra">${extra}</span>
-      <span class="src-amount tnum">${hasOverage ? fmtMoneyMinor(c.usedMinor, c.currency, c.exponent) : 'unknown'}</span>
+      <span class="src-amount tnum">${hasOverage ? fmtCredits(c.usedMinor, c.currency, c.exponent) : 'unknown'}</span>
     `, title: `${note} (as of ${asOf}, ${mu.live ? 'live from the status line' : 'cached locally by Claude Code'}) — same numbers as claude.ai Settings → Usage.` };
   }
 
@@ -1495,7 +1522,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
     const cx = s.codexLive, p = cx.primary || {};
     const blocked = cx.ordinaryUsageAllowed === false;
     const windowLabel = w => w == null ? '' : (w >= 10000 ? `${Math.round(w / 1440)}d` : w >= 1000 ? `${Math.round(w / 60)}h` : `${w}m`);
-    const realValue = blocked && openaiCost && !openaiCost.error ? fmt(openaiCost.totalUSD) : (blocked ? 'limit reached' : '$0.00');
+    const realValue = blocked && openaiCost && !openaiCost.error ? fmt(openaiCost.totalUSD) + ' USD' : (blocked ? 'limit reached' : '$0.00 USD');
     return { cls: blocked ? 'src-bad' : 'src-ok', html: `
       ${srcChip('LIVE', 'live')}
       <span class="src-label">${s.label}${planSuffix(cx.planType)}</span>
@@ -1514,7 +1541,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
       ${srcChip('LIVE', 'live')}
       <span class="src-label">${s.label}${gb.plan ? ' (' + gb.plan + ')' : ''}</span>
       <span class="src-extra">${mismatchHtml}</span>
-      <span class="src-amount tnum">$${onDemand.toFixed(2)}</span>
+      <span class="src-amount tnum">$${onDemand.toFixed(2)} USD</span>
     `, title: `on-demand/overage this ${gb.period || 'billing'} period (resets ${gb.resetsAt ? new Date(gb.resetsAt).toLocaleDateString() : '?'})${gb.prepaidBalanceUsd ? `, $${gb.prepaidBalanceUsd.toFixed(2)} prepaid credit balance` : ''}. Unofficial endpoint (via ${gb.source === 'grok-acp' ? "grok's own CLI" : 'HTTP fallback'}) — fetched ${gb.fetchedAt ? new Date(gb.fetchedAt).toLocaleString() : 'never'}.` };
   }
 
@@ -1523,7 +1550,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
       ${srcChip('MANUAL', 'manual')}
       <span class="src-label">${s.label}${planSuffix(s.plan)}</span>
       <span class="src-extra">${modelDetail ? modelDetail.replace(/^ /, '') : ''}</span>
-      <span class="src-amount tnum">${s.coveredByPlan ? '$0.00' : fmt(estimate)}</span>
+      <span class="src-amount tnum">${s.coveredByPlan ? '$0.00 USD' : fmt(estimate) + ' list'}</span>
     `, title: `${s.note || ''} (checked ${s.asOf || 'unknown'}) — ccusage estimate for this range: ${fmt(estimate)}` };
   }
 
@@ -1533,8 +1560,8 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
     ${srcChip('ESTIMATE', '')}
     <span class="src-label">${s.label}</span>
     <span class="src-extra">${modelDetail ? modelDetail.replace(/^ /, '') : ''}</span>
-    <span class="src-amount tnum">${fmt(estimate)}</span>
-  `, title: `assumed real spend — verify this tool's own billing (subscription vs metered API key), then use Settings to record it.` };
+    <span class="src-amount tnum">${fmt(estimate)} list</span>
+  `, title: `assumed real spend, USD list price, not account credits. Verify this tool's own billing (subscription vs metered API key), then use Settings to record it.` };
 }
 
 // Known named tiers per ccusage agent, for convenience only — the free-text
@@ -1700,7 +1727,10 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
     .filter(r => r.estimate > 0 || r.s.kind !== 'none');
 
   lastPlansCtx = { sources, plans, providerStatus, liveUsageSetup, unofficialToggles };
-  if (!rows.length) { box.style.display = 'none'; return; }
+  if (!rows.length) {
+    box.style.display = 'none';
+    return { visible: false, realTotal: 0, estimateTotal: totalWin, coveredTotal: 0 };
+  }
   box.style.display = '';
 
   // estimate -> covered -> real/unverified, so "covered by plan" visibly
@@ -1737,11 +1767,15 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
     <div class="card-head"><h2>What's actually costing you money</h2></div>
     ${bannersHtml}
     <div class="muted" style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid var(--border);">
-      List-price estimate <b class="tnum" style="color:var(--text);">${fmt(estimateTotal)}</b>
-      &nbsp;−&nbsp; covered by subscriptions <b class="tnum" style="color:var(--ok-text);">${fmt(coveredTotal)}</b>
+      USD list price <b class="tnum" style="color:var(--text);">${fmt(estimateTotal)}</b>
+      &nbsp;&minus;&nbsp; covered by subscriptions <b class="tnum" style="color:var(--ok-text);">${fmt(coveredTotal)}</b>
       &nbsp;=&nbsp; real / unverified <b class="tnum" style="color:${realTotal > 0.005 ? 'var(--bad-text)' : 'var(--ok-text)'};">${fmt(realTotal)}</b>
     </div>
+    <div class="muted" style="margin-top:0.35rem;">
+      Those three amounts are USD list price, the same split as the list-price tile above. A Claude row with a currency code, for example GBP credits, is that account's own balance, not this list price.
+    </div>
   `;
+  return { visible: true, realTotal, estimateTotal, coveredTotal };
 }
 
 async function enableLiveUsage() {
@@ -2142,7 +2176,7 @@ function renderMaxUsage(list) {
         </div>`).join('') : '<div class="muted">No breakdown available.</div>'}
       <div class="card-head" style="margin-top: 1.1rem;"><h2 style="font-size:0.85rem;">Usage credits</h2></div>
       <div class="muted">${(mu.usageCredits || {}).limitMinor != null
-        ? `${fmtMoneyMinor(mu.usageCredits.remainingMinor, mu.usageCredits.currency, mu.usageCredits.exponent)} remaining of ${fmtMoneyMinor(mu.usageCredits.limitMinor, mu.usageCredits.currency, mu.usageCredits.exponent)} purchased — covers you if you hit the plan limits above.`
+        ? `${fmtMoneyMinor(mu.usageCredits.remainingMinor, mu.usageCredits.currency, mu.usageCredits.exponent)} remaining of ${fmtMoneyMinor(mu.usageCredits.limitMinor, mu.usageCredits.currency, mu.usageCredits.exponent)} purchased. Account currency, not USD list price. Covers you if you hit the plan limits above.`
         : 'Not enabled.'}</div>
       ${usageHistoryChartHtml(
         (data.usageHistory?.claude || []).filter(s => s.accountUuid === mu.accountUuid),
@@ -2334,7 +2368,15 @@ function update() {
   const sum = arr => arr.reduce((s, d) => s + d.value.totalCost, 0);
   const totalWin = sum(windowed);
   document.getElementById('totalWin').textContent = fmt(totalWin);
-  document.getElementById('avgDay').textContent = fmt(windowed.length ? totalWin / windowed.length : 0);
+  const calendarDays = inclusiveDayCount(cutoff, windowEnd);
+  const activeDays = windowed.filter(d => (d.value.totalCost || 0) > 0).length;
+  document.getElementById('avgDay').textContent = fmt(totalWin / calendarDays);
+  const avgSub = document.getElementById('avgDaySub');
+  if (activeDays && activeDays !== calendarDays) {
+    avgSub.textContent = `${calendarDays} calendar days · active-day avg ${fmt(totalWin / activeDays)}`;
+  } else {
+    avgSub.textContent = `${calendarDays} calendar day${calendarDays === 1 ? '' : 's'}`;
+  }
   const maxEntry = windowed.reduce((m, d) => (d.value.totalCost > (m ? m.value.totalCost : -1) ? d : m), null);
   document.getElementById('maxDay').textContent = maxEntry ? fmt(maxEntry.value.totalCost) : '–';
   document.getElementById('maxDaySub').textContent = maxEntry ? maxEntry.period : '';
@@ -2358,8 +2400,21 @@ function update() {
     ? (data.maxUsage || []).find(m => m.accountUuid === selectedAcctUuid)
     : (data.maxUsage || []).find(m => m.live) || (data.maxUsage || [])[0];
   if (planUsageSrc && planUsageSrc.session && planUsageSrc.session.percent != null) {
-    document.getElementById('planUsageVal').textContent = `${planUsageSrc.session.percent}% · ${planUsageSrc.week.percent}%`;
-    document.getElementById('planUsageSub').textContent = 'session · week';
+    const { asOf } = snapshotAge(planUsageSrc);
+    const provenance = planUsageSrc.live ? `live, as of ${asOf}` : `cached ${asOf}`;
+    const sessionReset = fmtResetAt(planUsageSrc.session.resetsAt) || 'reset time unknown';
+    const weekReset = fmtResetAt(planUsageSrc.week && planUsageSrc.week.resetsAt) || 'reset time unknown';
+    const weekPct = planUsageSrc.week && planUsageSrc.week.percent != null ? planUsageSrc.week.percent : '–';
+    document.getElementById('planUsageVal').textContent = `${planUsageSrc.session.percent}% · ${weekPct}%`;
+    const planSub = document.getElementById('planUsageSub');
+    planSub.textContent = '';
+    const planName = document.createElement('div');
+    planName.textContent = planUsageSrc.label || 'Claude account';
+    const planResets = document.createElement('div');
+    planResets.textContent = `session ${sessionReset} · week ${weekReset}`;
+    const planProvenance = document.createElement('div');
+    planProvenance.textContent = provenance;
+    planSub.append(planName, planResets, planProvenance);
   } else {
     document.getElementById('planUsageVal').textContent = '–';
     document.getElementById('planUsageSub').textContent = 'no plan-limit data';
@@ -2371,7 +2426,7 @@ function update() {
   document.getElementById('kpiAvgDay').style.display = isSingleDay ? 'none' : '';
   document.getElementById('kpiHighestDay').style.display = isSingleDay ? 'none' : '';
 
-  document.getElementById('chartMetricLabel').textContent = chartMetric === 'tokens' ? '(tokens)' : '';
+  document.getElementById('chartMetricLabel').textContent = chartMetric === 'tokens' ? '(tokens)' : '(USD list price)';
   document.getElementById('hourlyMetricLabel').textContent = chartMetric === 'tokens' ? 'tokens' : 'spend';
   document.getElementById('chartTokensNote').style.display = chartMetric === 'tokens' ? '' : 'none';
 
@@ -2411,7 +2466,16 @@ function update() {
 
   // Always runs (not just on the overview tab) — it's also what populates
   // lastPlansCtx, which the Settings page needs even if you land there directly.
-  renderRealCostOverview(data.sources, data.accountSessions, days, cutoff, windowEnd, data.plans, data.providerStatus, data.providerCosts, data.liveUsageSetup, data.unofficialToggles, totalWin);
+  // The list-price tile reuses this same covered/real split.
+  const moneySplit = renderRealCostOverview(data.sources, data.accountSessions, days, cutoff, windowEnd, data.plans, data.providerStatus, data.providerCosts, data.liveUsageSetup, data.unofficialToggles, totalWin);
+  const spendSub = document.getElementById('spendRealSub');
+  if (moneySplit && moneySplit.visible) {
+    spendSub.textContent = `real ${fmt(moneySplit.realTotal)} · covered ${fmt(moneySplit.coveredTotal)}`;
+    spendSub.title = 'USD list price. Same subtraction as the card below: list price minus the part covered by subscriptions.';
+  } else {
+    spendSub.textContent = 'USD list price';
+    spendSub.title = 'ccusage list price in USD. No covered-versus-real split for this range.';
+  }
 
   // ---- models ----
   const modelAgg = {};
@@ -2506,6 +2570,7 @@ function update() {
         </div>
         <div class="acc-cost">
           <div class="value tnum">${fmt(a.cost)}</div>
+          <div class="sub">USD list price</div>
           <div class="sub">${a.sessions} sessions</div>
           <div class="sub">${a.first || '?'} → ${a.last || '?'}</div>
         </div>
