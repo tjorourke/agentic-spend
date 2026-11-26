@@ -10,7 +10,7 @@ struct AgenticSpendApp: App {
         MenuBarExtra {
             MenuContent().environmentObject(store)
         } label: {
-            Text(store.menuTitle)
+            MenuBarLabel().environmentObject(store)
         }
         .menuBarExtraStyle(.menu)
     }
@@ -48,6 +48,15 @@ struct MenuContent: View {
         Button("Open in browser") { store.openInBrowser() }
         Button("Refresh") { Task { await store.refresh() } }
             .keyboardShortcut("r")
+        Menu("Menu bar shows") {
+            Picker("Menu bar shows", selection: $store.display) {
+                ForEach(MenuBarDisplay.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.inline)
+            .labelsHidden()
+        }
         Toggle("Start at login", isOn: Binding(
             get: { store.loginEnabled },
             set: { store.setLogin($0) }

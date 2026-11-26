@@ -54,6 +54,8 @@ If Homebrew refuses to load the formula ("untrusted tap"), run
 A small native app that sits in the macOS menu bar: the highest plan percentage in the bar
 (for example `G 44%`), and a menu with each plan's weekly percentage, forecast and reset,
 today's list-price spend, Open dashboard (a native window), Refresh, Start at login and Quit.
+A gauge icon sits next to the percentage; "Menu bar shows" in the menu switches between icon and
+percentage, icon only, or percentage only.
 When it's running it shows the plan notifications natively instead of the server's
 `osascript` ones. It talks only to the local server on `127.0.0.1:8787`, and starts it with
 the Homebrew `agentic-spend` launcher if it isn't running.
@@ -146,10 +148,20 @@ brew update && brew upgrade agentic-spend
   `agentic-spend serve` once at login (RunAtLoad, no KeepAlive), so readings and
   notifications carry on without the browser open.
 
-## Live Claude usage (optional, recommended)
+## Live Claude usage (on by default)
 
-Self-service from the UI: Settings → "Live Claude usage" → **Turn on**. No file
-editing needed. Under the hood it's Anthropic's own documented status line mechanism
+**It turns itself on.** The first time the server starts and Claude Code is installed, it wires
+up the status line hook below and records that in `~/.agentic-spend/setup-state.json`. If you
+turn it off in Settings → "Live Claude usage" → **Turn off**, it stays off: the server never
+switches it back on. To opt out before the first start, set `AGENTIC_SPEND_NO_AUTO_ENABLE=1`.
+You can also turn it on or off yourself from that Settings section. No file editing needed.
+
+The hook points at a path that survives `brew upgrade` (`<brew prefix>/opt/agentic-spend/libexec/statusline.py`).
+Every start also tidies older installs: entries from earlier versions (a versioned Cellar path,
+a git checkout, or several of them stacked inside each other) are collapsed into one.
+The live file is written atomically (a temp file renamed into place, mode 0600), so a Claude Code
+refresh that cancels the status line mid-update can't leave it empty. The "limits may be out of
+date" banner shows only when the hook isn't ours and the Claude numbers are cached ones. Under the hood it's Anthropic's own documented status line mechanism
 (https://code.claude.com/docs/en/statusline): `statusline.py` (in this repo) gets wired into
 `~/.claude/settings.json`'s `"statusLine"` — this is global, every Claude Code session on the
 machine, not just this project — and Claude Code feeds it real, server-reported

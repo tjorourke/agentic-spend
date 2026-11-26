@@ -30,6 +30,10 @@ import datetime
 LIVE_DIR = os.path.expanduser("~/.claude/cc-usage-live")
 CLAUDE_CONFIG = os.path.expanduser("~/.claude.json")
 WRAP_COMMAND = os.environ.get("AGENTIC_SPEND_WRAP_STATUSLINE")
+# Set on the wrapped command's environment. If an older, stacked install of
+# this script sits underneath us, it sees the flag and skips its own write and
+# history side effects, so one status line update is only recorded once.
+ACTIVE_FLAG = "AGENTIC_SPEND_STATUSLINE_ACTIVE"
 # Inlined rather than `import data_dir`: Claude Code runs this script with
 # `python3 -I` (isolated mode), which leaves the script's own directory off
 # sys.path, so a sibling import fails here even though it works everywhere
@@ -112,6 +116,30 @@ def record_usage_history(acct_uuid, five_hour, seven_day):
         pass
 
 
+def write_live_file(out_path, record):
+    """Write the live usage file atomically: a temp file in the same folder
+    (created 0600), then a rename over the real name. Readers therefore only
+    ever see the old complete file or the new complete one, and a status line
+    process that Claude Code cancels mid-write can't leave an empty or half
+    written file behind."""
+    folder = os.path.dirname(out_path)
+    tmp_path = os.path.join(folder, f".{os.path.basename(out_path)}.{os.getpid()}.tmp")
+    try:
+        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(record, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp_path, 0o600)
+        os.replace(tmp_path, out_path)
+    except BaseException:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
 def main():
     raw_stdin = sys.stdin.read()
     try:
@@ -124,23 +152,21 @@ def main():
     seven_day = rate_limits.get("seven_day") or {}
 
     # --- side effect: persist for other tools to read ---
-    if five_hour or seven_day:
+    if (five_hour or seven_day) and not os.environ.get(ACTIVE_FLAG):
         acct_uuid, email = current_account()
         if acct_uuid:
             try:
                 os.makedirs(LIVE_DIR, exist_ok=True)
                 out_path = os.path.join(LIVE_DIR, f"{acct_uuid}.json")
-                with open(out_path, "w") as f:
-                    json.dump({
-                        "accountUuid": acct_uuid,
-                        "email": email,
-                        "fiveHourPercent": five_hour.get("used_percentage"),
-                        "fiveHourResetsAt": five_hour.get("resets_at"),
-                        "sevenDayPercent": seven_day.get("used_percentage"),
-                        "sevenDayResetsAt": seven_day.get("resets_at"),
-                        "writtenAt": datetime.datetime.now(tz=datetime.timezone.utc).isoformat(timespec="seconds"),
-                    }, f)
-                os.chmod(out_path, 0o600)
+                write_live_file(out_path, {
+                    "accountUuid": acct_uuid,
+                    "email": email,
+                    "fiveHourPercent": five_hour.get("used_percentage"),
+                    "fiveHourResetsAt": five_hour.get("resets_at"),
+                    "sevenDayPercent": seven_day.get("used_percentage"),
+                    "sevenDayResetsAt": seven_day.get("resets_at"),
+                    "writtenAt": datetime.datetime.now(tz=datetime.timezone.utc).isoformat(timespec="seconds"),
+                })
             except Exception:
                 pass  # never break the status line over a write failure
             record_usage_history(acct_uuid, five_hour, seven_day)
@@ -149,7 +175,8 @@ def main():
     if WRAP_COMMAND:
         try:
             result = subprocess.run(WRAP_COMMAND, shell=True, input=raw_stdin,
-                                     capture_output=True, text=True, timeout=5)
+                                     capture_output=True, text=True, timeout=5,
+                                     env={**os.environ, ACTIVE_FLAG: "1"})
             print(result.stdout.rstrip("\n"))
             return
         except Exception:

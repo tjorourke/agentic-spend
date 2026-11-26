@@ -73,6 +73,49 @@ class DashboardHelperTests(unittest.TestCase):
         self.assertEqual(out["cmp"]["text"], "-26 pts vs last week")
         self.assertIsNone(out["cmpNone"])
 
+    def test_live_nudge_only_when_hook_is_not_ours(self):
+        out = run_js([
+            "out.none = shouldNudgeLive('none', true);",
+            "out.other = shouldNudgeLive('other', true);",
+            "out.ours = shouldNudgeLive('ours', true);",
+            "out.wraps = shouldNudgeLive('wraps_other', true);",
+            "out.fresh = shouldNudgeLive('none', false);",
+        ])
+        self.assertTrue(out["none"])
+        self.assertTrue(out["other"])
+        self.assertFalse(out["ours"])
+        self.assertFalse(out["wraps"])
+        self.assertFalse(out["fresh"])
+
+    def test_empty_axes_draw_baseline_and_zero_per_day(self):
+        fake = """
+        const made = [];
+        const svg = { attrs: {}, children: [],
+          setAttribute(k, v) { this.attrs[k] = v; }, appendChild(c) { this.children.push(c); },
+          ownerDocument: { createElementNS: (ns, tag) => { const el = { tag, attrs: {}, textContent: '',
+            setAttribute(k, v) { this.attrs[k] = v; } }; return el; } } };
+        """
+        out = run_js([
+            fake,
+            "drawEmptyAxes(svg, ['11-26'], '$0.00', { axisZeroText: '$0' });",
+            "out.one = svg.children.map(c => [c.tag, c.attrs['data-empty'], c.textContent]);",
+            "svg.children.length = 0;",
+            "const days = Array.from({length: 7}, (_, i) => '11-' + (20 + i));",
+            "drawEmptyAxes(svg, days, '0');",
+            "out.zeros = svg.children.filter(c => c.attrs['data-empty'] === 'zero-value').map(c => c.textContent);",
+            "out.labels = svg.children.filter(c => c.attrs['data-empty'] === 'x-label').map(c => c.textContent);",
+            "out.idx24 = emptyAxisLabelIndexes(24, 12);",
+        ])
+        kinds = [(t, k) for t, k, _ in out["one"]]
+        self.assertIn(("line", "baseline"), kinds)
+        texts = {k: txt for _, k, txt in out["one"] if k}
+        self.assertEqual(texts["zero-value"], "$0.00")
+        self.assertEqual(texts["y-zero"], "$0")
+        self.assertEqual(texts["x-label"], "11-26")
+        self.assertEqual(out["zeros"], ["0"] * 7)
+        self.assertEqual(len(out["labels"]), 7)
+        self.assertEqual(out["idx24"], list(range(0, 24, 2)) + [23])
+
     def test_no_em_dashes_in_new_ui_strings(self):
         with open(HTML) as f:
             html = f.read()

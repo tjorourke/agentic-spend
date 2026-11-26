@@ -17,6 +17,9 @@ final class Store: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @Published var loginEnabled = false
     @Published var loginNeedsApproval = false
     @Published var notificationsAllowed = false
+    @Published var display: MenuBarDisplay = MenuBarDisplay.load() {
+        didSet { display.save() }
+    }
     let launcherPath: String?
 
     private var timer: Timer?
