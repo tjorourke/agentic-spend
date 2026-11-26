@@ -638,7 +638,7 @@ def build_summary(usage, today=None):
             tokens += (mb.get("inputTokens") or 0) + (mb.get("outputTokens") or 0)
     plans = []
     for p in usage.get("planInsights") or []:
-        plans.append({k: p.get(k) for k in ("key", "tool", "label", "pct", "resetAt", "windowSeconds", "forecast", "compare")})
+        plans.append({k: p.get(k) for k in ("key", "tool", "label", "pct", "resetAt", "windowSeconds", "forecast", "compare", "note", "session", "week")})
     plans.sort(key=lambda p: -(p.get("pct") or 0))
     return {
         "generatedAt": usage.get("generatedAt"),

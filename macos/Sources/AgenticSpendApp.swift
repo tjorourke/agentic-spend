@@ -28,8 +28,18 @@ struct MenuContent: View {
                 Button("\(plan.label ?? plan.key)   \(Fmt.pct(plan.pct))") {
                     store.openDashboard(path: "?tab=accounts")
                 }
+                if let sess = plan.session, sess.percent != nil || sess.note != nil {
+                    let note = sess.note.map { " · \($0)" } ?? ""
+                    Text("Session (5-hour)  \(Fmt.pct(sess.percent))\(note)")
+                }
+                if let week = plan.week, week.percent != nil || week.note != nil {
+                    let note = week.note.map { " · \($0)" } ?? ""
+                    Text("Weekly (7-day)  \(Fmt.pct(week.percent))\(note)")
+                }
                 let line = Fmt.forecastLine(plan)
-                if !line.isEmpty {
+                if !line.isEmpty && line != plan.note {
+                    Text(line)
+                } else if !line.isEmpty && plan.session == nil && plan.week == nil {
                     Text(line)
                 }
             }
