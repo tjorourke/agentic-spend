@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Plan-limit notifications, extra-credit alerts and the Monday digest nudge.
+"""Plan-limit notifications, extra-credit alerts and the Monday weekly report nudge.
 
 The server's background sampler calls run_checks() every few minutes. The
 decision logic (evaluate) is pure so it can be tested; delivery goes through
@@ -47,19 +47,23 @@ _lock = threading.RLock()
 # ---- settings ---------------------------------------------------------------
 
 def _clean_thresholds(value):
+    """Whole percentages, 1 to 100, at most five. The dashboard enforces the
+    same rule in the form; this is the server-side check."""
     if not isinstance(value, list):
-        raise ValueError("thresholds must be a list of numbers")
+        raise ValueError("thresholds must be a list of whole numbers")
     out = []
     for item in value:
         if isinstance(item, bool):
-            raise ValueError("thresholds must be numbers")
+            raise ValueError("thresholds must be whole numbers")
         try:
             num = float(item)
         except (TypeError, ValueError):
-            raise ValueError("thresholds must be numbers")
-        if num <= 0 or num > 100:
-            raise ValueError("each threshold must be between 1 and 100")
-        num = int(num) if num == int(num) else round(num, 1)
+            raise ValueError("thresholds must be whole numbers from 1 to 100")
+        if num != int(num):
+            raise ValueError("thresholds must be whole numbers from 1 to 100")
+        num = int(num)
+        if num < 1 or num > 100:
+            raise ValueError("each threshold must be from 1 to 100%")
         if num not in out:
             out.append(num)
     if len(out) > 5:
@@ -367,7 +371,7 @@ def record_heartbeat(now=None, path=None):
 
 
 def run_checks(plans, digest_url=None, now=None, settings_path=None, state_path=None, runner=None):
-    """One sampler pass: thresholds, credits, and the Monday digest nudge."""
+    """One sampler pass: thresholds, credits, and the Monday weekly report nudge."""
     now = now or datetime.datetime.now(tz=datetime.timezone.utc)
     with _lock:
         settings = load_settings(settings_path)
@@ -379,7 +383,7 @@ def run_checks(plans, digest_url=None, now=None, settings_path=None, state_path=
             events.append({
                 "kind": "digest",
                 "key": "digest",
-                "title": "Your weekly AI spend digest is ready",
+                "title": "Your weekly AI spend report is ready",
                 "message": "Last week's spend, plan peaks and top projects. Open %s" % (digest_url or "the dashboard"),
                 "url": digest_url,
             })

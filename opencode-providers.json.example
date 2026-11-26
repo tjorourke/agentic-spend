@@ -1,0 +1,5 @@
+{
+  "_readme": "Optional. Who pays for each OpenCode backend, keyed by OpenCode's provider id (as shown in Settings > OpenCode backends). Only needed when detection cannot tell, for example a company gateway or a local proxy. Values: payg, cloud, subscription, company, free. Written by the Settings page; lives in ~/.agentic-spend/.",
+  "my-company-gateway": "company",
+  "cursor-acp": "subscription"
+}

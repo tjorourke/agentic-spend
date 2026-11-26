@@ -13,3 +13,24 @@ os.makedirs(DATA_DIR, exist_ok=True)
 
 def path(filename):
     return os.path.join(DATA_DIR, filename)
+
+
+def atomic_write_json(target, obj):
+    """Write JSON to a temp file in the same folder, then rename over the
+    target, so a reader never sees a half-written file and a crash mid-write
+    leaves the old file intact."""
+    import json
+    import tempfile
+    folder = os.path.dirname(os.path.abspath(target))
+    os.makedirs(folder, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix="." + os.path.basename(target) + ".")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(obj, f, indent=2, sort_keys=True)
+        os.replace(tmp, target)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise

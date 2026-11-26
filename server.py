@@ -38,6 +38,7 @@ import seat_prices
 import plan_detection
 import plan_prices
 import pricing_region
+import opencode_backends
 import token_sources
 
 PORT = int(os.environ.get("AGENTIC_SPEND_PORT", "8787"))
@@ -322,7 +323,31 @@ def _build_provider_costs(force=False):
     return {"openai": openai_cost} if openai_cost is not None else {}
 
 
-def build_sources(account_list, max_usage_list, codex_live, grok_on, grok_billing, plans, no_account_data, agent_provider):
+_opencode_cache = {"key": None, "at": 0.0, "data": None}
+
+
+def get_opencode_backends(force=False):
+    """OpenCode backend split, cached on the files' mtimes (the db scan takes
+    about a second on a long history) with a 60 s floor while OpenCode writes."""
+    paths = [os.path.expanduser(p) for p in opencode_backends.DB_CANDIDATES + opencode_backends.CONFIG_CANDIDATES
+             + (opencode_backends.AUTH_PATH,)] + [data_dir.path(opencode_backends.OVERRIDES_FILE)]
+    key = tuple(os.path.getmtime(p) if os.path.exists(p) else 0 for p in paths)
+    n_db = len(opencode_backends.DB_CANDIDATES)
+    now = time.time()
+    c = _opencode_cache
+    if not force and c["data"] is not None and c["key"] is not None and c["key"][n_db:] == key[n_db:] \
+            and (c["key"][:n_db] == key[:n_db] or now - c["at"] < 60):
+        return c["data"]
+    try:
+        data = opencode_backends.build(litellm=model_mix.load_litellm())
+    except Exception as e:  # never break the whole dashboard over this
+        data = {"found": False, "error": str(e), "providers": {}, "daily": {}, "models": {}}
+    c.update(key=key, at=now, data=data)
+    return data
+
+
+def build_sources(account_list, max_usage_list, codex_live, grok_on, grok_billing, plans, no_account_data, agent_provider,
+                  opencode=None):
     """One catalog entry per (tool, account) actually discovered — all-time,
     not scoped to whatever date range happens to be selected in the UI (that
     was the earlier "only grok in the dropdown" bug: the old per-range
@@ -387,6 +412,15 @@ def build_sources(account_list, max_usage_list, codex_live, grok_on, grok_billin
 
     for agent in no_account_agents:
         if agent in ("codex", "grok"):
+            continue
+        if agent == "opencode" and (opencode or {}).get("found"):
+            # Detected per backend from OpenCode's own history, so the old
+            # free-text plan note no longer decides the colour of this row.
+            sources.append({
+                "id": agent, "tool": agent, "provider": None, "label": "OpenCode",
+                "plan": None, "kind": "backends", "asOf": (opencode or {}).get("lastDay"),
+                "note": None, "opencodeBackends": opencode,
+            })
             continue
         p = (plans or {}).get(agent)
         sources.append({
@@ -508,6 +542,7 @@ def refresh_usage(force=False):
         claude_history = account_usage.get_usage_history()
         codex_history = provider_usage.get_codex_rate_limit_history()
         claude_active_block = fetch_claude_active_block() if max_usage else None
+        opencode_info = get_opencode_backends(force=force) if "opencode" in (no_account_data or {}).get("agents", {}) else None
         payload = {
             "generatedAt": datetime.datetime.now().isoformat(timespec="seconds"),
             "daily": daily_rows,
@@ -537,7 +572,9 @@ def refresh_usage(force=False):
             "sources": _with_grok_sources(build_sources(
                 account_list, max_usage, codex_live, unofficial_toggles.get("grok"),
                 grok_billing, plans, no_account_data, agent_provider,
+                opencode=opencode_info,
             ), grok_report, plans, grokbot),
+            "opencodeBackends": opencode_info,
         }
         # `detection` is the per-tool installed/hasData catalog. The existing
         # `sources` key stays the cost/plan rows, with absent tools removed.
@@ -833,6 +870,176 @@ def save_account_label(account_uuid, label, note, note_provided):
         return labels
 
 
+def apply_settings(body, cached=None):
+    if not isinstance(body, dict):
+        raise ValueError("JSON object required")
+    known = {"labels", "pricingRegion", "seatPrices", "plan", "opencodeProviders",
+             "notifications", "login", "openaiKey"}
+    extra = set(body) - known
+    if extra:
+        raise ValueError("unknown settings: " + ", ".join(sorted(extra)))
+    cached = cached if cached is not None else (_cache.get("data") or {})
+    errors = []
+
+    def check(section, fn):
+        try:
+            return fn()
+        except ValueError as e:
+            errors.append("%s: %s" % (section, e))
+            return None
+
+    # ---- validate everything, write nothing yet ----
+    new_labels = None
+    if "labels" in body:
+        def _labels():
+            raw = body["labels"]
+            if not isinstance(raw, dict):
+                raise ValueError("must be an object")
+            out = {}
+            for uuid, name in raw.items():
+                if name in (None, ""):
+                    continue  # an empty box leaves the saved name as it is
+                account, label, _n, _p = validate_label_body({"accountUuid": uuid, "label": name})
+                out[account] = label
+            return out
+        new_labels = check("Account names", _labels)
+
+    region_set, region = False, None
+    if "pricingRegion" in body:
+        v = body["pricingRegion"]
+        region = check("Pricing region", lambda: pricing_region.validate_body({"region": None if v in (None, "auto") else v}))
+        region_set = True
+
+    seat_updates = None
+    if "seatPrices" in body:
+        def _seats():
+            raw = body["seatPrices"]
+            if not isinstance(raw, dict):
+                raise ValueError("must be an object")
+            currencies = seat_prices.billing_currencies(cached.get("maxUsage"))
+            out = {}
+            for key, entry in raw.items():
+                entry = entry or {}
+                amount = entry.get("amount")
+                if amount in ("", None):
+                    amount = None
+                account, clean = seat_prices.validate_body(
+                    {"accountUuid": key, "amount": amount, "currency": entry.get("currency")},
+                    currencies.get(key))
+                out[account] = clean
+            return out
+        seat_updates = check("Seat prices", _seats)
+
+    plan_entry = None
+    if body.get("plan"):
+        def _plan():
+            p = body["plan"]
+            if not isinstance(p, dict):
+                raise ValueError("must be an object")
+            agent = (p.get("agent") or "").strip()
+            if not agent or not _LABEL_ID_RE.match(agent):
+                raise ValueError("tool is required")
+            return agent, {
+                "plan": p.get("plan") or None,
+                "coveredByPlan": bool(p.get("coveredByPlan")),
+                "note": p.get("note") or None,
+                "asOf": p.get("asOf") or datetime.date.today().isoformat(),
+            }
+        plan_entry = check("Manual note", _plan)
+
+    oc = None
+    if "opencodeProviders" in body:
+        oc = check("OpenCode backends", lambda: opencode_backends.validate_overrides(body["opencodeProviders"]))
+
+    notif = None
+    if "notifications" in body:
+        notif = check("Notifications", lambda: notify.validate_settings(body["notifications"], notify.load_settings()))
+
+    login = None
+    if "login" in body:
+        if not isinstance(body["login"], bool):
+            errors.append("Start at login: must be true or false")
+        else:
+            login = body["login"]
+
+    openai_key = None
+    if body.get("openaiKey"):
+        k = body["openaiKey"]
+        if not isinstance(k, str) or not k.strip() or len(k) > 400 or any(ord(c) < 33 for c in k.strip()):
+            errors.append("OpenAI Admin key: does not look like a key")
+        else:
+            openai_key = k.strip()
+
+    if errors:
+        return {"ok": False, "error": "Nothing was saved. " + " ".join(errors), "errors": errors}
+
+    # ---- write ----
+    saved = []
+    with _lock:
+        if new_labels:
+            labels = account_usage.load_labels()
+            for account, label in new_labels.items():
+                existing = labels.get(account) if isinstance(labels.get(account), dict) else {}
+                labels[account] = {"label": label, "note": existing.get("note")}
+            account_usage.save_labels(labels)
+            for account in new_labels:
+                if isinstance(cached, dict) and cached:
+                    _apply_label_to_cached_usage(cached, account, labels[account])
+            saved.append("account names")
+        if region_set:
+            pricing_region.save(region)
+            saved.append("pricing region")
+        if seat_updates is not None:
+            prices = seat_prices.load()
+            for account, entry in seat_updates.items():
+                if entry is None:
+                    prices.pop(account, None)
+                else:
+                    prices[account] = entry
+            seat_prices.save(prices)
+            saved.append("seat prices")
+        if plan_entry:
+            account_usage.save_plan(*plan_entry)
+            saved.append("manual note")
+        if oc is not None:
+            opencode_backends.save_overrides(oc)
+            saved.append("OpenCode backends")
+        if notif is not None:
+            notify.save_settings(notif)
+            saved.append("notifications")
+        if openai_key:
+            provider_usage.save_provider_key("openai", openai_key)
+            saved.append("OpenAI key")
+        _cache["ts"] = 0.0  # next /api/usage rebuilds from what was just written
+        if isinstance(cached, dict) and cached:
+            cached["pricingRegion"] = pricing_region.current()
+            cached["seatPrices"] = seat_prices.load()
+            cached["teamValue"] = _team_value(cached)
+
+    warnings = []
+    login_status = None
+    if login is not None:
+        try:
+            current = login_item.status()
+            if current.get("enabled") != login:
+                login_item.turn_on() if login else login_item.turn_off()
+            login_status = login_item.status()
+            if login_status.get("enabled") != login:
+                warnings.append("Start at login did not stick. Check ~/Library/LaunchAgents.")
+            elif current.get("enabled") != login:
+                saved.append("start at login")
+        except Exception as e:
+            warnings.append("Start at login: %s" % e)
+    if openai_key:
+        test = get_openai_cost(force=True)
+        if test and "error" in test:
+            warnings.append("OpenAI key saved, but the test call failed: %s" % test["error"])
+
+    return {"ok": True, "saved": saved, "warnings": warnings,
+            "notifications": notify.load_settings(), "login": login_status,
+            "opencodeProviders": opencode_backends.load_overrides()}
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
@@ -907,6 +1114,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._handle_grok_billing_refresh()
         elif path == "/api/labels":
             self._handle_labels_post()
+        elif path == "/api/settings":
+            self._handle_local_post(self._settings_post)
         elif path == "/api/seat-prices":
             self._handle_local_post(self._seat_price_post)
         elif path == "/api/pricing-region":
@@ -968,6 +1177,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return {"ok": True, "pricingRegion": cached["pricingRegion"], "teamValue": cached["teamValue"]}
 
 
+    def _settings_post(self, body):
+        """The Settings page's single Save. Every section is validated first;
+        if anything is wrong nothing is written. Then each file is written
+        with a temp-file-and-rename, under the same lock the usage refresh
+        uses for account-labels.json, so a refresh cannot interleave with it."""
+        result = apply_settings(body)
+        if not result.get("ok"):
+            raise ValueError(result["error"])
+        return result
+
     def _notifications_post(self, body):
         settings = notify.validate_settings(body, notify.load_settings())
         notify.save_settings(settings)
@@ -989,7 +1208,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"error": usage["error"]}, code=503)
             return
         try:
-            self._send_json(digest.build_digest(usage))
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            raw_week = (query.get("week") or [None])[0]
+            today = datetime.date.today()
+            week = digest.parse_week(raw_week, digest.last_complete_week(today)[0])
+            self._send_json(digest.build_digest(usage, week=week))
+        except ValueError as e:
+            self._send_json({"error": str(e)}, code=400)
         except Exception as e:
             self._send_json({"error": str(e)}, code=500)
 

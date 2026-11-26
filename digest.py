@@ -5,6 +5,7 @@ Built from the same /api/usage payload the dashboard uses, so every figure
 here matches what the Overview shows for that date range. Pure functions,
 stdlib only, Python 3.9 compatible.
 """
+import opencode_backends
 import datetime
 
 import insights
@@ -72,6 +73,11 @@ def real_spend(payload, start, end):
         if has_grok_cli and s.get("tool") == "grok" and s.get("kind") in ("manual", "none"):
             continue
         if has_grok_cli and s.get("tool") == "grok" and s.get("kind") == "unofficial-live":
+            continue
+        if s.get("kind") == "backends":
+            r, _covered, unknown = opencode_backends.real_and_covered(
+                payload.get("daily"), s.get("opencodeBackends"), lambda p: _in(p, start, end))
+            real += r + unknown
             continue
         estimate = _source_estimate(s, payload, start, end)
         mu = s.get("maxUsage") or {}
@@ -188,10 +194,31 @@ def plan_peaks(payload, start, end, tz):
     return rows
 
 
-def build_digest(payload, today=None, tz=None, now=None):
+def parse_week(value, latest_start):
+    """A ?week=YYYY-MM-DD value -> the Monday that starts that week. Any day
+    of the week is accepted. Weeks after the last complete one are refused."""
+    if value in (None, ""):
+        return None
+    try:
+        day = datetime.date.fromisoformat(str(value)[:10])
+    except ValueError:
+        raise ValueError("week must be a date like 2026-11-16")
+    monday = day - datetime.timedelta(days=day.weekday())
+    if monday > latest_start:
+        raise ValueError("that week has not finished yet")
+    return monday
+
+
+def build_digest(payload, today=None, tz=None, now=None, week=None):
+    """``week`` (a Monday) picks an earlier complete week; default is the
+    last complete one."""
     tz = tz or datetime.datetime.now().astimezone().tzinfo
     today = today or datetime.datetime.now(tz=tz).date()
-    start, end = last_complete_week(today)
+    latest_start, _latest_end = last_complete_week(today)
+    if week is not None:
+        start, end = week, week + datetime.timedelta(days=6)
+    else:
+        start, end = latest_start, _latest_end
     pstart, pend = start - datetime.timedelta(days=7), end - datetime.timedelta(days=7)
 
     list_total, tokens, days, agents, models = _week_totals(payload, start, end)
@@ -200,7 +227,15 @@ def build_digest(payload, today=None, tz=None, now=None):
     has_prev = bool(earliest) and earliest <= pend.isoformat()
     real = real_spend(payload, start, end)
 
+    earliest_start = None
+    if earliest:
+        e = datetime.date.fromisoformat(earliest)
+        earliest_start = e - datetime.timedelta(days=e.weekday())
+    has_data = bool(days) or bool(list_total)
     return {
+        "hasData": has_data,
+        "latestWeekStart": latest_start.isoformat(),
+        "earliestWeekStart": earliest_start.isoformat() if earliest_start else None,
         "weekStart": start.isoformat(),
         "weekEnd": end.isoformat(),
         "previousWeekStart": pstart.isoformat(),
