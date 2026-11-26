@@ -49,6 +49,38 @@ If Homebrew refuses to load the formula ("untrusted tap"), run
 `brew trust --formula tjorourke/agentic-spend/agentic-spend` and install again (same as
 [flightbay](https://github.com/tjorourke/flightbay)).
 
+## Menu bar app (optional)
+
+A small native app that sits in the macOS menu bar: the highest plan percentage in the bar
+(for example `G 44%`), and a menu with each plan's weekly percentage, forecast and reset,
+today's list-price spend, Open dashboard (a native window), Refresh, Start at login and Quit.
+When it's running it shows the plan notifications natively instead of the server's
+`osascript` ones. It talks only to the local server on `127.0.0.1:8787`, and starts it with
+the Homebrew `agentic-spend` launcher if it isn't running.
+
+```bash
+brew install --cask tjorourke/agentic-spend/agentic-spend-app
+```
+
+This installs a prebuilt universal app (Apple silicon and Intel, macOS 13 or later) and the
+`agentic-spend` formula it depends on. Nothing is compiled on your Mac.
+
+**First launch needs one approval.** The app is signed ad hoc, not with an Apple Developer ID,
+and it is not notarised, so macOS blocks it the first time:
+
+1. Open **Agentic Spend** from Applications. macOS says it can't check it for malicious
+   software. Click **Done** (not Move to Bin).
+2. Open **System Settings > Privacy & Security**, scroll down to **Security**, and click
+   **Open Anyway** next to "Agentic Spend was blocked".
+3. Click **Open Anyway** again and enter your password or use Touch ID.
+
+After that it opens normally. Allow notifications when it asks, if you want them. If Homebrew
+says the tap is untrusted, run `brew trust --cask tjorourke/agentic-spend/agentic-spend-app`
+first.
+
+To build it yourself instead: `macos/build.sh 1.5.0` (needs the Xcode command line tools),
+then open `macos/out/Agentic Spend.app`.
+
 ## Run it
 
 ```bash

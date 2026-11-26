@@ -14,3 +14,9 @@ grokbot-usage.json
 .server.log
 __pycache__/
 *.pyc
+
+# Menu bar app build output (macos/build.sh)
+macos/out/
+notifications.json
+notification-state.json
+.screens/
