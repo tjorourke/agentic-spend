@@ -217,6 +217,14 @@ brew update && brew upgrade agentic-spend
   showed US dollars from a UK Mac, and neither ChatGPT's nor OpenCode's pricing pages could
   be read as a published UK pound list, so no GBP rows are shipped for those.
 
+## Version 1.8.1
+
+- **Status line no longer wraps itself.** If `AGENTIC_SPEND_WRAP_STATUSLINE` points at this
+  project's `statusline.py` (the repo, a Homebrew Cellar keg, or the `opt` prefix), or if a
+  wrap is already in progress, the hook prints its own line and does not start another copy
+  of itself. A leftover wrap setting in a long-running Claude Code session could previously
+  spawn hundreds of processes.
+
 ## Version 1.8.0
 
 - **One Save in Settings.** Every field on the Settings page (account names, pricing region,

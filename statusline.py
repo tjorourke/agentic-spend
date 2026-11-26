@@ -9,6 +9,9 @@ Two jobs:
    AGENTIC_SPEND_WRAP_STATUSLINE is set (to another status line command this
    one replaced), that command's own output is printed instead, so nothing
    the user already had is lost — only the live-data side effect is added.
+   This script never wraps itself: a wrap already in progress, or a command
+   that resolves to this project's statusline.py (the repo, a Homebrew Cellar
+   keg, or the opt prefix), is ignored and our own line is printed.
 2. As a side effect, persist the rate_limits payload Claude Code feeds us
    (documented: https://code.claude.com/docs/en/statusline) to a small JSON
    file per account, so other tools (this dashboard) can read real, fresh
@@ -21,19 +24,29 @@ usage" action, or just delete the "statusLine" key from
 ~/.claude/settings.json (restoring AGENTIC_SPEND_WRAP_STATUSLINE's value if
 one was wrapped).
 """
+import datetime
 import json
 import os
+import re
+import shlex
 import subprocess
 import sys
-import datetime
 
 LIVE_DIR = os.path.expanduser("~/.claude/cc-usage-live")
 CLAUDE_CONFIG = os.path.expanduser("~/.claude.json")
 WRAP_COMMAND = os.environ.get("AGENTIC_SPEND_WRAP_STATUSLINE")
 # Set on the wrapped command's environment. If an older, stacked install of
-# this script sits underneath us, it sees the flag and skips its own write and
-# history side effects, so one status line update is only recorded once.
+# this script sits underneath us, it sees the flag and skips its own write,
+# history side effects, and any further wrap, so one status line update is
+# only recorded once and cannot re-enter this script.
 ACTIVE_FLAG = "AGENTIC_SPEND_STATUSLINE_ACTIVE"
+DEPTH_FLAG = "AGENTIC_SPEND_STATUSLINE_DEPTH"
+MAX_WRAP_DEPTH = 1
+# Repo checkout (…/agentic-spend/statusline.py) or a Homebrew keg / opt
+# prefix (…/agentic-spend/<version>/libexec/statusline.py and similar).
+_OUR_STATUSLINE = re.compile(
+    r"(?:^|[\s/])agentic-spend(?:/\S+)*/statusline\.py(?:$|[\s])"
+)
 # Inlined rather than `import data_dir`: Claude Code runs this script with
 # `python3 -I` (isolated mode), which leaves the script's own directory off
 # sys.path, so a sibling import fails here even though it works everywhere
@@ -243,6 +256,82 @@ def write_live_file(out_path, record):
         raise
 
 
+
+def wrap_depth(env=None):
+    """How many wraps are already in progress in *env* (0 if unset).
+
+    An unreadable value is treated as already at the maximum, so we refuse
+    to wrap rather than risk another cycle.
+    """
+    env = os.environ if env is None else env
+    raw = env.get(DEPTH_FLAG)
+    if raw is None or raw == "":
+        return 0
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return MAX_WRAP_DEPTH
+    if value < 0:
+        return MAX_WRAP_DEPTH
+    return value
+
+
+def wrap_is_self(command, script_path=None):
+    """True when *command* would run this project's statusline.py.
+
+    Matches the running script (by resolved path) and any path of the form
+    …/agentic-spend/statusline.py or …/agentic-spend/<…>/statusline.py: the
+    repo checkout, a Homebrew Cellar keg, or the opt prefix.
+    """
+    if not command:
+        return False
+    stripped = command.replace("'", " ").replace('"', " ")
+    if _OUR_STATUSLINE.search(command) or _OUR_STATUSLINE.search(stripped):
+        return True
+    script_path = os.path.realpath(script_path or __file__)
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError:
+        tokens = command.split()
+    for tok in tokens:
+        path = os.path.expanduser(tok)
+        if not path.endswith("statusline.py"):
+            continue
+        try:
+            if os.path.realpath(path) == script_path:
+                return True
+        except OSError:
+            continue
+    return False
+
+
+def should_wrap(command, env=None, script_path=None):
+    """Whether main() should run AGENTIC_SPEND_WRAP_STATUSLINE.
+
+    Never wrap when a wrap is already in progress (the active flag or the
+    depth guard), or when the command is this script — including the leftover
+    env that made a long-running Claude Code session re-enter itself.
+    """
+    env = os.environ if env is None else env
+    if not command or not str(command).strip():
+        return False
+    if env.get(ACTIVE_FLAG):
+        return False
+    if wrap_depth(env) >= MAX_WRAP_DEPTH:
+        return False
+    if wrap_is_self(command, script_path=script_path):
+        return False
+    return True
+
+
+def wrapped_env(env=None):
+    """Environment for a (foreign) wrapped status-line command."""
+    env = dict(os.environ if env is None else env)
+    env[ACTIVE_FLAG] = "1"
+    env[DEPTH_FLAG] = str(wrap_depth(env) + 1)
+    return env
+
+
 def main():
     raw_stdin = sys.stdin.read()
     try:
@@ -287,11 +376,11 @@ def main():
                 pass  # never break the status line over a write failure
 
     # --- what actually shows in the terminal ---
-    if WRAP_COMMAND:
+    if should_wrap(WRAP_COMMAND):
         try:
             result = subprocess.run(WRAP_COMMAND, shell=True, input=raw_stdin,
                                      capture_output=True, text=True, timeout=5,
-                                     env={**os.environ, ACTIVE_FLAG: "1"})
+                                     env=wrapped_env())
             print(result.stdout.rstrip("\n"))
             return
         except Exception:
