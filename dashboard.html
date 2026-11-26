@@ -623,6 +623,11 @@
   .settings-app button.secondary { background: transparent; color: var(--text); }
   .settings-app button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .settings-app table td { padding: 0.25rem 0.6rem 0.25rem 0; font-size: 0.82rem; }
+  /* ---------- value cells (1.8.2): chosen measure on top, the other muted below ---------- */
+  .vc { display: inline-flex; flex-direction: column; align-items: flex-end; line-height: 1.2; }
+  .vc-sub { font-size: 0.74rem; font-weight: 400; }
+  .bucket-item .muted { font-size: 0.78rem; }
+  .topbar-actions .view-toggle + .view-toggle { margin-left: 0.25rem; }
   /* ---------- shell (1.8.0): light grey side nav, white main, thin top bar ---------- */
   body { background: var(--card); }
   .sidebar { background: var(--sidebar); width: 228px; padding: 1.1rem 0.75rem; }
@@ -695,9 +700,13 @@
   <header class="topbar">
     <h1 id="pageTitle">Overview</h1>
     <div class="topbar-actions">
+      <div class="segmented view-toggle" id="metricToggle" role="group" aria-label="Measure cards in" title="Switches every card and chart between usage value in US dollars and tokens: Overview, Model mix, Projects and Weekly report">
+        <button type="button" data-metric="cost">$</button>
+        <button type="button" data-metric="tokens">Tokens</button>
+      </div>
       <div class="segmented view-toggle" id="viewToggle" role="group" aria-label="Show cards as" title="Switches every card that has both views: Weekly report, Model mix and Projects">
-        <button type="button" data-view="table">Table</button>
         <button type="button" data-view="graph">Graph</button>
+        <button type="button" data-view="table">Text</button>
       </div>
       <button id="refreshBtn" type="button" class="refresh-button" title="Fetch fresh data now">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.6-6.4L21 8"/><path d="M21 3v5h-5"/></svg>
@@ -817,10 +826,6 @@
       <div class="card-head">
         <h2>Daily usage value <span id="chartMetricLabel" class="muted"></span></h2>
         <span style="display:flex; align-items:center; gap:0.6rem;">
-          <span class="segmented" id="chartMetricSeg">
-            <button data-metric="cost" class="active" title="USD list price from ccusage">$ Spend</button>
-            <button data-metric="tokens">Tokens</button>
-          </span>
           <span class="muted" id="chartNote"></span>
         </span>
       </div>
@@ -957,7 +962,8 @@ let range = 7;
 let agent = 'all';
 let customFrom = null;
 let customTo = null;
-let chartMetric = 'cost';
+// Follows the global $ | Tokens switch in the top bar (localStorage 'spendMetric').
+let chartMetric = localStorage.getItem('spendMetric') === 'tokens' ? 'tokens' : 'cost';
 let modelSort = { k: 'cost', dir: -1 };
 let dailySort = { k: 'period', dir: -1 };
 let modelFilter = '';
@@ -1473,6 +1479,8 @@ function paceText(p, fmtTime) {
 // repriced run, applied per day and model so filters still work).
 function modelMixSummary(windowed, mix) {
   const spend = {};
+  const toks = {};
+  const totalTok = zeroTok();
   let total = 0, opusCost = 0, saving = 0, priced = 0;
   const opus = new Set((mix && mix.opusModels) || []);
   const byDay = (mix && mix.repricedByDay) || {};
@@ -1482,6 +1490,9 @@ function modelMixSummary(windowed, mix) {
       if (!mb.modelName) return;
       spend[mb.modelName] = (spend[mb.modelName] || 0) + c;
       total += c;
+      const tv = tokVec(mb);
+      addTok(toks[mb.modelName] = toks[mb.modelName] || zeroTok(), tv);
+      addTok(totalTok, tv);
       if (opus.has(mb.modelName)) {
         opusCost += c;
         const r = (byDay[d.period] || {})[mb.modelName];
@@ -1493,9 +1504,33 @@ function modelMixSummary(windowed, mix) {
     });
   });
   const rows = Object.entries(spend).filter(e => e[1] > 0).sort((a, b) => b[1] - a[1])
-    .map(([model, cost]) => ({ model, cost, share: total ? cost / total : 0, opus: opus.has(model) }));
-  return { rows, total, opusCost, saving, priced, atSonnet: opusCost - saving,
+    .map(([model, cost]) => ({ model, cost, share: total ? cost / total : 0, opus: opus.has(model), tok: toks[model] || zeroTok() }));
+  return { rows, total, totalTok, opusCost, saving, priced, atSonnet: opusCost - saving,
            sonnetModel: (mix && mix.sonnetModel) || null, error: (mix && mix.error) || null };
+}
+function tokVec(mb) {
+  return { input: Number(mb && mb.inputTokens) || 0, output: Number(mb && mb.outputTokens) || 0,
+           cacheWrite: Number(mb && mb.cacheCreationTokens) || 0, cacheRead: Number(mb && mb.cacheReadTokens) || 0 };
+}
+function zeroTok() { return { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 }; }
+function addTok(into, t, f) {
+  const k = f == null ? 1 : f;
+  into.input += t.input * k; into.output += t.output * k; into.cacheWrite += t.cacheWrite * k; into.cacheRead += t.cacheRead * k;
+  return into;
+}
+// Headline token figure: input + output, excluding cache (same as the Tokens tile).
+function tokIO(t) { return t ? t.input + t.output : 0; }
+function tokAll(t) { return t ? t.input + t.output + t.cacheWrite + t.cacheRead : 0; }
+function tokTitle(t) {
+  const r = n => fmtTok(Math.round(n || 0));
+  return `Input ${r(t.input)} · Output ${r(t.output)} · Cache write ${r(t.cacheWrite)} · Cache read ${r(t.cacheRead)} · All tokens incl. cache ${r(tokAll(t))}`;
+}
+// One table cell: the chosen measure on top, the other in muted text below.
+function valueCellHtml(cost, tok, metric, bold) {
+  const money = fmt(cost), toks = fmtTok(Math.round(tokIO(tok))) + ' tok';
+  const top = metric === 'tokens' ? toks : money, sub = metric === 'tokens' ? money : toks;
+  const b = s => bold ? `<b>${s}</b>` : s;
+  return `<span class="vc" title="${escAttr(tokTitle(tok))}">${b(top)}<span class="vc-sub muted">${sub}</span></span>`;
 }
 // </pure-helpers>
 
@@ -1539,6 +1574,8 @@ function readUrlState() {
   if (tab === 'report') tab = 'digest';
   const v = p.get('view');   // ?view=graph|table sets the Table/Graph switch (handy for links)
   if (v === 'graph' || v === 'table') localStorage.setItem('weeklyReportView', v);
+  const mt = p.get('metric');   // ?metric=cost|tokens sets the $ | Tokens switch
+  if (mt === 'cost' || mt === 'tokens') { localStorage.setItem('spendMetric', mt); chartMetric = mt; }
   range = parseInt(p.get('range') || '7', 10);
   agent = p.get('agent') || 'all';
   selectedModel = p.get('model') || null;
@@ -1586,6 +1623,8 @@ async function load(force) {
     document.getElementById('loadingOverlay').classList.add('hidden');
     if (json.stale && json.refreshError) showRefreshBanner(json.refreshError);
     update();
+    schedulePrefetch(!!force);
+    if (!perfStarted && PERF_RUN) { perfStarted = true; runTabPerf(); }
   } catch (e) {
     document.getElementById('loadingOverlay').classList.add('hidden');
     const errEl = document.getElementById('err');
@@ -1715,6 +1754,8 @@ function paintTab(t) {
   const noRange = t === 'settings' || t === 'digest';
   const vt = document.getElementById('viewToggle');
   if (vt) vt.style.display = (t === 'overview' || t === 'projects' || t === 'digest') ? '' : 'none';
+  const mt = document.getElementById('metricToggle');
+  if (mt) mt.style.display = (t === 'overview' || t === 'projects' || t === 'digest') ? '' : 'none';
   const ph = document.querySelector('.page-header');
   if (ph) ph.style.display = (t === 'settings' || t === 'digest') ? 'none' : '';
   document.getElementById('agentSel').style.display = (t === 'accounts' || noRange) ? 'none' : '';
@@ -1735,7 +1776,8 @@ function setTab(t) {
 
 document.querySelectorAll('.nav-item').forEach(b => b.onclick = () => setTab(b.dataset.tab));
 document.querySelectorAll('#viewToggle [data-view]').forEach(b => b.onclick = () => setReportView(b.dataset.view));
-setTimeout(paintViewToggle, 0);  // REPORT_VIEW_KEY is declared further down
+document.querySelectorAll('#metricToggle [data-metric]').forEach(b => b.onclick = () => setSpendMetric(b.dataset.metric));
+setTimeout(() => { paintViewToggle(); paintMetricToggle(); }, 0);  // the KEY consts are declared further down
 document.getElementById('refreshBtn').onclick = () => load(true);
 
 function setTheme(theme) {
@@ -1862,12 +1904,6 @@ document.getElementById('customToggle').onclick = () => {
   syncCustomRangeInputs();
   if (customOpen) document.getElementById('customFrom').focus();
 };
-document.querySelectorAll('#chartMetricSeg button').forEach(b => b.onclick = () => {
-  document.querySelectorAll('#chartMetricSeg button').forEach(x => x.classList.remove('active'));
-  b.classList.add('active');
-  chartMetric = b.dataset.metric;
-  update();
-});
 document.getElementById('modelSearch').oninput = e => { modelFilter = e.target.value.toLowerCase(); update(); };
 
 function attachSort(tableId, state) {
@@ -3629,6 +3665,24 @@ function setReportView(v) {
   paintViewToggle();
   if (tab === 'digest') renderDigest(); else update();
 }
+// One switch for $ or tokens across Overview, Model mix, Projects and the
+// Weekly report. Remembered in localStorage.
+const METRIC_KEY = 'spendMetric';
+function spendMetric() { return localStorage.getItem(METRIC_KEY) === 'tokens' ? 'tokens' : 'cost'; }
+function setSpendMetric(m) {
+  localStorage.setItem(METRIC_KEY, m === 'tokens' ? 'tokens' : 'cost');
+  chartMetric = spendMetric();
+  paintMetricToggle();
+  if (tab === 'digest') renderDigest(); else update();
+}
+function paintMetricToggle() {
+  const m = spendMetric();
+  document.querySelectorAll('#metricToggle [data-metric]').forEach(b => {
+    const on = b.dataset.metric === m;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', String(on));
+  });
+}
 function paintViewToggle() {
   const v = reportView();
   document.querySelectorAll('#viewToggle [data-view]').forEach(b => {
@@ -3689,6 +3743,10 @@ function renderDigest() {
     ? `<table><thead><tr>${head.map((h, i) => `<th class="${i ? 'right' : ''}">${escHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows.join('')}</tbody></table>`
     : `<div class="muted">${escHtml(empty)}</div>`;
   const pick = (tableHtml, graphHtml) => view === 'graph' ? graphHtml : tableHtml;
+  const metric = spendMetric();
+  const mv = x => metric === 'tokens' ? (x.tokens || 0) : (x.cost || 0);
+  const mshow = x => metric === 'tokens' ? fmtTok(x.tokens || 0) + ' tok' : fmt(x.cost);
+  const mother = x => metric === 'tokens' ? fmt(x.cost) : fmtTok(x.tokens || 0) + ' tok';
   const plans = d.plans || [];
   const delta = p => p.deltaPct == null ? '–' : (p.deltaPct > 0 ? '+' : p.deltaPct < 0 ? '-' : '') + formatPct(Math.abs(p.deltaPct)) + ' pts';
   const planTable = table(['Plan', 'Peak', 'Week before', 'Change'], plans.map(p => `<tr><td>${escHtml(p.label)}</td><td class="right tnum">${escHtml(formatPct(p.peakPct))}%</td>
@@ -3698,20 +3756,20 @@ function renderDigest() {
     display: escHtml(formatPct(p.peakPct)) + '%', extra: p.previousPeakPct == null ? '' : 'week before ' + escHtml(formatPct(p.previousPeakPct)) + '%, ' + escHtml(delta(p)) })),
     'No plan readings were recorded that week.', { max: 100 });
   const projects = d.topProjects || [];
-  const projTable = table(['Project', 'Sessions', 'Usage value'], projects.map(p => {
+  const projTable = table(['Project', 'Sessions', 'Tokens', 'Usage value'], projects.map(p => {
     const path = shortenPath(p.project);
-    return `<tr><td class="proj-path" title="${escAttr(path.full)}">${escHtml(path.short)}</td><td class="right tnum">${p.sessions}</td><td class="right tnum">${fmt(p.cost)}</td></tr>`;
+    return `<tr><td class="proj-path" title="${escAttr(path.full)}">${escHtml(path.short)}</td><td class="right tnum">${p.sessions}</td><td class="right tnum">${fmtTok(p.tokens || 0)}</td><td class="right tnum">${fmt(p.cost)}</td></tr>`;
   }), 'No project data that week.');
-  const projGraph = reportBarsHtml(projects.map(p => { const path = shortenPath(p.project); return { label: path.short, title: path.full, value: p.cost, display: fmt(p.cost), extra: p.sessions + ' sessions' }; }), 'No project data that week.');
+  const projGraph = reportBarsHtml(projects.map(p => { const path = shortenPath(p.project); return { label: path.short, title: path.full, value: mv(p), display: mshow(p), extra: mother(p) + ', ' + p.sessions + ' sessions' }; }), 'No project data that week.');
   const models = d.topModels || [];
   const modelTable = table(['Model', 'Tokens', 'Usage value'], models.map(m => `<tr><td><button type="button" class="model-name model-name-cell text-btn" data-digest-model="${escAttr(m.model)}">${escHtml(m.model)}</button></td><td class="right tnum">${fmtTok(m.tokens)}</td><td class="right tnum">${fmt(m.cost)}</td></tr>`), 'No model data that week.');
-  const modelGraph = reportBarsHtml(models.map(m => ({ label: m.model, labelHtml: `<button type="button" class="model-name text-btn" data-digest-model="${escAttr(m.model)}">${escHtml(m.model)}</button>`, value: m.cost, display: fmt(m.cost), extra: fmtTok(m.tokens) + ' tokens' })), 'No model data that week.');
+  const modelGraph = reportBarsHtml(models.map(m => ({ label: m.model, labelHtml: `<button type="button" class="model-name text-btn" data-digest-model="${escAttr(m.model)}">${escHtml(m.model)}</button>`, value: mv(m), display: mshow(m), extra: mother(m) })), 'No model data that week.');
   const agents = d.agents || [];
-  const agentTable = table(['Agent', 'Usage value'], agents.map(a => `<tr><td>${escHtml(a.agent)}</td><td class="right tnum">${fmt(a.cost)}</td></tr>`), 'No usage that week.');
-  const agentGraph = reportBarsHtml(agents.map(a => ({ label: a.agent, value: a.cost, display: fmt(a.cost) })), 'No usage that week.');
+  const agentTable = table(['Agent', 'Tokens', 'Usage value'], agents.map(a => `<tr><td>${escHtml(a.agent)}</td><td class="right tnum">${fmtTok(a.tokens || 0)}</td><td class="right tnum">${fmt(a.cost)}</td></tr>`), 'No usage that week.');
+  const agentGraph = reportBarsHtml(agents.map(a => ({ label: a.agent, value: mv(a), display: mshow(a), extra: mother(a) })), 'No usage that week.');
   const days = d.days || [];
-  const dayTable = table(['Day', 'Usage value'], days.map(x => `<tr class="day-row" role="button" tabindex="0" data-digest-day="${escAttr(x.date)}" title="Open ${escAttr(x.date)}"><td class="tnum">${escHtml(x.date)}</td><td class="right tnum">${fmt(x.cost)}</td></tr>`), 'No usage that week.');
-  const dayGraph = reportBarsHtml(days.map(x => ({ label: x.date, value: x.cost, display: fmt(x.cost), attrs: ` role="button" tabindex="0" data-digest-day="${escAttr(x.date)}" title="Open ${escAttr(x.date)}"` })), 'No usage that week.');
+  const dayTable = table(['Day', 'Tokens', 'Usage value'], days.map(x => `<tr class="day-row" role="button" tabindex="0" data-digest-day="${escAttr(x.date)}" title="Open ${escAttr(x.date)}"><td class="tnum">${escHtml(x.date)}</td><td class="right tnum">${fmtTok(x.tokens || 0)}</td><td class="right tnum">${fmt(x.cost)}</td></tr>`), 'No usage that week.');
+  const dayGraph = reportBarsHtml(days.map(x => ({ label: x.date, value: mv(x), display: mshow(x), extra: mother(x), attrs: ` role="button" tabindex="0" data-digest-day="${escAttr(x.date)}" title="Open ${escAttr(x.date)}"` })), 'No usage that week.');
   const noData = d.hasData === false
     ? `<div class="card report-empty" style="margin-bottom:1rem;">No usage was recorded for ${escHtml(range)}. Pick another week above.</div>` : '';
   body.innerHTML = `
@@ -3751,12 +3809,64 @@ function renderDigest() {
   if (sel) sel.onchange = () => loadDigest(sel.value === d.latestWeekStart ? null : sel.value);
 }
 
+// Background prefetch (1.8.2): once the Overview has painted, fetch what the
+// other tabs would fetch on open (Weekly report, Settings) at idle priority,
+// so switching tabs is instant. Projects and Accounts render from /api/usage,
+// which the Overview already loaded. One request in flight per endpoint:
+// loadDigest and loadAppSettings both guard against overlap. ?prefetch=0 turns
+// it off (used to measure the difference).
+// Read once at start-up: the page rewrites its own URL (range, tab) soon after.
+const START_PARAMS = new URLSearchParams(location.search);
+const PREFETCH_ON = START_PARAMS.get('prefetch') !== '0';
+const PERF_RUN = START_PARAMS.get('perf') === '1';
+function prefetchEnabled() { return PREFETCH_ON; }
+function schedulePrefetch(afterRefresh) {
+  if (!prefetchEnabled()) return;
+  const idle = window.requestIdleCallback || (fn => setTimeout(fn, 1200));
+  idle(() => {
+    if (afterRefresh || (!digestData && !digestFetching)) loadDigest();
+    loadAppSettings(!!afterRefresh);
+  }, { timeout: 4000 });
+}
+// ?perf=1: open each tab in turn and record how long it took to show its
+// content, into <pre id="perfOut"> and document.title, for before/after checks.
+async function runTabPerf() {
+  const nextFrame = () => new Promise(r => requestAnimationFrame(() => setTimeout(r, 0)));
+  const waitFor = async (ok, ms) => { const end = performance.now() + ms; while (!ok() && performance.now() < end) await new Promise(r => setTimeout(r, 5)); };
+  if (prefetchEnabled()) await waitFor(() => digestData && appSettings, 15000);
+  else await new Promise(r => setTimeout(r, 1500));
+  // ?perfwait=ms: idle first, as when someone reads the Overview before switching
+  await new Promise(r => setTimeout(r, Number(START_PARAMS.get('perfwait')) || 0));
+  const out = {};
+  for (const t2 of ['projects', 'accounts', 'digest', 'settings', 'overview']) {
+    const t0 = performance.now();
+    setTab(t2);
+    if (t2 === 'digest') await waitFor(() => digestData && !digestFetching, 30000);
+    if (t2 === 'settings') await waitFor(() => appSettings, 30000);
+    await nextFrame();
+    out[t2] = Math.round(performance.now() - t0);
+    await new Promise(r => setTimeout(r, 300));
+  }
+  const pre = document.createElement('pre');
+  pre.id = 'perfOut';
+  pre.textContent = JSON.stringify({ prefetch: prefetchEnabled(), ms: out });
+  document.body.appendChild(pre);
+  document.title = 'PERF ' + pre.textContent;
+}
+let perfStarted = false;
+
 let appSettings = null;     // { notifications, login }
 let appSettingsAt = 0;
 let appSettingsMsg = '';
+let appSettingsFetching = null;
 async function loadAppSettings(force) {
+  if (appSettingsFetching) return appSettingsFetching;   // one request in flight
   if (!force && appSettings && Date.now() - appSettingsAt < 30000) return;
   appSettingsAt = Date.now();
+  appSettingsFetching = loadAppSettingsNow().finally(() => { appSettingsFetching = null; });
+  return appSettingsFetching;
+}
+async function loadAppSettingsNow() {
   try {
     const [n, l] = await Promise.all([
       fetch('/api/notifications', { cache: 'no-store' }).then(r => r.json()),
@@ -4477,12 +4587,16 @@ function accountBucketName(row) {
 }
 function modelAccountSplit(days, accountSessions, cutoff, end, filterValue) {
   const models = {};      // model -> bucket -> cost
-  const add = (m, b, c) => { if (!c) return; (models[m] = models[m] || {})[b] = (models[m][b] || 0) + c; };
+  const tokens = {};      // model -> bucket -> {input, output, cacheWrite, cacheRead}
+  const add = (m, b, c, tv, f) => {
+    if (c) (models[m] = models[m] || {})[b] = (models[m][b] || 0) + c;
+    if (tv) addTok(((tokens[m] = tokens[m] || {})[b] = tokens[m][b] || zeroTok()), tv, f);
+  };
   if (typeof filterValue === 'string' && filterValue.startsWith('account:')) {
     const uuid = filterValue.slice('account:'.length);
     (accountSessions || []).filter(r => r.accountUuid === uuid && r.period >= cutoff && r.period <= end)
-      .forEach(r => (r.modelBreakdowns || []).forEach(mb => add(mb.modelName, accountBucketName(r), mb.cost || 0)));
-    return finishAccountSplit(models);
+      .forEach(r => (r.modelBreakdowns || []).forEach(mb => add(mb.modelName, accountBucketName(r), mb.cost || 0, tokVec(mb))));
+    return finishAccountSplit(models, tokens);
   }
   const pool = { claude: {}, grok: {} };
   (days || []).filter(d => d.period >= cutoff && d.period <= end).forEach(d => {
@@ -4491,48 +4605,75 @@ function modelAccountSplit(days, accountSessions, cutoff, end, filterValue) {
       (sub.modelBreakdowns || []).forEach(mb => {
         if (!mb.modelName) return;
         const c = Number(mb.cost) || 0;
-        if (pool[sub.agent]) pool[sub.agent][mb.modelName] = (pool[sub.agent][mb.modelName] || 0) + c;
-        else add(mb.modelName, AGENT_BUCKET_NAMES[sub.agent] || sub.agent, c);
+        if (pool[sub.agent]) {
+          const pm = pool[sub.agent][mb.modelName] || (pool[sub.agent][mb.modelName] = { cost: 0, tok: zeroTok() });
+          pm.cost += c;
+          addTok(pm.tok, tokVec(mb));
+        } else add(mb.modelName, AGENT_BUCKET_NAMES[sub.agent] || sub.agent, c, tokVec(mb));
       });
     });
   });
+  // Each account's share of a model comes from ccusage's session rows; cost
+  // and every token type are split by their own share so each part sums back.
   const shares = { claude: {}, grok: {} };
   (accountSessions || []).filter(r => r.period >= cutoff && r.period <= end).forEach(r => {
     const ag = r.agent === 'grok' ? 'grok' : 'claude';
     (r.modelBreakdowns || []).forEach(mb => {
       const byB = (shares[ag][mb.modelName] = shares[ag][mb.modelName] || {});
-      byB[accountBucketName(r)] = (byB[accountBucketName(r)] || 0) + (mb.cost || 0);
+      const s = byB[accountBucketName(r)] || (byB[accountBucketName(r)] = { cost: 0, tok: zeroTok() });
+      s.cost += mb.cost || 0;
+      addTok(s.tok, tokVec(mb));
     });
   });
   ['claude', 'grok'].forEach(ag => Object.entries(pool[ag]).forEach(([m, total]) => {
     const sh = shares[ag][m] || {};
-    const sum = Object.values(sh).reduce((a, b) => a + b, 0);
-    if (sum <= 0) { add(m, ag === 'grok' ? 'Grok' : 'Unassigned', total); return; }
-    Object.entries(sh).forEach(([b, v]) => add(m, b, total * v / sum));
+    const entries = Object.entries(sh);
+    const costSum = entries.reduce((a, [, v]) => a + v.cost, 0);
+    if (costSum <= 0 && entries.every(([, v]) => tokAll(v.tok) <= 0)) {
+      add(m, ag === 'grok' ? 'Grok' : 'Unassigned', total.cost, total.tok);
+      return;
+    }
+    const fieldSum = k => entries.reduce((a, [, v]) => a + v.tok[k], 0);
+    const sums = { input: fieldSum('input'), output: fieldSum('output'), cacheWrite: fieldSum('cacheWrite'), cacheRead: fieldSum('cacheRead') };
+    entries.forEach(([b, v]) => {
+      const costShare = costSum > 0 ? v.cost / costSum : 0;
+      const part = zeroTok();
+      ['input', 'output', 'cacheWrite', 'cacheRead'].forEach(k => {
+        part[k] = total.tok[k] * (sums[k] > 0 ? v.tok[k] / sums[k] : costShare);
+      });
+      add(m, b, total.cost * costShare, part);
+    });
   }));
-  return finishAccountSplit(models);
+  return finishAccountSplit(models, tokens);
 }
-function finishAccountSplit(models) {
+function finishAccountSplit(models, tokens) {
   const totals = {};
   Object.values(models).forEach(byB => Object.entries(byB).forEach(([b, c]) => { totals[b] = (totals[b] || 0) + c; }));
+  const tokTotals = {};
+  Object.values(tokens || {}).forEach(byB => Object.entries(byB).forEach(([b, tv]) => { addTok(tokTotals[b] = tokTotals[b] || zeroTok(), tv); }));
   // Named accounts first (largest first), then tools, Unassigned last.
   const rank = b => b === 'Unassigned' ? 2 : (Object.values(AGENT_BUCKET_NAMES).includes(b) || b.startsWith('Grok')) ? 1 : 0;
   const buckets = Object.entries(totals).filter(([, c]) => c > 0.0049)
     .sort((a, b) => rank(a[0]) - rank(b[0]) || b[1] - a[1])
-    .map(([name, total], i) => ({ name, total, colour: name === 'Unassigned' ? '#a3a8b3' : ACCOUNT_BUCKET_COLOURS[i % ACCOUNT_BUCKET_COLOURS.length] }));
-  return { models, buckets };
+    .map(([name, total], i) => ({ name, total, tok: tokTotals[name] || zeroTok(), colour: name === 'Unassigned' ? '#a3a8b3' : ACCOUNT_BUCKET_COLOURS[i % ACCOUNT_BUCKET_COLOURS.length] }));
+  return { models, tokens: tokens || {}, buckets };
 }
-function stackedBarHtml(byBucket, buckets, total, max) {
+function stackedBarHtml(byBucket, buckets, total, max, fmtFn) {
   const width = max > 0 ? Math.max(1, 100 * total / max) : 0;
+  const show = fmtFn || fmt;
   const segs = buckets.map(b => {
     const c = byBucket[b.name] || 0;
     if (c <= 0) return '';
-    return `<span class="stack-seg" style="width:${(100 * c / (total || 1)).toFixed(3)}%; background:${b.colour};" title="${escAttr(b.name)}: ${escAttr(fmt(c))}"></span>`;
+    return `<span class="stack-seg" style="width:${(100 * c / (total || 1)).toFixed(3)}%; background:${b.colour};" title="${escAttr(b.name)}: ${escAttr(show(c))}"></span>`;
   }).join('');
   return `<div class="stack-track"><div class="stack-bar" style="width:${width.toFixed(2)}%">${segs}</div></div>`;
 }
-function bucketLegendHtml(buckets) {
-  return `<div class="bucket-legend">${buckets.map(b => `<span class="bucket-item"><span class="swatch" style="background:${b.colour};"></span>${escHtml(b.name)} <b class="tnum">${fmt(b.total)}</b></span>`).join('')}</div>`;
+function bucketLegendHtml(buckets, metric) {
+  return `<div class="bucket-legend">${buckets.map(b => {
+    const money = fmt(b.total), toks = b.tok ? fmtTok(Math.round(tokIO(b.tok))) + ' tok' : '';
+    const top = metric === 'tokens' && toks ? toks : money, sub = metric === 'tokens' && toks ? money : toks;
+    return `<span class="bucket-item"${b.tok ? ` title="${escAttr(tokTitle(b.tok))}"` : ''}><span class="swatch" style="background:${b.colour};"></span>${escHtml(b.name)} <b class="tnum">${top}</b>${sub ? ` <span class="muted tnum">${sub}</span>` : ''}</span>`;
+  }).join('')}</div>`;
 }
 
 function renderModelMix(windowed, cutoff, windowEnd) {
@@ -4541,36 +4682,69 @@ function renderModelMix(windowed, cutoff, windowEnd) {
   const m = modelMixSummary(windowed, data && data.modelMix);
   if (!m.rows.length) { card.style.display = 'none'; return; }
   card.style.display = '';
+  const metric = spendMetric();
   const split = modelAccountSplit(data.daily || [], data.accountSessions, cutoff, windowEnd, agent);
-  const buckets = split.buckets;
-  const top = m.rows.slice(0, 8);
-  const restRows = m.rows.slice(8);
-  const rest = restRows.reduce((a, r) => a + r.cost, 0);
-  const max = top[0].cost || 1;
-  // Scale each model's split to the figure shown, so rounding in ccusage's
-  // per-agent rows can never make the parts disagree with the total.
+  // Scale each model's split to the figures shown, so rounding in ccusage's
+  // per-agent rows can never make the parts disagree with the totals.
   const byBucketFor = r => {
     const raw = split.models[r.model] || {};
+    const rawTok = split.tokens[r.model] || {};
     const sum = Object.values(raw).reduce((a, b) => a + b, 0);
-    if (sum <= 0) return { Unassigned: r.cost };
-    const out = {};
-    Object.entries(raw).forEach(([b, c]) => { out[b] = c * r.cost / sum; });
-    return out;
+    const cost = {}, tok = {};
+    if (sum > 0) Object.entries(raw).forEach(([b, c]) => { cost[b] = c * r.cost / sum; });
+    else cost.Unassigned = r.cost;
+    ['input', 'output', 'cacheWrite', 'cacheRead'].forEach(k => {
+      const s = Object.values(rawTok).reduce((a, tv) => a + tv[k], 0);
+      Object.entries(rawTok).forEach(([b, tv]) => { (tok[b] = tok[b] || zeroTok())[k] = s > 0 ? tv[k] * r.tok[k] / s : 0; });
+      if (s <= 0 && r.tok[k] > 0) {
+        const into = Object.keys(cost)[0] || 'Unassigned';
+        (tok[into] = tok[into] || zeroTok())[k] += r.tok[k];
+      }
+    });
+    return { cost, tok };
   };
+  const splits = new Map(m.rows.map(r => [r.model, byBucketFor(r)]));
+  // Bucket totals from the scaled parts, so the legend and Total row add up.
+  const buckets = split.buckets.map(b => ({ ...b, total: 0, tok: zeroTok() }));
+  const bIdx = Object.fromEntries(buckets.map((b, i) => [b.name, i]));
+  m.rows.forEach(r => {
+    const s = splits.get(r.model);
+    Object.keys({ ...s.cost, ...s.tok }).forEach(name => {
+      if (bIdx[name] == null) { bIdx[name] = buckets.length; buckets.push({ name, total: 0, tok: zeroTok(), colour: '#a3a8b3' }); }
+      const b = buckets[bIdx[name]];
+      b.total += s.cost[name] || 0;
+      if (s.tok[name]) addTok(b.tok, s.tok[name]);
+    });
+  });
+  const shownBuckets = buckets.filter(b => b.total > 0.0049 || tokIO(b.tok) > 0);
+  const val = r => metric === 'tokens' ? tokIO(r.tok) : r.cost;
+  const rows = metric === 'tokens' ? [...m.rows].sort((a, b) => tokIO(b.tok) - tokIO(a.tok)) : m.rows;
+  const totalVal = metric === 'tokens' ? tokIO(m.totalTok) : m.total;
+  const shareOf = r => totalVal ? val(r) / totalVal : 0;
+  const top = rows.slice(0, 8);
+  const restRows = rows.slice(8);
+  const rest = restRows.reduce((a, r) => a + val(r), 0);
+  const restCost = restRows.reduce((a, r) => a + r.cost, 0);
+  const restTok = restRows.reduce((a, r) => addTok(a, r.tok), zeroTok());
+  const max = val(top[0]) || 1;
+  const fmtVal = v => metric === 'tokens' ? fmtTok(Math.round(v)) + ' tok' : fmt(v);
   const view = reportView();
   const rowHtml = r => {
-    const byB = byBucketFor(r);
-    const parts = buckets.filter(b => byB[b.name] > 0.0049).map(b => `${escHtml(b.name)} ${fmt(byB[b.name])}`).join(' · ');
+    const s = splits.get(r.model);
+    const byB = metric === 'tokens' ? Object.fromEntries(Object.entries(s.tok).map(([b, tv]) => [b, tokIO(tv)])) : s.cost;
+    const parts = shownBuckets.filter(b => (s.cost[b.name] || 0) > 0.0049 || tokIO(s.tok[b.name]) > 0)
+      .map(b => `${escHtml(b.name)} ${fmt(s.cost[b.name] || 0)} · ${fmtTok(Math.round(tokIO(s.tok[b.name])))} tok`).join(' &nbsp;|&nbsp; ');
     return `<div class="mix-row">
       <span class="mix-name" title="${escAttr(r.model)}">${escHtml(r.model)}${r.opus ? ' <span class="tier-badge">Opus</span>' : ''}</span>
-      ${stackedBarHtml(byB, buckets, r.cost, max)}
-      <span class="mix-cost tnum">${fmt(r.cost)}</span>
-      <span class="mix-share tnum">${Math.round(r.share * 100)}%</span>
-    </div>${parts && buckets.length > 1 ? `<div class="mix-parts muted">${parts}</div>` : ''}`;
+      ${stackedBarHtml(byB, shownBuckets, val(r), max, fmtVal)}
+      <span class="mix-cost tnum">${valueCellHtml(r.cost, r.tok, metric, false)}</span>
+      <span class="mix-share tnum">${Math.round(shareOf(r) * 100)}%</span>
+    </div>${parts && shownBuckets.length > 1 ? `<div class="mix-parts muted">${parts}</div>` : ''}`;
   };
-  const textTable = `<div class="table-scroll"><table class="mix-table"><thead><tr><th>Model</th>${buckets.map(b => `<th class="right"><span class="swatch" style="background:${b.colour};"></span> ${escHtml(b.name)}</th>`).join('')}<th class="right">Total</th><th class="right">Share</th></tr></thead><tbody>
-    ${m.rows.map(r => { const byB = byBucketFor(r); return `<tr><td>${escHtml(r.model)}</td>${buckets.map(b => `<td class="right tnum">${byB[b.name] > 0.0049 ? fmt(byB[b.name]) : '–'}</td>`).join('')}<td class="right tnum"><b>${fmt(r.cost)}</b></td><td class="right tnum">${Math.round(r.share * 100)}%</td></tr>`; }).join('')}
-    <tr class="total-row"><td><b>Total</b></td>${buckets.map(b => `<td class="right tnum"><b>${fmt(b.total)}</b></td>`).join('')}<td class="right tnum"><b>${fmt(m.total)}</b></td><td></td></tr>
+  const cell = (cost, tok, bold) => (cost > 0.0049 || tokIO(tok) > 0) ? valueCellHtml(cost || 0, tok || zeroTok(), metric, bold) : '–';
+  const textTable = `<div class="table-scroll"><table class="mix-table"><thead><tr><th>Model</th>${shownBuckets.map(b => `<th class="right"><span class="swatch" style="background:${b.colour};"></span> ${escHtml(b.name)}</th>`).join('')}<th class="right">Total</th><th class="right">Share</th></tr></thead><tbody>
+    ${rows.map(r => { const s = splits.get(r.model); return `<tr><td>${escHtml(r.model)}</td>${shownBuckets.map(b => `<td class="right tnum">${cell(s.cost[b.name], s.tok[b.name], false)}</td>`).join('')}<td class="right tnum">${cell(r.cost, r.tok, true)}</td><td class="right tnum">${Math.round(shareOf(r) * 100)}%</td></tr>`; }).join('')}
+    <tr class="total-row"><td><b>Total</b></td>${shownBuckets.map(b => `<td class="right tnum">${cell(b.total, b.tok, true)}</td>`).join('')}<td class="right tnum">${cell(m.total, m.totalTok, true)}</td><td></td></tr>
     </tbody></table></div>`;
   let est;
   if (!m.opusCost) {
@@ -4584,11 +4758,11 @@ function renderModelMix(windowed, cutoff, windowEnd) {
       <div class="muted" style="margin-top:0.3rem;">Priced by ccusage at LiteLLM rates (Sonnet's rates applied to the Opus tokens). An estimate only: a different model would not produce the same tokens or always do the same work.</div>`;
   }
   card.innerHTML = `
-    <div class="card-head"><h2>Model mix</h2><span class="muted">Usage value by model at API prices, ${escHtml(cutoff)} to ${escHtml(windowEnd)}, split by the account it ran under</span></div>
-    ${bucketLegendHtml(buckets)}
+    <div class="card-head"><h2>Model mix</h2><span class="muted">${metric === 'tokens' ? 'Tokens' : 'Usage value at API prices'} by model, ${escHtml(cutoff)} to ${escHtml(windowEnd)}, split by the account it ran under</span></div>
+    ${bucketLegendHtml(shownBuckets, metric)}
     ${view === 'graph' ? `${top.map(rowHtml).join('')}
-    ${rest > 0 ? `<div class="mix-row muted"><span class="mix-name">${restRows.length} more models</span><div class="stack-track" style="background:none;"></div><span class="mix-cost tnum">${fmt(rest)}</span><span class="mix-share tnum">${Math.round(100 * rest / (m.total || 1))}%</span></div>` : ''}` : textTable}
-    <div class="muted" style="font-size:0.78rem; margin-top:0.3rem;" title="Claude and Grok usage is split across accounts by each account's share of that model in ccusage's session data for this range. Unassigned is Claude usage from sessions with no account record.">Accounts use the names from Settings. Unassigned: Claude sessions with no account record.</div>
+    ${rest > 0 ? `<div class="mix-row muted"><span class="mix-name">${restRows.length} more models</span><div class="stack-track" style="background:none;"></div><span class="mix-cost tnum">${valueCellHtml(restCost, restTok, metric, false)}</span><span class="mix-share tnum">${Math.round(100 * rest / (totalVal || 1))}%</span></div>` : ''}` : textTable}
+    <div class="muted" style="font-size:0.78rem; margin-top:0.3rem;" title="Claude and Grok usage is split across accounts by each account's share of that model in ccusage's session data for this range. Unassigned is Claude usage from sessions with no account record.">Accounts use the names from Settings. Unassigned: Claude sessions with no account record. tok = input + output tokens, excluding cache, from ccusage; hover a figure for input, output, cache write and cache read.</div>
     <div class="mix-estimate">${est}</div>
   `;
 }
@@ -5252,25 +5426,31 @@ function update() {
     }
     const projAgg = {};
     sessionsInRange.forEach(s => {
-      const bucket = projAgg[s.project] || (projAgg[s.project] = { project: s.project, cost: 0, sessions: 0, tokens: 0, models: {}, accounts: {} });
+      const bucket = projAgg[s.project] || (projAgg[s.project] = { project: s.project, cost: 0, sessions: 0, tokens: 0, tok: zeroTok(), models: {}, accounts: {} });
       bucket.cost += s.totalCost;
       bucket.sessions += s.sessions || 1;
       const acctName = accountBucketName(s);
-      const acct = bucket.accounts[acctName] || (bucket.accounts[acctName] = { cost: 0, tokens: 0 });
+      const acct = bucket.accounts[acctName] || (bucket.accounts[acctName] = { cost: 0, tokens: 0, tok: zeroTok() });
       acct.cost += s.totalCost;
       (s.modelBreakdowns || []).forEach(mb => {
-        const t = (mb.inputTokens || 0) + (mb.outputTokens || 0);
+        const tv = tokVec(mb);
+        const t = tokIO(tv);
         bucket.tokens += t;
         acct.tokens += t;
-        const m = bucket.models[mb.modelName] || (bucket.models[mb.modelName] = { cost: 0, tokens: 0 });
+        addTok(bucket.tok, tv);
+        addTok(acct.tok, tv);
+        const m = bucket.models[mb.modelName] || (bucket.models[mb.modelName] = { cost: 0, tokens: 0, tok: zeroTok() });
         m.cost += mb.cost || 0;
         m.tokens += t;
+        addTok(m.tok, tv);
       });
     });
     // One colour per account across every project row.
     const acctTotals = {};
     Object.values(projAgg).forEach(p => Object.entries(p.accounts).forEach(([n, a]) => { acctTotals[n] = (acctTotals[n] || 0) + a.cost; }));
-    const projBuckets = finishAccountSplit({ all: acctTotals }).buckets;
+    const acctTok = {};
+    Object.values(projAgg).forEach(p => Object.entries(p.accounts).forEach(([n, a]) => { addTok(acctTok[n] = acctTok[n] || zeroTok(), a.tok); }));
+    const projBuckets = finishAccountSplit({ all: acctTotals }, { all: acctTok }).buckets;
     const projectRows = Object.values(projAgg).sort((a, b) => {
       const k = projectSort.k;
       if (a[k] === b[k]) return 0;
@@ -5282,24 +5462,27 @@ function update() {
       : 'No Claude or Grok sessions in this range.';
 
     const view = reportView();
-    document.getElementById('projLegend').innerHTML = projectRows.length ? bucketLegendHtml(projBuckets) : '';
-    const maxCost = Math.max(0, ...projectRows.map(p => p.cost)) || 1;
+    const metric = spendMetric();
+    const pv = x => metric === 'tokens' ? x.tokens : x.cost;
+    const pfmt = v => metric === 'tokens' ? fmtTok(Math.round(v)) + ' tok' : fmt(v);
+    document.getElementById('projLegend').innerHTML = projectRows.length ? bucketLegendHtml(projBuckets, metric) : '';
+    const maxCost = Math.max(0, ...projectRows.map(pv)) || 1;
     document.querySelector('#projectsTable tbody').innerHTML = projectRows.map(p => {
       const path = shortenPath(p.project);
       const open = expandedProjects.has(p.project);
       const accounts = projBuckets.filter(b => p.accounts[b.name]).map(b => ({ name: b.name, colour: b.colour, ...p.accounts[b.name] }));
-      const models = Object.entries(p.models).map(([name, m]) => ({ name, ...m })).sort((a, b) => b.cost - a.cost);
-      const byAcct = Object.fromEntries(accounts.map(a => [a.name, a.cost]));
-      const bar = view === 'graph' ? stackedBarHtml(byAcct, projBuckets, p.cost, maxCost) : '';
-      const listTable = (title, rows, swatch) => `<div class="proj-detail-col"><div class="proj-detail-title">${title}</div><table class="mini-table"><thead><tr><th>${title === 'Models' ? 'Model' : 'Account'}</th><th class="right">Tokens</th><th class="right">Usage value</th></tr></thead><tbody>${rows.map(r => `<tr><td>${swatch && r.colour ? `<span class="swatch" style="background:${r.colour};"></span> ` : ''}${escHtml(r.name)}</td><td class="right tnum">${fmtTok(r.tokens)}</td><td class="right tnum">${fmt(r.cost)}</td></tr>`).join('')}</tbody></table></div>`;
-      const listBars = (title, rows) => `<div class="proj-detail-col"><div class="proj-detail-title">${title}</div>${reportBarsHtml(rows.map(r => ({ label: r.name, labelHtml: (r.colour ? `<span class="swatch" style="background:${r.colour};"></span> ` : '') + escHtml(r.name), value: r.cost, display: fmt(r.cost), extra: fmtTok(r.tokens) + ' tokens' })), 'None')}</div>`;
+      const models = Object.entries(p.models).map(([name, m]) => ({ name, ...m })).sort((a, b) => pv(b) - pv(a));
+      const byAcct = Object.fromEntries(accounts.map(a => [a.name, pv(a)]));
+      const bar = view === 'graph' ? stackedBarHtml(byAcct, projBuckets, pv(p), maxCost, pfmt) : '';
+      const listTable = (title, rows, swatch) => `<div class="proj-detail-col"><div class="proj-detail-title">${title}</div><table class="mini-table"><thead><tr><th>${title === 'Models' ? 'Model' : 'Account'}</th><th class="right">Tokens</th><th class="right">Usage value</th></tr></thead><tbody>${rows.map(r => `<tr><td>${swatch && r.colour ? `<span class="swatch" style="background:${r.colour};"></span> ` : ''}${escHtml(r.name)}</td><td class="right tnum" title="${escAttr(tokTitle(r.tok))}">${fmtTok(r.tokens)}</td><td class="right tnum">${fmt(r.cost)}</td></tr>`).join('')}</tbody></table></div>`;
+      const listBars = (title, rows) => `<div class="proj-detail-col"><div class="proj-detail-title">${title}</div>${reportBarsHtml(rows.map(r => ({ label: r.name, labelHtml: (r.colour ? `<span class="swatch" style="background:${r.colour};"></span> ` : '') + escHtml(r.name), value: pv(r), display: metric === 'tokens' ? fmtTok(r.tokens) + ' tok' : fmt(r.cost), extra: metric === 'tokens' ? fmt(r.cost) : fmtTok(r.tokens) + ' tok', title: r.name + ' · ' + tokTitle(r.tok) })), 'None')}</div>`;
       const detail = view === 'graph'
         ? listBars('Accounts', accounts) + listBars('Models', models)
         : listTable('Accounts', accounts, true) + listTable('Models', models, false);
       const summary = `${accounts.map(a => escHtml(a.name)).join(', ')} · ${models.length} model${models.length === 1 ? '' : 's'}`;
       return `<tr class="proj-row${open ? ' open' : ''}" data-project="${escAttr(p.project)}" tabindex="0" role="button" aria-expanded="${open}">
           <td class="proj-path" title="${escAttr(path.full)}" aria-label="${escAttr(path.full)}"><span class="chev-toggle">${open ? '&#9662;' : '&#9656;'}</span> ${escHtml(path.short)}<div class="muted proj-summary">${summary}</div>${bar}</td>
-          <td class="right tnum">${p.sessions}</td><td class="right tnum">${fmtTok(p.tokens)}</td><td class="right tnum">${fmt(p.cost)}</td></tr>
+          <td class="right tnum">${p.sessions}</td><td class="right tnum" title="${escAttr(tokTitle(p.tok))}">${fmtTok(p.tokens)}</td><td class="right tnum">${fmt(p.cost)}</td></tr>
         <tr class="proj-detail" ${open ? '' : 'hidden'}><td colspan="4"><div class="proj-detail-grid">${detail}</div></td></tr>`;
     }).join('') || `<tr><td colspan="4" class="muted">${emptyCopy}</td></tr>`;
     document.querySelectorAll('#projectsTable tr.proj-row').forEach(tr => {

@@ -711,6 +711,36 @@ def start_grokbot_sampler():
     return _sampler_thread
 
 
+DIGEST_MAX_AGE = 300  # seconds: the weekly report covers complete weeks, so a recent payload is fine
+
+
+def get_usage_recent(max_age=DIGEST_MAX_AGE):
+    """The cached payload if it is at most max_age old, without waiting for a
+    ccusage refresh (about 5 s). Falls back to get_usage() when there is none."""
+    with _lock:
+        cached = _cache["data"]
+        if cached is not None and time.time() - _cache["ts"] <= max_age:
+            return dict(cached, stale=False)
+    return get_usage()
+
+
+_digest_cache = {}  # (week, usage cache ts) -> digest; cleared when the payload changes
+
+
+def get_digest(week):
+    usage = get_usage_recent()
+    if usage.get("error"):
+        return usage
+    key = (week, _cache["ts"])
+    hit = _digest_cache.get(key)
+    if hit is not None:
+        return hit
+    result = digest.build_digest(usage, week=week)
+    _digest_cache.clear()
+    _digest_cache[key] = result
+    return result
+
+
 def get_usage(force=False):
 
     """Return the usage payload.
@@ -1203,16 +1233,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return {"ok": ok, "status": st, "error": None if ok else "The setting did not stick. Check ~/Library/LaunchAgents."}
 
     def _handle_digest_get(self):
-        usage = get_usage()
-        if usage.get("error"):
-            self._send_json({"error": usage["error"]}, code=503)
-            return
         try:
             query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
             raw_week = (query.get("week") or [None])[0]
             today = datetime.date.today()
             week = digest.parse_week(raw_week, digest.last_complete_week(today)[0])
-            self._send_json(digest.build_digest(usage, week=week))
+            result = get_digest(week)
+            if result.get("error") and "weekStart" not in result:
+                self._send_json({"error": result["error"]}, code=503)
+                return
+            self._send_json(result)
         except ValueError as e:
             self._send_json({"error": str(e)}, code=400)
         except Exception as e:
@@ -1432,6 +1462,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": str(e)}, code=400)
 
 
+FIRST_RUN_FILE = "first-run.json"
+FIRST_RUN_OPT_OUT = "AGENTIC_SPEND_NO_FIRST_RUN_OPEN"
+
+
+def first_run_open(url, opener=None, env=None):
+    """Open the dashboard in the default browser once, the first time the
+    server runs after install. Recorded in ~/.agentic-spend/first-run.json so
+    it never happens again; set AGENTIC_SPEND_NO_FIRST_RUN_OPEN=1 to skip it.
+    Returns True when it opened (or asked the opener to)."""
+    env = os.environ if env is None else env
+    marker = data_dir.path(FIRST_RUN_FILE)
+    if os.path.exists(marker):
+        return False
+    try:
+        data_dir.atomic_write_json(marker, {"openedAt": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+                                            "skipped": bool(env.get(FIRST_RUN_OPT_OUT))})
+    except OSError:
+        return False  # can't record it, so don't risk opening on every start
+    if env.get(FIRST_RUN_OPT_OUT):
+        return False
+    if opener is None:
+        def opener(u):
+            subprocess.Popen(["open", u], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        opener(url)
+    except Exception:
+        return False
+    return True
+
+
 if __name__ == "__main__":
     # Live Claude usage is on by default: the first start wires the status line
     # hook (recorded, so turning it off in Settings sticks) and tidies any
@@ -1443,4 +1503,6 @@ if __name__ == "__main__":
     start_grokbot_sampler()
     with http.server.ThreadingHTTPServer(("127.0.0.1", PORT), Handler) as httpd:
         print(f"Serving dashboard at http://127.0.0.1:{PORT}/  (Ctrl-C to stop)")
+        if first_run_open(f"http://127.0.0.1:{PORT}/"):
+            print("First run: opened the dashboard in your browser (once only).")
         httpd.serve_forever()

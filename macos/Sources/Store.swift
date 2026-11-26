@@ -10,6 +10,10 @@ import UserNotifications
 final class Store: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     static let base = URL(string: "http://127.0.0.1:8787/")!
     static let installURL = URL(string: "https://github.com/tjorourke/agentic-spend#install")!
+    static let placeholderTitle = "AS"
+    static let welcomeKey = "welcomeShown"
+    /// For the app delegate's reopen handler.
+    static weak var shared: Store?
 
     @Published var summary: Summary?
     @Published var status: String = "Loading…"
@@ -20,7 +24,20 @@ final class Store: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
     @Published var display: MenuBarDisplay = MenuBarDisplay.load() {
         didSet { display.save() }
     }
+    /// Bound to MenuBarExtra(isInserted:). SwiftUI sets it to false when macOS
+    /// hides the item; the app then stays running and explains what to do.
+    @Published var menuBarInserted = true {
+        didSet {
+            // SwiftUI flips this inside a view update; react on the next turn of
+            // the run loop so nothing is published from within that update.
+            if oldValue && !menuBarInserted && !reinserting {
+                DispatchQueue.main.async { [weak self] in self?.menuBarHidden() }
+            }
+        }
+    }
     let launcherPath: String?
+    private var hiddenNoticeSent = false
+    private var reinserting = false
 
     private var timer: Timer?
     private var startAttempted = false
@@ -38,7 +55,17 @@ final class Store: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
                 if granted { await self.heartbeat() }
             }
         }
+        Store.shared = self
         Task { await refresh() }
+        if !UserDefaults.standard.bool(forKey: Store.welcomeKey) {
+            UserDefaults.standard.set(true, forKey: Store.welcomeKey)
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                self.openDashboard()
+                // If macOS is already hiding the icon, the help matters more.
+                InfoWindow.show(self.menuBarInserted ? .welcome : .hidden, store: self)
+            }
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.tick() }
         }
@@ -49,7 +76,7 @@ final class Store: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
 
     var menuTitle: String {
         guard let top = summary?.plans.first, let pct = top.pct else {
-            return serverDown ? "AS !" : "AS"
+            return serverDown ? "\(Store.placeholderTitle) !" : Store.placeholderTitle
         }
         return "\(Fmt.shortName(top)) \(Int(pct.rounded()))%"
     }
@@ -134,6 +161,41 @@ final class Store: NSObject, ObservableObject, UNUserNotificationCenterDelegate 
         content.userInfo = ["url": note.url ?? Store.base.absoluteString]
         let req = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req)
+    }
+
+    // MARK: menu bar visibility
+
+    private func menuBarHidden() {
+        NSLog("Agentic Spend: macOS hid the menu bar item; staying open and showing help")
+        InfoWindow.show(.hidden, store: self)
+        guard !hiddenNoticeSent, notificationsAllowed else { return }
+        hiddenNoticeSent = true
+        let content = UNMutableNotificationContent()
+        content.title = OnboardingText.hiddenTitle
+        content.body = "Open System Settings > Privacy & Security (Open Anyway), then Menu Bar > Allow in the Menu Bar."
+        content.userInfo = ["url": Store.base.absoluteString]
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: "menubar-hidden", content: content, trigger: nil))
+    }
+
+    /// Ask macOS to show the item again; if it is still blocked, SwiftUI
+    /// flips the binding back to false and the help window reappears.
+    func showMenuBarItem() {
+        InfoWindow.close()
+        reinserting = true
+        menuBarInserted = false
+        DispatchQueue.main.async {
+            self.menuBarInserted = true
+            self.reinserting = false
+        }
+    }
+
+    func reopened() {
+        if menuBarInserted {
+            openDashboard()
+        } else {
+            showMenuBarItem()
+        }
     }
 
     // MARK: actions

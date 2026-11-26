@@ -8,6 +8,26 @@ Desktop-only by design: it binds to `127.0.0.1` and reads logs that only exist o
 you're running these CLI tools from, so it's meant to be opened on that same laptop/desktop, not
 browsed from a phone — there's no mobile layout, and none is planned.
 
+## Quick start
+
+```bash
+brew tap tjorourke/agentic-spend https://github.com/tjorourke/agentic-spend
+brew install agentic-spend                 # server + dashboard
+agentic-spend                              # starts it and opens http://127.0.0.1:8787
+brew install --cask agentic-spend-app      # optional menu bar app
+open "/Applications/Agentic Spend.app"
+```
+
+- **Dashboard:** http://127.0.0.1:8787. The server opens it once in your browser the first
+  time it runs (set `AGENTIC_SPEND_NO_FIRST_RUN_OPEN=1` to skip that). `agentic-spend login on`
+  starts the server at login.
+- **Menu bar app:** on its first launch it opens the dashboard and a short welcome. Its menu has
+  **Open dashboard**.
+- **macOS blocks the menu bar app at first** (and after each upgrade) because it is signed ad
+  hoc, not notarised: **System Settings > Privacy & Security > Open Anyway**. If the icon still
+  doesn't show, **System Settings > Menu Bar > Allow in the Menu Bar > Agentic Spend**. The app
+  stays open and shows these steps if macOS hides it.
+
 ## Screenshots
 
 (Figures below are sample data, with example names and paths, not a live account.)
@@ -216,6 +236,36 @@ brew update && brew upgrade agentic-spend
   (excluding tax). On 26 Nov 2026, [claude.com/pricing](https://claude.com/pricing) still
   showed US dollars from a UK Mac, and neither ChatGPT's nor OpenCode's pricing pages could
   be read as a published UK pound list, so no GBP rows are shipped for those.
+
+## Version 1.8.2
+
+- **Menu bar icon:** macOS (Control Center) can hide a menu bar app's icon: until the app is
+  approved under Privacy & Security > Open Anyway, or when it is switched off under Menu Bar >
+  Allow in the Menu Bar. The app used SwiftUI's `MenuBarExtra` without `isInserted`, which quits
+  the whole app as soon as the icon is hidden, so it vanished without a word. It now stays open,
+  shows where to switch it on, and the build fails if the label would render empty.
+- **First run:** Formula and Cask caveats print the dashboard URL and the Open Anyway path; the
+  server opens the dashboard once on its first run; the menu bar app opens it with a welcome on
+  its first launch.
+- **$ | Tokens:** one switch in the top bar, next to Graph | Text, for the Overview, Model mix,
+  Projects and Weekly report. Remembered in the browser.
+- **Tokens in the Model mix:** every cell shows usage value and tokens (input + output, as on the
+  Tokens tile); hover for input, output, cache write and cache read.
+- **Faster tabs:** after the Overview loads, the Weekly report and Settings data are fetched in
+  the background, and the server answers the Weekly report from a recent cache instead of
+  re-running ccusage (about 5 s).
+
+### Notarisation (not done yet)
+
+The Open Anyway step goes away only if the app is signed with an Apple **Developer ID
+Application** certificate (Apple Developer Program, USD 99 a year) and notarised. That needs:
+the certificate exported as a `.p12` and stored, with its password, as GitHub Actions secrets;
+an App Store Connect API key (issuer ID, key ID, `.p8`) as secrets for `xcrun notarytool`; and a
+release workflow on a macOS runner that imports the certificate into a temporary keychain,
+signs with `codesign --options runtime --timestamp`, submits the zip with
+`xcrun notarytool submit --wait`, staples the ticket with `xcrun stapler staple`, then uploads
+the zip and updates the Cask sha256. Until then the app stays ad-hoc signed; nothing here
+bypasses Gatekeeper.
 
 ## Version 1.8.1
 

@@ -76,6 +76,11 @@ class AgenticSpend < Formula
             echo "agentic-spend: server already running (pid $(cat "$PIDFILE")) at $URL"
           else
             echo "agentic-spend: starting server at $URL"
+            # This command opens the browser itself below, so the server's
+            # open-once-on-first-run would give a second tab.
+            if [[ "$cmd" != "--no-open" && -z "${AGENTIC_SPEND_NO_OPEN:-}" ]]; then
+              export AGENTIC_SPEND_NO_FIRST_RUN_OPEN=1
+            fi
             nohup "$PY" "$LIBEXEC/server.py" >"$DATA_DIR/.server.log" 2>&1 &
             echo $! > "$PIDFILE"
             sleep 0.6
@@ -94,6 +99,25 @@ class AgenticSpend < Formula
       esac
     SH
     chmod 0755, bin/"agentic-spend"
+  end
+
+  def caveats
+    <<~EOS
+      Dashboard: http://127.0.0.1:8787
+        agentic-spend            start the server and open the dashboard
+        agentic-spend login on   start it at login (the first run opens the dashboard once;
+                                 set AGENTIC_SPEND_NO_FIRST_RUN_OPEN=1 to skip that)
+
+      Menu bar app (optional):
+        brew install --cask tjorourke/agentic-spend/agentic-spend-app
+        open "/Applications/Agentic Spend.app"
+
+      The menu bar app is signed ad hoc and not notarised by Apple. macOS blocks its
+      first launch, and again after each upgrade, until you approve it:
+        System Settings > Privacy & Security > Open Anyway
+      If its icon still does not appear: System Settings > Menu Bar > Allow in the
+      Menu Bar > Agentic Spend (switch it on, or off and on again).
+    EOS
   end
 
   test do

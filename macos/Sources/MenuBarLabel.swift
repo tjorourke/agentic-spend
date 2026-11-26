@@ -32,6 +32,10 @@ enum MenuBarDisplay: String, CaseIterable, Identifiable {
 enum MenuBarIcon {
     /// A template SF Symbol (macOS tints it to match the menu bar, light or
     /// dark). Falls back to an older symbol name on early macOS 13 builds.
+    /// True when no symbol loaded and the empty fallback is in use; the build
+    /// self-test fails on it so an invisible icon never ships.
+    static private(set) var isFallback = false
+
     static let image: NSImage = {
         let names = ["gauge.with.dots.needle.50percent", "speedometer"]
         let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
@@ -42,6 +46,7 @@ enum MenuBarIcon {
                 return img
             }
         }
+        isFallback = true
         let empty = NSImage(size: NSSize(width: 14, height: 14))
         empty.isTemplate = true
         return empty

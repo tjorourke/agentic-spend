@@ -279,7 +279,7 @@ class DashboardJsTests(unittest.TestCase):
         self.assertEqual(out["parsed"], [80, 95])
 
     def test_model_mix_by_account_adds_up(self):
-        out = run_js(["accountBucketName", "modelAccountSplit", "finishAccountSplit"], """
+        out = run_js(["tokVec", "zeroTok", "addTok", "tokAll", "accountBucketName", "modelAccountSplit", "finishAccountSplit"], """
           const days = [{period: '2026-11-24', agents: [
             {agent: 'claude', modelBreakdowns: [{modelName: 'sonnet', cost: 100}]},
             {agent: 'opencode', modelBreakdowns: [{modelName: 'gemini', cost: 12.17}]},
