@@ -22,6 +22,7 @@ import urllib.parse
 
 import account_usage
 import data_dir
+import grok_usage
 import provider_usage
 import statusline_setup
 import token_sources
@@ -324,6 +325,39 @@ def build_sources(account_list, max_usage_list, codex_live, grok_on, grok_billin
     return sources
 
 
+def _with_grok_sources(sources, grok_report, plans):
+    sources = list(sources)
+    if grok_report.get("found"):
+        known = all(day.get("costKnown") for day in grok_report.get("days") or [])
+        sources.append({
+            "id": "grok-cli",
+            "tool": "grok-cli",
+            "provider": "xai",
+            "label": "Grok CLI",
+            "plan": None,
+            "kind": "local-live",
+            "asOf": datetime.datetime.now().isoformat(timespec="seconds"),
+            "note": grok_usage.COST_NOTE,
+            "costKnown": known,
+        })
+    bot = (plans or {}).get("grok-bot") or {}
+    sources.append({
+        "id": "grok-bot",
+        "tool": "grok-bot",
+        "provider": "xai",
+        "label": "Grok Bot",
+        "plan": bot.get("plan"),
+        "kind": "manual" if bot else "none",
+        "asOf": bot.get("asOf"),
+        "note": bot.get("note") or "No token or cost feed. Usage stays in the Grok Bot app.",
+        "coveredByPlan": False,
+        "weeklyLimitPercent": bot.get("weeklyLimitPercent"),
+        "resetsAt": bot.get("resetsAt"),
+        "grokBot": True,
+    })
+    return sources
+
+
 def refresh_usage(force=False):
     try:
         result = subprocess.run(
@@ -333,14 +367,27 @@ def refresh_usage(force=False):
         )
         raw = json.loads(result.stdout)
 
+        grok_report = grok_usage.collect(current_email=account_usage.detect_grok_email())
+        daily_rows = raw.get("daily") or []
+        session_rows = raw.get("session") or []
+        if grok_report["found"]:
+            daily_rows = grok_usage.merge_daily(daily_rows, grok_report["days"])
+            session_rows = [row for row in session_rows if row.get("agent") != "grok"]
+
         labels = account_usage.seed_labels_from_snapshots(
             account_usage.seed_labels_from_current_account(account_usage.load_labels())
         )
         account_usage.save_labels(labels)
         session_account_map, session_project_map = account_usage.build_session_account_map()
         account_list, no_account_data, daily_by_bucket, account_sessions = account_usage.compute_accounts(
-            raw.get("session", []), session_account_map, labels, session_project_map,
+            session_rows, session_account_map, labels, session_project_map,
         )
+        if grok_report["found"]:
+            for row in grok_report["sessions"]:
+                custom = labels.get(row["accountUuid"]) or {}
+                if custom.get("label"):
+                    row["label"] = custom["label"]
+            account_sessions = list(account_sessions) + grok_report["sessions"]
 
         max_usage = account_usage.get_max_usage_snapshots()
         plans = account_usage.load_plans()
@@ -355,14 +402,14 @@ def refresh_usage(force=False):
 
         return {
             "generatedAt": datetime.datetime.now().isoformat(timespec="seconds"),
-            "daily": raw.get("daily", []),
+            "daily": daily_rows,
             "totals": raw.get("totals", {}),
             "accounts": account_list,
             "noAccountData": no_account_data,
             "dailyByBucket": daily_by_bucket,
             "accountSessions": account_sessions,
             "maxUsage": max_usage,
-            "hourly": build_hourly(raw.get("session", []), claude_blocks),
+            "hourly": build_hourly(session_rows, claude_blocks),
             "plans": plans,
             "providerStatus": provider_usage.get_provider_statuses(),
             "agentProvider": agent_provider,
@@ -375,10 +422,10 @@ def refresh_usage(force=False):
                 "claude": account_usage.get_usage_history(),
                 "codex": provider_usage.get_codex_rate_limit_history(),
             },
-            "sources": build_sources(
+            "sources": _with_grok_sources(build_sources(
                 account_list, max_usage, codex_live, unofficial_toggles.get("grok"),
                 grok_billing, plans, no_account_data, agent_provider,
-            ),
+            ), grok_report, plans),
         }
     except FileNotFoundError as e:
         if getattr(e, "filename", None) == "npx":
@@ -678,6 +725,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "note": body.get("note") or None,
                 "asOf": body.get("asOf") or datetime.date.today().isoformat(),
             }
+            if "weeklyLimitPercent" in body and body.get("weeklyLimitPercent") not in (None, ""):
+                try:
+                    pct = float(body.get("weeklyLimitPercent"))
+                except (TypeError, ValueError):
+                    raise ValueError("weeklyLimitPercent must be a number")
+                if pct < 0 or pct > 100:
+                    raise ValueError("weeklyLimitPercent must be between 0 and 100")
+                entry["weeklyLimitPercent"] = pct
+            if "resetsAt" in body:
+                reset = body.get("resetsAt")
+                entry["resetsAt"] = reset.strip() if isinstance(reset, str) and reset.strip() else None
             plans = account_usage.save_plan(agent, entry)
             with _lock:
                 _cache["ts"] = 0.0  # force next GET /api/usage to pick up the new plan

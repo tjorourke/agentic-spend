@@ -3,7 +3,15 @@
   "grok": {
     "plan": "example plan name, e.g. Super",
     "coveredByPlan": true,
-    "note": "Why you believe this is covered — e.g. 'X tokens included this month, $0 additional usage on the tool's own dashboard'.",
+    "note": "Why you believe this is covered. For example, the tool's own usage page showed no extra charge.",
     "asOf": "YYYY-MM-DD"
+  },
+  "grok-bot": {
+    "plan": "example plan name",
+    "weeklyLimitPercent": 0,
+    "resetsAt": "Monday 00:00",
+    "note": "Typed from the Grok Bot app. There is no local token or cost feed for the bot.",
+    "asOf": "YYYY-MM-DD",
+    "coveredByPlan": false
   }
 }
