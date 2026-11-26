@@ -28,5 +28,8 @@ cask "agentic-spend-app" do
          Open Anyway next to "Agentic Spend was blocked".
       3. Click Open Anyway again and enter your password or use Touch ID.
     After that it opens normally.
+
+    It reads usage through the agentic-spend formula, which bundles the
+    ccusage binary (MIT; notice in THIRD_PARTY_NOTICES.md in the formula's libexec).
   EOS
 end

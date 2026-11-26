@@ -31,12 +31,13 @@ browsed from a phone — there's no mobile layout, and none is planned.
 ## Prerequisites
 
 - **macOS** (the Homebrew formula and the `agentic-spend` launcher script are macOS-only).
-- **Node.js**, for `npx` — Agentic Spend shells out to [`ccusage`](https://ccusage.com) via
-  `npx` to read your local tool-usage logs. Installing via Homebrew pulls Node in automatically
-  (the formula declares `depends_on "node"`); running from a git clone (`python3 server.py`)
-  needs it on your PATH already: `brew install node`, or get it from
-  [nodejs.org](https://nodejs.org). If it's missing, the dashboard shows exactly this with a
-  Retry button rather than a blank page.
+- **No Node.js needed.** Agentic Spend reads your usage with [`ccusage`](https://ccusage.com),
+  and the Homebrew install bundles ccusage's native macOS binary (version 20.1.2, MIT, see
+  `THIRD_PARTY_NOTICES.md`) in `libexec/vendor/ccusage`. From a git clone (`python3 server.py`)
+  it looks for a ccusage in this order: the `AGENTIC_SPEND_CCUSAGE` environment variable (a path),
+  the bundled binary, `ccusage` on your `PATH`, and only as a last resort `npx ccusage@20.1.2`
+  (which needs Node.js and the network; the server prints a message when it falls back to that).
+  If none is available the dashboard says so, with a Retry button, rather than a blank page.
 
 ## Install
 
@@ -93,7 +94,8 @@ agentic-spend login on # start at login (also: off, status)
 ```
 
 Binds to `127.0.0.1:8787` only — nothing here leaves the machine except the optional OpenAI
-Costs API call (see below) and `npx` fetching `ccusage` itself on first run. For local
+Costs API call (see below), and the pricing refresh the bundled ccusage does itself (it fetches
+model prices from LiteLLM and models.dev and falls back to its built-in prices if that fails). For local
 development instead of the brew install: `python3 server.py` from this repo, then open
 `http://127.0.0.1:8787/`.
 
