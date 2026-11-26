@@ -112,11 +112,14 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 0.4rem;
     padding: 0.6rem 0.4rem 0;
     border-top: 1px solid var(--border);
     font-size: 0.72rem;
     color: var(--muted);
   }
+  .sidebar-actions { display: flex; gap: 0.35rem; flex-shrink: 0; }
+  #updatedAt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   #refreshBtn, #themeBtn {
     border: 1px solid var(--border);
     background: var(--card);
@@ -251,7 +254,9 @@
   .kpi { flex: 1; min-width: 150px; }
   .kpi .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
   .kpi .value { font-size: 1.55rem; font-weight: 700; margin-top: 0.3rem; }
-  .kpi .sub { font-size: 0.78rem; color: var(--muted); margin-top: 0.15rem; }
+  .kpi .sub { font-size: 0.78rem; color: var(--muted); margin-top: 0.15rem; line-height: 1.3; }
+  #kpiPlan { min-width: 190px; }
+  #planUsageSub .clip { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 11.5rem; }
 
   .card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.8rem; }
   .card-head h2 { font-size: 0.95rem; margin: 0; }
@@ -311,8 +316,12 @@
   .right { text-align: right; }
   .tnum { font-variant-numeric: tabular-nums; font-family: var(--mono); }
   .model-name { font-family: var(--mono); color: var(--accent-soft-text); }
-  .model-name-cell { cursor: pointer; }
-  .model-name-cell:hover { text-decoration: underline; }
+  button.model-name-cell {
+    background: none; border: 0; padding: 0; font: inherit; color: inherit;
+    cursor: pointer; text-align: left;
+  }
+  button.model-name-cell:hover { text-decoration: underline; }
+  button.model-name-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   tr.selected-model { background: var(--accent-soft); }
 
   .pill {
@@ -423,6 +432,8 @@
     flex: 1; display: flex; align-items: center; gap: 0.4rem;
     color: var(--muted); font-size: 0.75rem; overflow: hidden; white-space: nowrap;
   }
+  .src-row:has(.label-form) { flex-wrap: wrap; }
+  .src-row .label-form { flex-basis: 100%; margin-top: 0.35rem; }
   .src-minibar { display: inline-block; height: 6px; width: 46px; border-radius: 3px; background: var(--border); overflow: hidden; flex-shrink: 0; }
   .src-minibar > span { display: block; height: 100%; background: var(--accent); }
   .src-amount { flex-shrink: 0; font-weight: 700; min-width: 70px; text-align: right; }
@@ -431,8 +442,10 @@
   .day-heatmap { margin-bottom: 1rem; }
   .day-heatmap .dh-month { display: inline-block; vertical-align: top; margin: 0 0.7rem 0.7rem 0; }
   .day-heatmap .dh-month-label { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.25rem; }
-  .day-heatmap .dh-grid { display: grid; grid-template-columns: repeat(7, 13px); grid-auto-flow: column; gap: 3px; }
-  .day-heatmap .dh-cell { width: 13px; height: 13px; border-radius: 3px; background: var(--border); cursor: default; }
+  .day-heatmap .dh-body { display: flex; gap: 4px; }
+  .day-heatmap .dh-weekdays { display: grid; grid-template-rows: repeat(7, 16px); gap: 3px; font-size: 0.62rem; color: var(--muted); line-height: 16px; }
+  .day-heatmap .dh-grid { display: grid; grid-template-columns: repeat(7, 16px); grid-auto-flow: column; gap: 3px; }
+  .day-heatmap .dh-cell { width: 16px; height: 16px; border-radius: 3px; background: var(--border); cursor: default; }
   .day-heatmap .dh-cell.has-data, .day-heatmap .dh-cell[data-period] { cursor: pointer; }
   .day-heatmap .dh-cell.has-data:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
   .day-heatmap .dh-cell.selected { outline: 2px solid var(--text); outline-offset: 1px; }
@@ -485,7 +498,10 @@
   </nav>
   <div class="sidebar-footer">
     <span id="updatedAt">loading…</span>
-    <button id="refreshBtn" title="Refresh">&#8635;</button>
+    <span class="sidebar-actions">
+      <button id="themeBtn" type="button" title="Switch to dark">&#9728;</button>
+      <button id="refreshBtn" type="button" title="Refresh">&#8635;</button>
+    </span>
   </div>
 </aside>
 
@@ -699,9 +715,9 @@ let chartMetric = 'cost';
 let modelSort = { k: 'cost', dir: -1 };
 let dailySort = { k: 'period', dir: -1 };
 let modelFilter = '';
-let dayFilter = '';
 let selectedModel = null;
 let modelDetailSort = { k: 'cost', dir: -1 };
+let providerKeyMessage = '';
 
 const fmt = n => '$' + (n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtTok = n => {
@@ -759,7 +775,11 @@ const fmtResetAt = iso => {
 // " (<plan> plan)" reads fine for a short tier name ("Pro"), but a saved
 // plan value can be a full sentence (opencode's dropdown hint already ends
 // in the word "plan") — blindly appending " plan)" then doubles it.
-const planSuffix = plan => !plan ? '' : / plan$/i.test(plan.trim()) ? ` (${plan})` : ` (${plan} plan)`;
+const planSuffix = plan => {
+  if (!plan) return '';
+  const safe = escHtml(plan);
+  return / plan$/i.test(String(plan).trim()) ? ` (${safe})` : ` (${safe} plan)`;
+};
 
 function readUrlState() {
   const p = new URLSearchParams(location.search);
@@ -829,6 +849,62 @@ async function load(force) {
   }
 }
 
+function paintPlanLimit() {
+  const val = document.getElementById('planUsageVal');
+  const sub = document.getElementById('planUsageSub');
+  sub.textContent = '';
+  const clip = text => {
+    const line = document.createElement('div');
+    line.className = 'clip';
+    line.textContent = text;
+    line.title = text;
+    return line;
+  };
+  const claudeFilter = !agent || agent === 'all' || agent === 'claude' || String(agent).startsWith('account:');
+  if (!claudeFilter && agent !== 'codex') {
+    val.textContent = 'n/a';
+    sub.appendChild(clip('n/a for this filter'));
+    return;
+  }
+  if (agent === 'codex') {
+    const cx = data.codexLive;
+    const primary = cx && cx.primary;
+    if (primary && primary.percent != null) {
+      val.textContent = `${primary.percent}%`;
+      const mins = primary.windowMins;
+      const windowLabel = mins == null ? 'window' : (mins >= 10000 ? `${Math.round(mins / 1440)} day window` : mins >= 1000 ? `${Math.round(mins / 60)} hour window` : `${mins} min window`);
+      sub.appendChild(clip('Codex · ' + windowLabel));
+      const when = cx.fetchedAt ? new Date(cx.fetchedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '';
+      sub.appendChild(clip(when ? `live, as of ${when}` : 'live'));
+      return;
+    }
+    val.textContent = 'n/a';
+    sub.appendChild(clip('n/a for this filter'));
+    return;
+  }
+  const selectedAcctUuid = (typeof agent === 'string' && agent.startsWith('account:')) ? agent.slice('account:'.length) : null;
+  const planUsageSrc = selectedAcctUuid
+    ? (data.maxUsage || []).find(m => m.accountUuid === selectedAcctUuid)
+    : (data.maxUsage || []).find(m => m.live) || (data.maxUsage || [])[0];
+  if (planUsageSrc && planUsageSrc.session && planUsageSrc.session.percent != null) {
+    const { asOf } = snapshotAge(planUsageSrc);
+    const provenance = planUsageSrc.live ? `live, as of ${asOf}` : `cached ${asOf}`;
+    const sessionReset = fmtResetAt(planUsageSrc.session.resetsAt) || 'reset time unknown';
+    const weekReset = fmtResetAt(planUsageSrc.week && planUsageSrc.week.resetsAt) || 'reset time unknown';
+    const weekPct = planUsageSrc.week && planUsageSrc.week.percent != null ? planUsageSrc.week.percent : '–';
+    val.textContent = `${planUsageSrc.session.percent}% · ${weekPct}%`;
+    sub.append(
+      clip(planUsageSrc.label || 'Claude account'),
+      clip(`session ${sessionReset}`),
+      clip(`week ${weekReset}`),
+      clip(provenance),
+    );
+  } else {
+    val.textContent = '–';
+    sub.textContent = 'no plan-limit data';
+  }
+}
+
 function paintUpdatedAt() {
   const el = document.getElementById('updatedAt');
   if (!el) return;
@@ -881,7 +957,20 @@ function setTheme(theme) {
   else document.documentElement.removeAttribute('data-theme');
   localStorage.setItem('theme', theme);
 }
+function paintThemeBtn() {
+  const btn = document.getElementById('themeBtn');
+  if (!btn) return;
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  btn.textContent = dark ? '\u263E' : '\u2600';
+  btn.title = dark ? 'Switch to light' : 'Switch to dark';
+}
 setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+paintThemeBtn();
+document.getElementById('themeBtn').onclick = () => {
+  setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  paintThemeBtn();
+  if (tab === 'settings') renderSettingsPage();
+};
 // No auto-refresh — the ↻ button is the only trigger, and it force-refreshes every
 // data source (ccusage, OpenAI Costs, Codex rate limits), not just a lightweight re-render.
 function syncCustomRangeInputs() {
@@ -934,7 +1023,6 @@ function setSingleDay(period) {
   if (!period || !/^\d{4}-\d{2}-\d{2}$/.test(period)) return;
   customFrom = period;
   customTo = period;
-  dayFilter = '';
   document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
   syncCustomRangeInputs();
   syncUrl();
@@ -1715,7 +1803,7 @@ function realCostBannerHtml(mu, compact) {
     : (compact ? 'no usage-credit data cached yet' : 'No usage-credit data cached for this account yet.');
   const { asOf } = snapshotAge(mu);
   return `<div class="real-cost-banner ${hasOverage ? cls : ''}">
-    <span class="real-cost-label">${compact ? mu.label : 'Real cost beyond the subscription fee'}</span>
+    <span class="real-cost-label">${compact ? escHtml(mu.label) : 'Real cost beyond the subscription fee'}</span>
     ${staleBadgeHtml(mu, asOf)}
     <span class="real-cost-value tnum">${hasOverage ? fmtCredits(c.usedMinor, c.currency, c.exponent) : 'unknown'}</span>
     <span class="muted real-cost-note">${note}</span>
@@ -1750,12 +1838,16 @@ function nameableAccounts() {
   });
 }
 
+const labelStatusByUuid = {};
+
 function labelFormHtml(accountUuid, currentLabel, unnamed) {
   const value = unnamed ? '' : (currentLabel || '');
+  const remembered = labelStatusByUuid[accountUuid];
+  const statusText = remembered ? remembered.text : '';
   return `<form class="label-form" data-uuid="${escAttr(accountUuid)}">
     <input type="text" name="label" maxlength="80" autocomplete="off" aria-label="Name for ${escAttr(accountUuid)}" placeholder="Name this account" value="${escAttr(value)}">
     <button type="submit">Save</button>
-    <span class="label-form-status muted" role="status"></span>
+    <span class="label-form-status muted" role="status">${escHtml(statusText)}</span>
   </form>`;
 }
 
@@ -1798,6 +1890,7 @@ function applyLabelLocally(accountUuid, label, note) {
 async function saveAccountLabel(accountUuid, label, statusEl) {
   const name = (label || '').replace(/\s+/g, ' ').trim();
   if (!name) {
+    labelStatusByUuid[accountUuid] = { text: 'Enter a name first.' };
     if (statusEl) statusEl.textContent = 'Enter a name first.';
     return;
   }
@@ -1810,11 +1903,14 @@ async function saveAccountLabel(accountUuid, label, statusEl) {
     });
     const json = await res.json();
     if (!res.ok || !json.ok) throw new Error(json.error || 'Could not save the name');
+    labelStatusByUuid[accountUuid] = { text: 'Saved on this machine.' };
     applyLabelLocally(accountUuid, json.label || name, json.note == null ? null : json.note);
     update();
     load(true);
   } catch (e) {
-    if (statusEl) statusEl.textContent = e.message;
+    labelStatusByUuid[accountUuid] = { text: e.message };
+    if (statusEl && statusEl.isConnected) statusEl.textContent = e.message;
+    else update();
   }
 }
 
@@ -1843,12 +1939,13 @@ const SRC_ROW_WEIGHT = { 'src-bad': 0, '': 1, 'src-ok': 2 };
 function sourceRow(s, estimate, modelDetail, openaiCost) {
   if (s.tool === 'claude') {
     if (!s.maxUsage) {
+      const canName = isUnlabelledAccount({ accountUuid: s.id, label: s.label });
       return { cls: '', html: `
         ${srcChip('ESTIMATE', '')}
-        <span class="src-label">${s.label}</span>
-        <span class="src-extra"></span>
+        <span class="src-label">${escHtml(s.label)}</span>
+        <span class="src-extra">${canName ? labelFormHtml(s.id, '', true) : ''}</span>
         <span class="src-amount tnum">${fmt(estimate)} list</span>
-      `, title: `${s.note} ccusage USD list price shown, not verified as real or covered, and not account credits.` };
+      `, title: `${s.note || ''} ccusage USD list price shown, not verified as real or covered, and not account credits.` };
     }
     const mu = s.maxUsage;
     const c = mu.usageCredits || {};
@@ -1866,7 +1963,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
       `S ${srcMiniBar(sessionPct)} ${sessionPct}%&nbsp;&nbsp;W ${srcMiniBar(weekPct)} ${weekPct}%`;
     return { cls, html: `
       ${chip}
-      <span class="src-label">${mu.label}</span>
+      <span class="src-label">${escHtml(mu.label)}</span>
       <span class="src-extra">${extra}</span>
       <span class="src-amount tnum">${hasOverage ? fmtCredits(c.usedMinor, c.currency, c.exponent) : 'unknown'}</span>
     `, title: `${note} (as of ${asOf}, ${mu.live ? 'live from the status line' : 'cached locally by Claude Code'}) — same numbers as claude.ai Settings → Usage.` };
@@ -1879,7 +1976,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
     const realValue = blocked && openaiCost && !openaiCost.error ? fmt(openaiCost.totalUSD) + ' USD' : (blocked ? 'limit reached' : '$0.00 USD');
     return { cls: blocked ? 'src-bad' : 'src-ok', html: `
       ${srcChip('LIVE', 'live')}
-      <span class="src-label">${s.label}${planSuffix(cx.planType)}</span>
+      <span class="src-label">${escHtml(s.label)}${planSuffix(cx.planType)}</span>
       <span class="src-extra">${windowLabel(p.windowMins)} ${srcMiniBar(p.percent)} ${p.percent ?? '?'}%</span>
       <span class="src-amount tnum">${realValue}</span>
     `, title: `${blocked ? 'Plan limit reached — may be drawing on credits.' : 'covered by plan'}${openaiCost && !openaiCost.error ? ' — Admin-key Costs API also configured, used above once the plan limit is hit' : ''} — real numbers via Codex's own \`account/rateLimits/read\`, fetched ${new Date(cx.fetchedAt).toLocaleString()}.` };
@@ -1893,7 +1990,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
         plan mismatch</span>` : '';
     return { cls: onDemand > 0 ? 'src-bad' : 'src-ok', html: `
       ${srcChip('LIVE', 'live')}
-      <span class="src-label">${s.label}${gb.plan ? ' (' + gb.plan + ')' : ''}</span>
+      <span class="src-label">${escHtml(s.label)}${gb.plan ? ' (' + escHtml(gb.plan) + ')' : ''}</span>
       <span class="src-extra">${mismatchHtml}</span>
       <span class="src-amount tnum">$${onDemand.toFixed(2)} USD</span>
     `, title: `on-demand/overage this ${gb.period || 'billing'} period (resets ${gb.resetsAt ? new Date(gb.resetsAt).toLocaleDateString() : '?'})${gb.prepaidBalanceUsd ? `, $${gb.prepaidBalanceUsd.toFixed(2)} prepaid credit balance` : ''}. Unofficial endpoint (via ${gb.source === 'grok-acp' ? "grok's own CLI" : 'HTTP fallback'}) — fetched ${gb.fetchedAt ? new Date(gb.fetchedAt).toLocaleString() : 'never'}.` };
@@ -1902,7 +1999,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
   if (s.kind === 'manual') {
     return { cls: s.coveredByPlan ? 'src-ok' : 'src-bad', html: `
       ${srcChip('MANUAL', 'manual')}
-      <span class="src-label">${s.label}${planSuffix(s.plan)}</span>
+      <span class="src-label">${escHtml(s.label)}${planSuffix(s.plan)}</span>
       <span class="src-extra">${modelDetail ? modelDetail.replace(/^ /, '') : ''}</span>
       <span class="src-amount tnum">${s.coveredByPlan ? '$0.00 USD' : fmt(estimate) + ' list'}</span>
     `, title: `${s.note || ''} (checked ${s.asOf || 'unknown'}) — ccusage estimate for this range: ${fmt(estimate)}` };
@@ -1912,7 +2009,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
   // unknown, not asserted either way, so no ok/bad color
   return { cls: '', html: `
     ${srcChip('ESTIMATE', '')}
-    <span class="src-label">${s.label}</span>
+    <span class="src-label">${escHtml(s.label)}</span>
     <span class="src-extra">${modelDetail ? modelDetail.replace(/^ /, '') : ''}</span>
     <span class="src-amount tnum">${fmt(estimate)} list</span>
   `, title: `assumed real spend, USD list price, not account credits. Verify this tool's own billing (subscription vs metered API key), then use Settings to record it.` };
@@ -2017,9 +2114,8 @@ async function saveProviderKeyForm() {
     const json = await res.json();
     if (!json.ok) throw new Error(json.error);
     document.getElementById('providerApiKey').value = '';
+    providerKeyMessage = json.warning || 'Key saved and verified against OpenAI\'s Costs API.';
     load(true);
-    if (json.warning) setTimeout(() => alert(json.warning), 300);
-    else setTimeout(() => alert('Key saved and verified against OpenAI\'s Costs API.'), 300);
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
   }
@@ -2036,7 +2132,7 @@ async function removeProviderKeyForm() {
     });
     const json = await res.json();
     if (!json.ok) throw new Error(json.error);
-    status.textContent = 'Removed.';
+    providerKeyMessage = 'Removed.';
     load(true);
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
@@ -2067,7 +2163,7 @@ function sourceRangeEstimate(s, accountSessions, days, cutoff, today) {
     });
   });
   const models = Object.entries(modelTotals).sort((a, b) => b[1] - a[1]);
-  const modelDetail = models.length ? ' Models in range: ' + models.map(([m, c]) => `${m} ${fmt(c)}`).join(', ') + '.' : '';
+  const modelDetail = models.length ? ' Models in range: ' + models.map(([m, c]) => `${escHtml(m)} ${fmt(c)}`).join(', ') + '.' : '';
   return { estimate: cost, modelDetail };
 }
 
@@ -2223,8 +2319,8 @@ function sourcesSummaryTableHtml(sources) {
   const rows = (sources || []).map(s => {
     const b = KIND_BADGE[s.kind] || KIND_BADGE.none;
     return `<tr>
-      <td>${s.label}</td>
-      <td class="muted">${s.tool}${s.provider ? ' · ' + s.provider : ''}</td>
+      <td>${escHtml(s.label)}</td>
+      <td class="muted">${escHtml(s.tool)}${s.provider ? ' · ' + escHtml(s.provider) : ''}</td>
       <td><span class="pill" style="background:${b.bg}; color:${b.fg};">${b.text}</span></td>
       <td class="muted">${s.asOf ? new Date(s.asOf).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}</td>
     </tr>`;
@@ -2313,6 +2409,8 @@ function renderSettingsPage() {
   const liveDisableBtn = document.getElementById('liveUsageDisableBtn');
   if (liveDisableBtn) liveDisableBtn.onclick = disableLiveUsage;
 
+  const providerStatusEl = document.getElementById('providerKeyStatus');
+  if (providerStatusEl && providerKeyMessage) providerStatusEl.textContent = providerKeyMessage;
   document.getElementById('providerSaveBtn').onclick = saveProviderKeyForm;
   const removeBtn = document.getElementById('providerRemoveBtn');
   if (removeBtn) removeBtn.onclick = removeProviderKeyForm;
@@ -2331,6 +2429,7 @@ function renderSettingsPage() {
 
   document.getElementById('themeBtnSettings').onclick = () => {
     setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+    paintThemeBtn();
     renderSettingsPage();
   };
 }
@@ -2383,7 +2482,8 @@ function renderDayHeatmap(windowed, cutoff, windowEnd) {
         return `<div class="dh-cell${has ? ' has-data' : ''}${selected}" style="${colorFor(cost)}" data-period="${period}" role="button" tabindex="0" aria-label="${escAttr(action)}" title="${escAttr(period + ': ' + fmt(cost) + ' USD list price')}"></div>`;
       })
     );
-    return `<div class="dh-month"><div class="dh-month-label">${month.label}</div><div class="dh-grid">${cells.join('')}</div></div>`;
+    const weekdays = `<div class="dh-weekdays" aria-hidden="true">${DH_WEEKDAYS.map(d => `<span>${d}</span>`).join('')}</div>`;
+    return `<div class="dh-month"><div class="dh-month-label">${month.label}</div><div class="dh-body">${weekdays}<div class="dh-grid">${cells.join('')}</div></div></div>`;
   }).join('') + `
     <div class="dh-legend">less
       <div class="dh-cell" style="background: var(--border);"></div>
@@ -2698,8 +2798,8 @@ function update() {
   const builtKey = [...agents].join(',') + '|' + claudeAccounts.map(a => a.id + ':' + (a.label || '')).join(',');
   if (sel.options.length <= 1 || sel.dataset.built !== builtKey) {
     const prev = agent;
-    const toolOptions = [...agents].sort().map(a => `<option value="${a}">${a}</option>`).join('');
-    const acctOptions = claudeAccounts.map(a => `<option value="account:${a.id}">${a.label}</option>`).join('');
+    const toolOptions = [...agents].sort().map(a => `<option value="${escAttr(a)}">${escHtml(a)}</option>`).join('');
+    const acctOptions = claudeAccounts.map(a => `<option value="account:${escAttr(a.id)}">${escHtml(a.label)}</option>`).join('');
     sel.innerHTML = '<option value="all">All agents</option>'
       + toolOptions
       + (acctOptions ? `<optgroup label="Claude accounts">${acctOptions}</optgroup>` : '');
@@ -2768,30 +2868,7 @@ function update() {
   // numbers above precisely because those two are easy to mistake for the
   // same thing. Follows the account filter when one Claude account is
   // selected; otherwise the live-or-most-recent account.
-  const selectedAcctUuid = (typeof agent === 'string' && agent.startsWith('account:')) ? agent.slice('account:'.length) : null;
-  const planUsageSrc = selectedAcctUuid
-    ? (data.maxUsage || []).find(m => m.accountUuid === selectedAcctUuid)
-    : (data.maxUsage || []).find(m => m.live) || (data.maxUsage || [])[0];
-  if (planUsageSrc && planUsageSrc.session && planUsageSrc.session.percent != null) {
-    const { asOf } = snapshotAge(planUsageSrc);
-    const provenance = planUsageSrc.live ? `live, as of ${asOf}` : `cached ${asOf}`;
-    const sessionReset = fmtResetAt(planUsageSrc.session.resetsAt) || 'reset time unknown';
-    const weekReset = fmtResetAt(planUsageSrc.week && planUsageSrc.week.resetsAt) || 'reset time unknown';
-    const weekPct = planUsageSrc.week && planUsageSrc.week.percent != null ? planUsageSrc.week.percent : '–';
-    document.getElementById('planUsageVal').textContent = `${planUsageSrc.session.percent}% · ${weekPct}%`;
-    const planSub = document.getElementById('planUsageSub');
-    planSub.textContent = '';
-    const planName = document.createElement('div');
-    planName.textContent = planUsageSrc.label || 'Claude account';
-    const planResets = document.createElement('div');
-    planResets.textContent = `session ${sessionReset} · week ${weekReset}`;
-    const planProvenance = document.createElement('div');
-    planProvenance.textContent = provenance;
-    planSub.append(planName, planResets, planProvenance);
-  } else {
-    document.getElementById('planUsageVal').textContent = '–';
-    document.getElementById('planUsageSub').textContent = 'no plan-limit data';
-  }
+  paintPlanLimit();
 
   // Avg/day and Peak day are redundant on a 1-day range: they would just repeat
   // the list-price total back at you. A custom from/to of the same day counts too.
@@ -2875,7 +2952,7 @@ function update() {
     const pct = r.share * 100;
     const selected = r.model === selectedModel ? ' selected-model' : '';
     const breakdown = `real (input+output): ${fmtTok(r.tokens)}  (in ${fmtTok(r.input)} / out ${fmtTok(r.output)})\ncache read: ${fmtTok(r.cacheRead)}\ncache create: ${fmtTok(r.cacheCreate)}\ntotal incl. cache: ${fmtTok(r.totalTokens)}`;
-    return `<tr class="${selected}"><td class="model-name model-name-cell" data-model="${r.model}">${r.model}</td><td class="right tnum">${fmt(r.cost)}</td>
+    return `<tr class="${selected}"><td><button type="button" class="model-name model-name-cell" data-model="${escAttr(r.model)}">${escHtml(r.model)}</button></td><td class="right tnum">${fmt(r.cost)}</td>
       <td class="right tnum" title="${breakdown}">${fmtTok(r.input)}</td>
       <td class="right tnum" title="${breakdown}">${fmtTok(r.output)}</td>
       <td class="right tnum" title="${breakdown}">${fmtTok(r.tokens)} <span class="muted" style="font-size:0.75em;">(${fmtTok(r.totalTokens)} incl. cache)</span></td>
@@ -2939,7 +3016,7 @@ function update() {
         <div class="acc-main">
           <div class="acc-label">${escHtml(a.label)}</div>
           <div class="acc-uuid">${escHtml(a.accountUuid)}</div>
-          ${unnamed ? labelFormHtml(a.accountUuid, a.label, true) : ''}
+          ${a.accountUuid !== 'unknown-session' ? labelFormHtml(a.accountUuid, a.label, unnamed) : ''}
           ${a.note ? `<div class="acc-note">${escHtml(a.note)}</div>` : ''}
           <div class="acc-models">${topModels.map(([m, c]) => `<span class="pill model-name">${escHtml(m)}: ${fmt(c)}</span>`).join('')}</div>
         </div>
