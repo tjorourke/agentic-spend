@@ -445,6 +445,19 @@
   .custom-range input[type="date"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; color: var(--text); border-style: solid; }
   .custom-range-hint { font-size: 0.72rem; }
   .custom-range button { padding: 0.3rem 0.5rem; }
+  .range-chip {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: var(--accent-soft); color: var(--accent-soft-text);
+    border-radius: 999px; padding: 0.2rem 0.35rem 0.2rem 0.7rem;
+    font-size: 0.78rem; font-weight: 600;
+  }
+  .range-chip[hidden] { display: none; }
+  .range-chip button {
+    border: 0; background: transparent; color: inherit; cursor: pointer;
+    font: inherit; font-weight: 700; line-height: 1; padding: 0.15rem 0.35rem;
+    border-radius: 999px;
+  }
+  .range-chip button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .day-heatmap .dh-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   #dailyTable tbody tr.day-row { cursor: pointer; }
   button.text-btn {
@@ -463,7 +476,7 @@
     <span class="brand-text"><span class="brand-eyebrow">mastertheagent.com</span>Agentic Spend</span>
   </a>
   <nav class="nav" id="nav">
-    <button class="nav-item active" data-tab="overview">Overview</button>
+    <button class="nav-item active" data-tab="overview" aria-current="page">Overview</button>
     <button class="nav-item" data-tab="models">Models</button>
     <button class="nav-item" data-tab="days">Days</button>
     <button class="nav-item" data-tab="accounts">Accounts</button>
@@ -497,6 +510,10 @@
         <input type="date" id="customTo" title="To date, optional" aria-label="To date, optional" aria-required="false">
         <button id="customRangeClear" title="Clear custom range, back to the preset above" style="display:none;">&times;</button>
       </span>
+      <span class="range-chip" id="rangeChip" hidden>
+        <span id="rangeChipText"></span>
+        <button type="button" id="rangeChipClear" aria-label="Clear the showing range">&times;</button>
+      </span>
       <select id="agentSel"><option value="all">All agents</option></select>
     </div>
   </div>
@@ -520,9 +537,9 @@
       </div>
       <div class="card kpi" id="kpiAvgDay"><div class="label">Avg / day</div><div class="value" id="avgDay">–</div><div class="sub" id="avgDaySub"></div></div>
       <div class="card kpi" id="kpiHighestDay"><div class="label">Peak day</div><div class="value" id="maxDay">–</div><div class="sub" id="maxDaySub"></div></div>
-      <div class="card kpi"><div class="label">Today</div><div class="value" id="totalToday">–</div></div>
-      <div class="card kpi"><div class="label">Tokens</div><div class="value" id="realTokensWin">–</div><div class="sub" id="realTokensToday"></div></div>
-      <div class="card kpi"><div class="label">Plan limit</div><div class="value" id="planUsageVal">–</div><div class="sub" id="planUsageSub"></div></div>
+      <div class="card kpi" id="kpiToday"><div class="label" id="todayLabel">Today</div><div class="value" id="totalToday">–</div><div class="sub" id="todaySub"></div></div>
+      <div class="card kpi" id="kpiTokens"><div class="label">Tokens</div><div class="value" id="realTokensWin">–</div><div class="sub" id="tokensCaption">input + output, excluding cache</div><div class="sub" id="realTokensToday"></div></div>
+      <div class="card kpi" id="kpiPlan"><div class="label">Plan limit</div><div class="value" id="planUsageVal">–</div><div class="sub" id="planUsageSub"></div></div>
     </div>
     <div class="overview-pair">
       <div class="card" id="cacheCard">
@@ -611,7 +628,6 @@
     <div class="card">
       <div id="dayHeatmap" class="day-heatmap"></div>
       <div class="toolbar">
-        <input id="daySearch" type="date" placeholder="Pick a date…">
         <span class="muted" id="dayCount"></span>
       </div>
       <table id="dailyTable">
@@ -720,10 +736,16 @@ const fmtCredits = (minor, currency, exponent) => {
   return fmtMoneyMinor(minor, currency, exponent) + ' credits';
 };
 function inclusiveDayCount(fromStr, toStr) {
-  const a = new Date(fromStr + 'T00:00:00');
-  const b = new Date(toStr + 'T00:00:00');
-  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) return 1;
-  return Math.max(1, Math.round((b.getTime() - a.getTime()) / 86400000) + 1);
+  // Count calendar dates in UTC so a daylight-saving shift cannot drop or add a day.
+  const parse = s => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s || '');
+    if (!m) return null;
+    return Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  };
+  const a = parse(fromStr);
+  const b = parse(toStr);
+  if (a == null || b == null) return 1;
+  return Math.max(1, Math.round((b - a) / 86400000) + 1);
 }
 const fmtResetAt = iso => {
   if (!iso) return '';
@@ -748,13 +770,31 @@ function readUrlState() {
   customFrom = p.get('from') || null;
   customTo = p.get('to') || null;
 }
-function syncUrl() {
+let suppressHistory = false;
+let lastRangeKey = null;
+
+function urlQuery() {
   const p = new URLSearchParams();
-  p.set('tab', tab); p.set('range', range); p.set('agent', agent);
+  p.set('tab', tab); p.set('range', String(range)); p.set('agent', agent);
   if (selectedModel) p.set('model', selectedModel);
   if (customFrom) p.set('from', customFrom);
   if (customTo) p.set('to', customTo);
-  history.replaceState(null, '', '?' + p.toString());
+  return '?' + p.toString();
+}
+function rangeKey() {
+  return [range, customFrom || '', customTo || ''].join('|');
+}
+function syncUrl() {
+  const key = rangeKey();
+  if (suppressHistory) {
+    lastRangeKey = key;
+    return;
+  }
+  const rangeChanged = lastRangeKey !== null && lastRangeKey !== key;
+  lastRangeKey = key;
+  const qs = urlQuery();
+  if (rangeChanged) history.pushState({ rangeKey: key }, '', qs);
+  else history.replaceState({ rangeKey: key }, '', qs);
 }
 
 async function load(force) {
@@ -766,7 +806,7 @@ async function load(force) {
     const json = await res.json();
     if (json.error) { const err = new Error(json.error); err.errorType = json.errorType; throw err; }
     data = json;
-    document.getElementById('updatedAt').textContent = 'updated ' + new Date().toLocaleTimeString();
+    paintUpdatedAt();
     document.getElementById('loadingOverlay').classList.add('hidden');
     update();
   } catch (e) {
@@ -789,14 +829,46 @@ async function load(force) {
   }
 }
 
-function setTab(t) {
-  tab = t;
-  document.querySelectorAll('.nav-item').forEach(b => b.classList.toggle('active', b.dataset.tab === t));
+function paintUpdatedAt() {
+  const el = document.getElementById('updatedAt');
+  if (!el) return;
+  if (!data || !data.generatedAt) {
+    el.textContent = 'updated ' + new Date().toLocaleTimeString();
+    el.title = '';
+    return;
+  }
+  const d = new Date(data.generatedAt);
+  const when = Number.isNaN(d.getTime())
+    ? data.generatedAt
+    : d.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  if (data.stale) {
+    el.textContent = 'cached ' + when;
+    el.title = data.refreshError ? ('Last refresh failed: ' + data.refreshError) : 'Showing the last successful reading';
+  } else {
+    el.textContent = 'updated ' + when;
+    el.title = 'From the server generatedAt time';
+  }
+}
+
+function paintTab(t) {
+  document.querySelectorAll('.nav-item').forEach(b => {
+    const on = b.dataset.tab === t;
+    b.classList.toggle('active', on);
+    if (on) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + t));
   document.getElementById('pageTitle').textContent = { overview: 'Overview', models: 'Spend by model', days: 'Spend by day', accounts: 'Spend by account', projects: 'Spend by project', settings: 'Settings' }[t];
   document.getElementById('agentSel').style.display = (t === 'accounts' || t === 'settings') ? 'none' : '';
   document.getElementById('rangeSeg').style.display = t === 'settings' ? 'none' : '';
   document.getElementById('customRange').style.display = t === 'settings' ? 'none' : '';
+  const chip = document.getElementById('rangeChip');
+  if (chip) chip.style.display = t === 'settings' ? 'none' : '';
+}
+
+function setTab(t) {
+  tab = t;
+  paintTab(t);
   syncUrl();
   update();
 }
@@ -822,6 +894,40 @@ function syncCustomRangeInputs() {
   const custom = !!(customFrom || customTo);
   document.getElementById('customRangeClear').style.display = custom ? '' : 'none';
   document.getElementById('customRangeHint').hidden = custom;
+  syncRangeChip();
+}
+
+function formatShownDate(iso) {
+  const parts = String(iso || '').split('-').map(Number);
+  if (parts.length !== 3 || parts.some(n => !n && n !== 0)) return iso;
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${parts[2]} ${months[parts[1] - 1]} ${parts[0]}`;
+}
+
+function syncRangeChip() {
+  const chip = document.getElementById('rangeChip');
+  const text = document.getElementById('rangeChipText');
+  if (!chip || !text) return;
+  if (!customFrom && !customTo) {
+    chip.hidden = true;
+    return;
+  }
+  chip.hidden = false;
+  text.textContent = customFrom === customTo
+    ? `Showing ${formatShownDate(customFrom)}`
+    : `Showing ${formatShownDate(customFrom)} to ${formatShownDate(customTo)}`;
+}
+
+function clearCustomRange() {
+  customFrom = null;
+  customTo = null;
+  syncCustomRangeInputs();
+  document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
+  const preset = document.querySelector('#rangeSeg button[data-range="7"]');
+  if (preset) preset.classList.add('active');
+  range = 7;
+  syncUrl();
+  update();
 }
 
 function setSingleDay(period) {
@@ -829,8 +935,6 @@ function setSingleDay(period) {
   customFrom = period;
   customTo = period;
   dayFilter = '';
-  const search = document.getElementById('daySearch');
-  if (search) search.value = '';
   document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
   syncCustomRangeInputs();
   syncUrl();
@@ -858,14 +962,7 @@ function applyCustomRange() {
       syncCustomRangeInputs();
       return;
     }
-    customFrom = null;
-    customTo = null;
-    syncCustomRangeInputs();
-    document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
-    document.querySelector('#rangeSeg button[data-range="7"]').classList.add('active');
-    range = 7;
-    syncUrl();
-    update();
+    clearCustomRange();
     return;
   }
   customFrom = from || to;
@@ -878,15 +975,8 @@ function applyCustomRange() {
 }
 document.getElementById('customFrom').onchange = applyCustomRange;
 document.getElementById('customTo').onchange = applyCustomRange;
-document.getElementById('customRangeClear').onclick = () => {
-  customFrom = null; customTo = null;
-  syncCustomRangeInputs();
-  document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
-  document.querySelector('#rangeSeg button[data-range="7"]').classList.add('active');
-  range = 7;
-  syncUrl();
-  update();
-};
+document.getElementById('customRangeClear').onclick = clearCustomRange;
+document.getElementById('rangeChipClear').onclick = clearCustomRange;
 document.querySelectorAll('#chartMetricSeg button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#chartMetricSeg button').forEach(x => x.classList.remove('active'));
   b.classList.add('active');
@@ -894,7 +984,6 @@ document.querySelectorAll('#chartMetricSeg button').forEach(b => b.onclick = () 
   update();
 });
 document.getElementById('modelSearch').oninput = e => { modelFilter = e.target.value.toLowerCase(); update(); };
-document.getElementById('daySearch').oninput = e => { dayFilter = e.target.value.toLowerCase(); update(); };
 
 function attachSort(tableId, state) {
   document.querySelectorAll(`#${tableId} th`).forEach(th => {
@@ -2627,7 +2716,17 @@ function update() {
 
   const todayRow = days.find(d => d.period === today);
   const todayValue = todayRow ? dayForAgent(todayRow, agent) : null;
-  document.getElementById('totalToday').textContent = fmt(todayValue ? todayValue.totalCost : 0);
+  const selectedSingle = (customFrom && customFrom === customTo) ? customFrom : (!customFrom && !customTo && range === 1 ? today : null);
+  const showingPastDay = !!(selectedSingle && selectedSingle !== today);
+  const kpiToday = document.getElementById('kpiToday');
+  if (showingPastDay) {
+    kpiToday.style.display = 'none';
+  } else {
+    kpiToday.style.display = '';
+    document.getElementById('todayLabel').textContent = 'Today';
+    document.getElementById('todaySub').textContent = '';
+    document.getElementById('totalToday').textContent = fmt(todayValue ? todayValue.totalCost : 0);
+  }
 
   const realTokensOf = v => (v ? v.modelBreakdowns.reduce((s, mb) => s + (mb.inputTokens || 0) + (mb.outputTokens || 0), 0) : 0);
   const realTokensWin = windowed.reduce((s, d) => s + realTokensOf(d.value), 0);
@@ -2687,27 +2786,21 @@ function update() {
     }
 
     const hourlyCard = document.getElementById('hourlyCard');
-    if (isSingleDay) {
+    // ccusage blocks are fetched for today only, so a past day has no hourly series.
+    if (isSingleDay && !showingPastDay) {
       hourlyCard.style.display = '';
-      const selectedDay = (customFrom && customFrom === customTo) ? customFrom : today;
-      const available = (data.hourly || []).some(h => (h.period || '').slice(0, 10) === selectedDay);
-      const chartDay = available ? selectedDay : today;
-      const throughHour = chartDay === today ? new Date().getHours() : 23;
       const byHour = {};
       (data.hourly || []).forEach(h => {
-        if ((h.period || '').slice(0, 10) === chartDay) byHour[(h.period || '').slice(11, 13)] = h;
+        if ((h.period || '').slice(0, 10) === today) byHour[(h.period || '').slice(11, 13)] = h;
       });
       const hourRows = [];
-      for (let hr = 0; hr <= throughHour; hr++) {
+      for (let hr = 0; hr <= new Date().getHours(); hr++) {
         const hh = String(hr).padStart(2, '0');
         const h = byHour[hh];
         hourRows.push({ hourLabel: hh + ':00', cost: (h && h.cost) || 0, input: (h && h.inputTokens) || 0, output: (h && h.outputTokens) || 0 });
       }
-      document.getElementById('hourlyDayLabel').textContent = chartDay === today ? '(today)' : `(${chartDay})`;
-      const hourlyNote = (!available && selectedDay !== today)
-        ? `Hourly figures are only available for today (${today}). This chart is today, not ${selectedDay}.`
-        : '';
-      if (chartMetric === 'tokens') drawHourlyTokensChart(hourRows, hourlyNote); else drawHourlyChart(hourRows, hourlyNote);
+      document.getElementById('hourlyDayLabel').textContent = '(today)';
+      if (chartMetric === 'tokens') drawHourlyTokensChart(hourRows, ''); else drawHourlyChart(hourRows, '');
     } else {
       hourlyCard.style.display = 'none';
     }
@@ -2769,15 +2862,14 @@ function update() {
     .map(d => ({
       period: d.period, agents: d.value.agentsPresent.join(','), totalCost: d.value.totalCost, agentsPresent: d.value.agentsPresent,
       tokens: realTokensOf(d.value), totalTokens: totalTokensOf(d.value),
-    }))
-    .filter(r => r.period.includes(dayFilter));
+    }));
   dailyRows.sort((a, b) => dailySort.dir * (a[dailySort.k] > b[dailySort.k] ? 1 : a[dailySort.k] < b[dailySort.k] ? -1 : 0));
   markSort('dailyTable', dailySort);
   document.getElementById('dayCount').textContent = `${dailyRows.length} of ${windowed.length}`;
   document.querySelector('#dailyTable tbody').innerHTML = dailyRows.map(r => {
-    const pills = r.agentsPresent.map(a => `<span class="pill">${a}</span>`).join('');
+    const pills = r.agentsPresent.map(a => `<span class="pill">${escHtml(a)}</span>`).join('');
     const tooltip = `real (input+output): ${fmtTok(r.tokens)}\ntotal incl. cache: ${fmtTok(r.totalTokens)}`;
-    return `<tr class="day-row" data-period="${r.period}" tabindex="0" title="Show ${r.period}"><td class="tnum">${r.period}</td><td>${pills}</td>
+    return `<tr class="day-row" role="button" data-period="${r.period}" tabindex="0" title="Show ${r.period}"><td class="tnum">${r.period}</td><td>${pills}</td>
       <td class="right tnum" title="${tooltip}">${fmtTok(r.tokens)}</td>
       <td class="right tnum">${fmt(r.totalCost)}</td></tr>`;
   }).join('') || '<tr><td colspan="4" class="muted">No matching dates.</td></tr>';
@@ -2916,6 +3008,20 @@ dailyBody.addEventListener('keydown', (e) => {
   if (!tr) return;
   e.preventDefault();
   setSingleDay(tr.dataset.period);
+});
+
+window.addEventListener('popstate', () => {
+  suppressHistory = true;
+  readUrlState();
+  document.querySelectorAll('#rangeSeg button').forEach(b => {
+    b.classList.toggle('active', !customFrom && !customTo && parseInt(b.dataset.range, 10) === range);
+  });
+  syncCustomRangeInputs();
+  paintTab(tab);
+  const sel = document.getElementById('agentSel');
+  if (sel && [...sel.options].some(o => o.value === agent)) sel.value = agent;
+  update();
+  suppressHistory = false;
 });
 
 setTab(tab);
