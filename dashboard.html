@@ -854,9 +854,18 @@ function applyCustomRange() {
   const from = fromEl.value;
   const to = toEl.value;
   if (!from && !to) {
+    if (!customFrom && !customTo) {
+      syncCustomRangeInputs();
+      return;
+    }
     customFrom = null;
     customTo = null;
     syncCustomRangeInputs();
+    document.querySelectorAll('#rangeSeg button').forEach(x => x.classList.remove('active'));
+    document.querySelector('#rangeSeg button[data-range="7"]').classList.add('active');
+    range = 7;
+    syncUrl();
+    update();
     return;
   }
   customFrom = from || to;
