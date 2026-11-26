@@ -331,6 +331,16 @@
     font-family: var(--mono); font-size: 0.78rem; max-width: 36rem;
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  .label-form { display: flex; gap: 0.4rem; align-items: center; margin-top: 0.45rem; flex-wrap: wrap; }
+  .label-form input[type="text"] {
+    border: 1px solid var(--border); border-radius: 6px; padding: 0.3rem 0.5rem;
+    font: inherit; background: var(--card); color: var(--text); min-width: 12rem;
+  }
+  .label-form button {
+    border: 1px solid var(--border); background: var(--accent); color: #fff;
+    border-radius: 7px; padding: 0.3rem 0.65rem; font-size: 0.78rem; font-weight: 600; cursor: pointer;
+  }
+  .settings-label-table .label-form { margin-top: 0; }
   .cache-bar { display: flex; height: 22px; border-radius: 6px; overflow: hidden; background: var(--neutral-bg); }
   .cache-bar span { height: 100%; }
   .cache-legend { display: flex; flex-wrap: wrap; gap: 1rem; margin-top: 0.6rem; font-size: 0.8rem; }
@@ -1544,6 +1554,97 @@ function escAttr(s) {
   return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 function escHtml(s) { return escAttr(s).replace(/>/g, '&gt;'); }
+function isUnlabelledAccount(a) {
+  if (!a || !a.accountUuid || a.accountUuid === 'unknown-session') return false;
+  const label = String(a.label || '').trim();
+  if (!label || label === a.accountUuid) return true;
+  return /^Unlabeled\b/i.test(label);
+}
+
+function nameableAccounts() {
+  const byId = new Map();
+  const add = (accountUuid, label, note) => {
+    if (!accountUuid || accountUuid === 'unknown-session' || byId.has(accountUuid)) return;
+    byId.set(accountUuid, { accountUuid, label: label || '', note: note || null });
+  };
+  (data && data.accounts || []).forEach(a => add(a.accountUuid, a.label, a.note));
+  (data && data.maxUsage || []).forEach(mu => add(mu.accountUuid, mu.label, null));
+  (data && data.sources || []).forEach(s => { if (s.tool === 'claude') add(s.id, s.label, null); });
+  return [...byId.values()].sort((a, b) => {
+    const rank = row => isUnlabelledAccount(row) ? 0 : 1;
+    if (rank(a) !== rank(b)) return rank(a) - rank(b);
+    return String(a.label || '').localeCompare(String(b.label || ''));
+  });
+}
+
+function labelFormHtml(accountUuid, currentLabel, unnamed) {
+  const value = unnamed ? '' : (currentLabel || '');
+  return `<form class="label-form" data-uuid="${escAttr(accountUuid)}">
+    <input type="text" name="label" maxlength="80" autocomplete="off" aria-label="Name for ${escAttr(accountUuid)}" placeholder="Name this account" value="${escAttr(value)}">
+    <button type="submit">Save</button>
+    <span class="label-form-status muted" role="status"></span>
+  </form>`;
+}
+
+function accountNamesSectionHtml() {
+  const rows = nameableAccounts();
+  const intro = `<div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.9rem;">Account names</div>
+    <div class="muted" style="margin-bottom:0.5rem;">Names are saved on this machine only, in account-labels.json. An account with no name yet can be named here or on its Accounts card.</div>`;
+  if (!rows.length) return intro + '<div class="muted" style="margin-bottom:0.9rem;">No Claude accounts found on this machine yet.</div>';
+  const body = rows.map(a => {
+    const unnamed = isUnlabelledAccount(a);
+    return `<tr>
+      <td><div>${escHtml(unnamed ? 'No name yet' : a.label)}</div><div class="muted tnum">${escHtml(a.accountUuid)}</div></td>
+      <td>${labelFormHtml(a.accountUuid, a.label, unnamed)}</td>
+    </tr>`;
+  }).join('');
+  return intro + `<table class="settings-label-table" style="margin-bottom:0.9rem;">
+    <thead><tr><th>Account</th><th>Name</th></tr></thead>
+    <tbody>${body}</tbody>
+  </table>`;
+}
+
+function applyLabelLocally(accountUuid, label, note) {
+  if (!data) return;
+  const touch = row => {
+    if (!row || row.accountUuid !== accountUuid) return;
+    row.label = label;
+    row.note = note;
+  };
+  (data.accounts || []).forEach(touch);
+  (data.accountSessions || []).forEach(touch);
+  (data.maxUsage || []).forEach(touch);
+  (data.sources || []).forEach(s => {
+    if (s.tool === 'claude' && s.id === accountUuid) {
+      s.label = label;
+      if (s.maxUsage) s.maxUsage.label = label;
+    }
+  });
+}
+
+async function saveAccountLabel(accountUuid, label, statusEl) {
+  const name = (label || '').replace(/\s+/g, ' ').trim();
+  if (!name) {
+    if (statusEl) statusEl.textContent = 'Enter a name first.';
+    return;
+  }
+  if (statusEl) statusEl.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/labels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accountUuid, label: name }),
+    });
+    const json = await res.json();
+    if (!res.ok || !json.ok) throw new Error(json.error || 'Could not save the name');
+    applyLabelLocally(accountUuid, json.label || name, json.note == null ? null : json.note);
+    update();
+    load(true);
+  } catch (e) {
+    if (statusEl) statusEl.textContent = e.message;
+  }
+}
+
 function shortenPath(p) {
   const full = String(p || '');
   let short = full.replace(/^\/(?:Users|home)\/[^/]+(?=\/|$)/, '~');
@@ -1984,6 +2085,8 @@ function renderSettingsPage() {
       <div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem;">Everything found, all-time</div>
       ${sourcesSummaryTableHtml(sources)}
 
+      ${accountNamesSectionHtml()}
+
       ${themeSectionHtml()}
 
       ${liveUsageSectionHtml(liveUsageSetup)}
@@ -2418,7 +2521,7 @@ function update() {
   days.forEach(d => (d.metadata && d.metadata.agents || []).forEach(a => agents.add(a)));
   const claudeAccounts = (data.sources || []).filter(s => s.tool === 'claude');
   const sel = document.getElementById('agentSel');
-  const builtKey = [...agents].join(',') + '|' + claudeAccounts.map(a => a.id).join(',');
+  const builtKey = [...agents].join(',') + '|' + claudeAccounts.map(a => a.id + ':' + (a.label || '')).join(',');
   if (sel.options.length <= 1 || sel.dataset.built !== builtKey) {
     const prev = agent;
     const toolOptions = [...agents].sort().map(a => `<option value="${a}">${a}</option>`).join('');
@@ -2655,12 +2758,14 @@ function update() {
 
     document.getElementById('accountCards').innerHTML = accountRows.map(a => {
       const topModels = Object.entries(a.models || {}).sort((x, y) => y[1] - x[1]).slice(0, 4);
+      const unnamed = isUnlabelledAccount(a);
       return `<div class="card account-card">
         <div class="acc-main">
-          <div class="acc-label">${a.label}</div>
-          <div class="acc-uuid">${a.accountUuid}</div>
-          ${a.note ? `<div class="acc-note">${a.note}</div>` : ''}
-          <div class="acc-models">${topModels.map(([m, c]) => `<span class="pill model-name">${m}: ${fmt(c)}</span>`).join('')}</div>
+          <div class="acc-label">${escHtml(a.label)}</div>
+          <div class="acc-uuid">${escHtml(a.accountUuid)}</div>
+          ${unnamed ? labelFormHtml(a.accountUuid, a.label, true) : ''}
+          ${a.note ? `<div class="acc-note">${escHtml(a.note)}</div>` : ''}
+          <div class="acc-models">${topModels.map(([m, c]) => `<span class="pill model-name">${escHtml(m)}: ${fmt(c)}</span>`).join('')}</div>
         </div>
         <div class="acc-cost">
           <div class="value tnum">${fmt(a.cost)}</div>
@@ -2724,6 +2829,15 @@ function update() {
 readUrlState();
 document.querySelectorAll('#rangeSeg button').forEach(b => b.classList.toggle('active', !customFrom && !customTo && parseInt(b.dataset.range, 10) === range));
 syncCustomRangeInputs();
+
+document.addEventListener('submit', (e) => {
+  const form = e.target && e.target.closest ? e.target.closest('form.label-form') : null;
+  if (!form) return;
+  e.preventDefault();
+  const input = form.querySelector('input[name="label"]');
+  const status = form.querySelector('.label-form-status');
+  saveAccountLabel(form.dataset.uuid, input ? input.value : '', status);
+});
 
 document.getElementById('dayHeatmap').addEventListener('click', (e) => {
   const cell = e.target.closest('.dh-cell[data-period]');
