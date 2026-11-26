@@ -140,13 +140,15 @@ class DashboardHelperTests(unittest.TestCase):
 
     def test_team_value_parts(self):
         out = run_js([
-            "out.none = teamValueParts({apiEquivalentUsd: 1873.85, seat: null});",
-            "out.usd = teamValueParts({apiEquivalentUsd: 150, seat: {amount: 30, currency: 'USD'}, multiple: 5});",
-            "out.gbp = teamValueParts({apiEquivalentUsd: 12.25, seat: {amount: 90, currency: 'GBP'}, multiple: null});",
+            "out.unknown = teamValueParts({apiEquivalentUsd: 1873.85, seat: null, plan: {detected: false, planLabel: 'unknown plan'}});",
+            "out.contact = teamValueParts({apiEquivalentUsd: 5, seat: null, plan: {detected: true, planLabel: 'ChatGPT Enterprise'}, listPrice: {contactSales: true}});",
+            "out.dflt = teamValueParts({apiEquivalentUsd: 150, seat: {amount: 125, currency: 'USD', source: 'default'}, multiple: 1.2, plan: {detected: true, planLabel: 'Claude Team, Premium seat'}});",
+            "out.user = teamValueParts({apiEquivalentUsd: 12.25, seat: {amount: 90, currency: 'GBP', source: 'user'}, multiple: null});",
         ])
-        self.assertEqual(out["none"]["text"], "$1873.85 API-equivalent this month · set seat price")
-        self.assertEqual(out["usd"]["text"], "$150.00 API-equivalent this month vs seat $30.00/month (5.0\u00d7 the seat)")
-        self.assertEqual(out["gbp"]["text"], "$12.25 API-equivalent this month vs seat \u00a390.00/month")
+        self.assertEqual(out["unknown"]["text"], "$1873.85 API-equivalent this month · unknown plan · set seat price")
+        self.assertEqual(out["contact"]["text"], "$5.00 API-equivalent this month · no public price (contact sales) · set seat price")
+        self.assertEqual(out["dflt"]["text"], "$150.00 API-equivalent this month vs $125.00/month list price (default) (1.2× the price)")
+        self.assertEqual(out["user"]["text"], "$12.25 API-equivalent this month vs £90.00/month your price")
 
     def test_pace_text(self):
         out = run_js([

@@ -465,6 +465,9 @@
     color: var(--muted); font-size: 0.75rem; min-width: 0;
   }
   .src-extra > span { white-space: nowrap; }
+  .seat-src { font-size: 0.72rem; padding: 0 0.35rem; border-radius: 6px; border: 1px solid var(--border); white-space: nowrap; }
+  .seat-src-default { color: var(--muted); }
+  .seat-src-user { color: var(--text); font-weight: 600; }
   .tier-badge {
     display: inline-block; font-size: 0.6rem; font-weight: 600; padding: 0.05rem 0.35rem; border-radius: 999px;
     border: 1px solid var(--border); color: var(--muted); vertical-align: middle; margin-left: 0.3rem; white-space: nowrap;
@@ -1300,15 +1303,31 @@ function fmtCurrencyAmount(amount, currency) {
   const n = Number(amount || 0).toFixed(2);
   return sym ? sym + n : n + ' ' + String(currency || '');
 }
-// Team value: API-equivalent (ccusage, USD list price, month to date) next to
-// the seat fee you entered. No default price; no currency conversion.
+// Plan value: API-equivalent (ccusage, USD list price, month to date) next to
+// the plan's price. The price is yours if you set one in Settings, otherwise
+// the shipped list price for the detected plan ("list price (default)").
+// Unknown plans and plans with no public price show "set seat price".
+// No currency conversion.
+function seatSourceLabel(seat) {
+  if (!seat) return '';
+  return seat.source === 'user' ? 'your price' : 'list price (default)';
+}
 function teamValueParts(tv) {
   if (!tv) return null;
   const api = '$' + Number(tv.apiEquivalentUsd || 0).toFixed(2);
-  if (!tv.seat) return { api, seat: null, multiple: null, text: `${api} API-equivalent this month · set seat price` };
+  const plan = tv.plan || null;
+  const planLabel = plan ? (plan.planLabel || 'unknown plan') : null;
+  if (!tv.seat) {
+    const why = !plan || !plan.detected ? (planLabel || 'unknown plan')
+      : ((tv.listPrice && tv.listPrice.contactSales) ? 'no public price (contact sales)' : 'no published price');
+    return { api, seat: null, multiple: null, source: null, planLabel, why,
+      text: `${api} API-equivalent this month · ${why} · set seat price` };
+  }
   const seat = fmtCurrencyAmount(tv.seat.amount, tv.seat.currency) + '/month';
-  const multiple = tv.multiple != null ? `${Number(tv.multiple).toFixed(1)}\u00d7 the seat` : null;
-  return { api, seat, multiple, text: `${api} API-equivalent this month vs seat ${seat}` + (multiple ? ` (${multiple})` : '') };
+  const source = seatSourceLabel(tv.seat);
+  const multiple = tv.multiple != null ? `${Number(tv.multiple).toFixed(1)}\u00d7 the price` : null;
+  return { api, seat, multiple, source, planLabel, why: null,
+    text: `${api} API-equivalent this month vs ${seat} ${source}` + (multiple ? ` (${multiple})` : '') };
 }
 // 5-hour window pace line. fmtTime turns an ISO time into "16:40".
 function paceText(p, fmtTime) {
@@ -2742,8 +2761,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
     const pace = insight && insight.sessionPace;
     const paceLine = pace ? paceText(pace, iso => fmtWhenShort(iso)) : '';
     const tv = ((data && data.teamValue) || []).find(t => t.accountUuid === s.id);
-    const tvp = teamValueParts(tv);
-    const tvHtml = tvp ? `<span title="API-equivalent: ccusage's list-price cost for this account's sessions since ${escAttr(tv.monthStart)} (US dollars, by each session's last-active day). Seat: the monthly price you entered in Settings, in the account's billing currency. Not converted between currencies.">${escHtml(tvp.api)} API-equivalent this month · ${tvp.seat ? 'seat ' + escHtml(tvp.seat) + (tvp.multiple ? ' (' + escHtml(tvp.multiple) + ')' : '') : '<button type="button" class="text-btn" data-goto-settings="seat">set seat price</button>'}</span>` : '';
+    const tvHtml = planValueHtml(tv);
     const paceHtml = paceLine ? `<span class="${pace.warn ? 'pace-warn' : ''}" title="From the status line's 5-hour readings${pace.block ? ' and ccusage\'s active block (burn rate $' + Number(pace.block.costPerHour || 0).toFixed(2) + '/h)' : ''}; basis: ${escAttr(pace.basis)}.">${escHtml(paceLine)}</span>` : '';
     const extraLine = (tvHtml || paceHtml) ? `<span class="src-insight">${[tvHtml, paceHtml].filter(Boolean).join('')}</span>` : '';
     const titleBits = [note, sess.note && `Session (5-hour): ${sess.percent != null ? sess.percent + '%' : '–'} (${sess.note})`, week.note && `Weekly (7-day): ${week.percent != null ? week.percent + '%' : '–'} (${week.note})`, 'Same numbers as claude.ai Settings → Usage.'].filter(Boolean);
@@ -2768,6 +2786,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
       <span class="src-extra">${windowLabel(p.windowMins)} ${srcMiniBar(p.percent)} ${p.percent ?? '?'}%</span>
       <span class="src-amount tnum">${realValue}</span>
       ${planInsightHtml(planInsight('codex:primary'), 'src-insight')}
+      ${planValueLine('codex')}
     `, title: `${blocked ? 'Plan limit reached — may be drawing on credits.' : 'covered by plan'}${openaiCost && !openaiCost.error ? ' — Admin-key Costs API also configured, used above once the plan limit is hit' : ''} — real numbers via Codex's own \`account/rateLimits/read\`, fetched ${new Date(cx.fetchedAt).toLocaleString()}.` };
   }
 
@@ -2811,6 +2830,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
       <span class="src-extra">${bits.join(' · ') || 'no local usage cache yet'}</span>
       <span class="src-amount tnum">${amount}</span>
       ${planInsightHtml(planInsight(grokBotInsightKey(acct)), 'src-insight')}
+      ${planValueLine('grok')}
     `, title: s.note || chipTitle };
   }
 
@@ -2852,8 +2872,8 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
 // Known named tiers per ccusage agent, for convenience only — the free-text
 // "Custom…" option always covers anything not listed (and new/renamed tiers).
 const AGENT_PLAN_TIERS = {
-  grok: ['Free', 'SuperGrok', 'SuperGrok Heavy'],
-  codex: ['Free', 'Plus', 'Pro', 'Team', 'Enterprise', 'API (pay-as-you-go org)'],
+  grok: ['Free', 'Plus', 'Premium', 'Super', 'Ultra', 'SuperGrok (legacy)', 'SuperGrok Heavy (legacy)'],
+  codex: ['Free', 'Go', 'Plus', 'Pro 100', 'Pro 200', 'Pro 500', 'Business', 'Enterprise', 'API (pay-as-you-go org)'],
   gemini: ['Free', 'Google AI Pro', 'Google AI Ultra', 'API (pay-as-you-go)'],
   opencode: ['Routes to multiple backends — check the backend model\'s own plan'],
 };
@@ -3227,29 +3247,84 @@ function themeSectionHtml() {
   `;
 }
 
+function planValueLine(key) {
+  const tv = ((data && data.teamValue) || []).find(t => t.key === key);
+  const html = tv ? planValueHtml(tv) : '';
+  return html ? `<span class="src-insight">${html}</span>` : '';
+}
+function planValueHtml(tv) {
+  const tvp = teamValueParts(tv);
+  if (!tvp) return '';
+  const lp = tv.listPrice && tv.listPrice.default;
+  const tipBits = [
+    `API-equivalent: ccusage's list-price cost since ${tv.monthStart} (US dollars).`,
+    tv.plan ? `Plan: ${tv.plan.planLabel}${tv.plan.evidence && tv.plan.evidence.length ? ' (' + tv.plan.evidence.join('; ') + ')' : ''}.` : '',
+    tv.seat && tv.seat.source === 'default' && lp ? `List price from ${lp.sourceUrl}, fetched ${lp.fetched}, ${lp.billing} billing. ${lp.tax || ''}` : '',
+    tv.seat && tv.seat.source === 'user' ? 'Your price, entered in Settings.' : '',
+    tv.billingCurrency && tv.seat && tv.seat.currency !== tv.billingCurrency ? `This account is billed in ${tv.billingCurrency}; the provider publishes no ${tv.billingCurrency} price, so this is the US dollar list price.` : '',
+    'Not converted between currencies.',
+  ].filter(Boolean).join(' ');
+  const priceHtml = tvp.seat
+    ? `${escHtml(tvp.seat)} <span class="seat-src seat-src-${tv.seat.source === 'user' ? 'user' : 'default'}">${escHtml(tvp.source)}</span>${tvp.multiple ? ' (' + escHtml(tvp.multiple) + ')' : ''}`
+    : `<span class="muted">${escHtml(tvp.why)}</span> · <button type="button" class="text-btn" data-goto-settings="seat">set seat price</button>`;
+  return `<span title="${escAttr(tipBits)}">${escHtml(tvp.api)} API-equivalent this month · ${priceHtml}</span>`;
+}
+
+function listPriceCellHtml(tv) {
+  const lp = tv.listPrice || {};
+  const d = lp.default;
+  if (d) {
+    const annual = (lp.rows || []).filter(r => r.billing === 'annual' && r.currency === d.currency && r.perMonth != null);
+    const alt = annual.length ? ` <span class="muted">(annual: ${escHtml(fmtCurrencyAmount(annual[0].perMonth, annual[0].currency))}/month)</span>` : '';
+    const curNote = tv.billingCurrency && tv.billingCurrency !== d.currency ? `<br><span class="muted">Billed in ${escHtml(tv.billingCurrency)}; the provider publishes no ${escHtml(tv.billingCurrency)} price, so this is the ${escHtml(d.currency)} list price.</span>` : '';
+    return `${escHtml(fmtCurrencyAmount(d.perMonth, d.currency))}/month${d.perSeat ? ' per seat' : ''}, billed monthly${alt}${curNote}<br><span class="muted"><a href="${escAttr(d.sourceUrl)}" target="_blank" rel="noopener">source</a> · fetched ${escHtml(d.fetched)} · ${escHtml(d.tax || 'tax not stated')}</span>`;
+  }
+  if (lp.contactSales) return '<span class="muted">No public price: contact sales</span>';
+  if (tv.plan && tv.plan.detected && (lp.rows || []).length) return `<span class="muted">${escHtml((lp.rows[0] || {}).note || 'No published price')}</span>`;
+  if (tv.plan && /^No subscription/.test(tv.plan.planLabel || '')) return '<span class="muted">Not applicable: no subscription found</span>';
+  return '<span class="muted">None (plan not detected)</span>';
+}
 function seatPriceSectionHtml() {
   const list = (data && data.teamValue) || [];
   if (!list.length) return '';
   const rows = list.map(tv => {
+    const key = tv.key || tv.accountUuid;
     const cur = tv.billingCurrency;
+    const user = tv.userSeat;
     const curHtml = cur
-      ? `<span class="muted" title="This account's billing currency, from its own usage-credit reading.">${escHtml(cur)}</span><input type="hidden" data-seat-currency="${escAttr(tv.accountUuid)}" value="${escAttr(cur)}">`
-      : `<select data-seat-currency="${escAttr(tv.accountUuid)}">${['GBP', 'USD', 'EUR'].map(c => `<option${tv.seat && tv.seat.currency === c ? ' selected' : ''}>${c}</option>`).join('')}</select>`;
-    return `<div class="seat-row">
-      <label>${escHtml(tv.label || tv.accountUuid)}<br>
-        <input type="number" min="0.01" step="0.01" data-seat-amount="${escAttr(tv.accountUuid)}" value="${tv.seat ? escAttr(tv.seat.amount) : ''}" placeholder="set seat price" style="width:120px;">
-      </label>
-      <span style="padding-bottom:0.4rem;">${curHtml} per month</span>
-      <button class="btn" data-seat-save="${escAttr(tv.accountUuid)}">Save</button>
-      ${tv.seat ? `<button class="btn" data-seat-remove="${escAttr(tv.accountUuid)}">Remove</button>` : ''}
-      <span class="muted" data-seat-status="${escAttr(tv.accountUuid)}"></span>
-    </div>`;
+      ? `<span class="muted" title="This account's billing currency, from its own usage-credit reading.">${escHtml(cur)}</span><input type="hidden" data-seat-currency="${escAttr(key)}" value="${escAttr(cur)}">`
+      : `<select data-seat-currency="${escAttr(key)}">${['USD', 'GBP', 'EUR'].map(c => `<option${(user ? user.currency : ((tv.seat && tv.seat.currency) || 'USD')) === c ? ' selected' : ''}>${c}</option>`).join('')}</select>`;
+    const plan = tv.plan || {};
+    const planHtml = `${escHtml(plan.planLabel || 'unknown plan')}${plan.evidence && plan.evidence.length ? ` <span class="muted" title="${escAttr('Read from local files: ' + plan.evidence.join('; '))}">(?)</span>` : ''}`;
+    return `<tr>
+      <td>${escHtml(tv.label || key)}</td>
+      <td>${planHtml}</td>
+      <td>${listPriceCellHtml(tv)}</td>
+      <td><div class="seat-row" style="margin:0;">
+        <input type="number" min="0.01" step="0.01" data-seat-amount="${escAttr(key)}" value="${user ? escAttr(user.amount) : ''}" placeholder="${tv.seat && tv.seat.source === 'default' ? 'list price' : 'set seat price'}" style="width:120px;">
+        <span>${curHtml} / month</span>
+        <button class="btn" data-seat-save="${escAttr(key)}">Save</button>
+        ${user ? `<button class="btn" data-seat-remove="${escAttr(key)}" title="Go back to the list price (default)">Use list price</button>` : ''}
+        <span class="muted" data-seat-status="${escAttr(key)}"></span>
+      </div></td>
+    </tr>`;
   }).join('');
+  const table = (data && data.planPrices) || {};
+  const priceRows = (table.rows || []).map(r => `<tr>
+      <td>${escHtml(r.plan)}</td><td>${escHtml(r.billing)}</td>
+      <td class="tnum">${r.perMonth != null ? escHtml(fmtCurrencyAmount(r.perMonth, r.currency)) + '/month' + (r.perYear != null ? ' (' + escHtml(fmtCurrencyAmount(r.perYear, r.currency)) + '/year)' : '') : (r.contactSales ? 'contact sales' : '–')}${r.perSeat ? ' per seat' : ''}</td>
+      <td class="muted">${escHtml([r.tax, r.note].filter(Boolean).join(' '))}</td>
+      <td><a href="${escAttr(r.sourceUrl)}" target="_blank" rel="noopener">source</a> <span class="muted">${escHtml(r.fetched)}</span></td>
+    </tr>`).join('');
   return `
     <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">
-      Seat prices <span class="muted" title="Claude doesn't publish what your seat costs, so enter it here. There is no default. The Overview then shows ccusage's API-equivalent cost for the month next to it.">(?)</span>
+      Plans and seat prices <span class="muted" title="The plan is read from local files on this Mac. When it's known, the list price from the provider's own pricing page is used as the default. Enter your own price to override it (for example an annual or discounted rate).">(?)</span>
     </div>
-    ${rows}`;
+    <table style="margin-bottom:0.6rem;"><thead><tr><th>Account</th><th>Detected plan</th><th>List price (default)</th><th>Your price</th></tr></thead><tbody>${rows}</tbody></table>
+    <details style="margin-top:0.5rem;"><summary class="muted">Shipped price table (${(table.rows || []).length} rows, fetched ${escHtml(table.fetched || '')})</summary>
+      <div class="muted" style="margin:0.3rem 0;">${escHtml(table.notes || '')}</div>
+      <table style="margin-bottom:0.6rem;"><thead><tr><th>Plan</th><th>Billing</th><th>Price</th><th>Notes</th><th>Source</th></tr></thead><tbody>${priceRows}</tbody></table>
+    </details>`;
 }
 
 async function saveSeatPrice(accountUuid, remove) {
@@ -3270,7 +3345,7 @@ async function saveSeatPrice(accountUuid, remove) {
     if (json.teamValue) data.teamValue = json.teamValue;
     renderSettingsPage();
     const again = document.querySelector(`[data-seat-status="${CSS.escape(accountUuid)}"]`);
-    if (again) again.textContent = remove ? 'Removed.' : 'Saved on this machine.';
+    if (again) again.textContent = remove ? 'Back to the list price (default).' : 'Saved on this machine.';
   } catch (e) {
     if (status) status.textContent = e.message;
   }

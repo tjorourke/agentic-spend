@@ -152,12 +152,10 @@ brew update && brew upgrade agentic-spend
 
 ## Team value, 5-hour pacing, model mix and sources (1.7.0)
 
-- **Team value.** Each Claude subscription row (Team, Max, Pro) shows ccusage's API-equivalent
-  cost for that account this month (US-dollar list price, sessions by last-active day) next to
-  the seat fee. Claude doesn't expose seat prices, so enter yours in Settings, "Seat prices",
-  in the account's billing currency (taken from Claude's own credit reading). There is no
-  default: until you set one the row says "set seat price". Nothing is converted between
-  currencies; the "×" multiple only appears when the seat is priced in US dollars.
+- **Team value.** Each subscription row shows ccusage's API-equivalent cost for that account
+  this month (US-dollar list price) next to the plan's price. See "Plans and list prices
+  (1.7.1)" below for where the price comes from. Nothing is converted between currencies; the
+  "×" multiple only appears when the price is in US dollars.
 - **5-hour pacing.** For the current Claude 5-hour window the server works out a pace from
   the status line's readings (or, with one Claude account, ccusage's active block burn rate)
   and projects when it reaches 100%. If that is before the reset, the row and the menu bar
@@ -180,6 +178,30 @@ brew update && brew upgrade agentic-spend
   architecture and command name, never usage data; see https://ccusage.com/guide/telemetry).
   The bundled binary is the official build. To turn it off: `ccusage telemetry disable`, or
   set `CCUSAGE_TELEMETRY_DISABLED=1` or `DO_NOT_TRACK=1` for the server.
+
+## Plans and list prices (1.7.1)
+
+- **Plan detection, local files only.** No token is printed, stored or sent.
+  - Claude: `~/.claude.json`'s `oauthAccount` (organisation type, seat tier and rate-limit
+    tier) for the current login, plus Claude Code's own backups of that file for accounts
+    you've switched away from. The non-secret fields are kept in `plan-profiles.json` in the
+    data directory. Team seat tiers use Claude Code's own table (`team_tier_1` is a Premium
+    seat). Max with the 20x rate tier is shown as Ultra, the name Anthropic now uses for it.
+  - Codex / ChatGPT: the plan in Codex's own rate-limit reply, or the `chatgpt_plan_type`
+    claim in `~/.codex/auth.json`. Only that claim is read.
+  - Grok: the plan in the Grok Bot app's local usage cache.
+  - OpenCode: the credential type for each provider in its `auth.json`.
+  - Anything else ccusage reads shows "unknown plan". The app never guesses a plan.
+- **List prices.** `plan_prices.json` ships list prices from each provider's official
+  pricing or help page. Each row stores the source URL, currency, billing (monthly or annual)
+  and the date it was fetched. Enterprise plans and prices that couldn't be read are left
+  blank ("contact sales"); nothing is invented. US dollars throughout, plus pounds for xAI,
+  which publishes them. Prices exclude VAT unless the row says otherwise.
+- **Defaults.** When the plan is detected and you haven't set a price, the monthly-billing
+  list price is used, in the account's billing currency where the provider publishes it,
+  otherwise in US dollars. The app marks it "list price (default)". A price you enter in
+  Settings, "Plans and seat prices", is marked "your price" and always wins. Use it for annual
+  billing or a discount, because the billing cycle can't be read locally.
 
 ## Live Claude usage (on by default)
 
