@@ -153,6 +153,10 @@
     50%  { transform: scaleX(0.08) rotate(180deg); }
     100% { transform: scaleX(1) rotate(360deg); }
   }
+  @media (prefers-reduced-motion: reduce) {
+    .loading-coin { animation: none; }
+    #refreshBtn.spinning { animation: none; }
+  }
   .loading-overlay .loading-text { color: var(--muted); font-size: 0.9rem; }
   .page-header {
     display: flex;
@@ -288,10 +292,16 @@
     text-transform: uppercase;
     letter-spacing: 0.03em;
     border-bottom: 1px solid var(--border);
-    cursor: pointer;
     user-select: none;
     white-space: nowrap;
   }
+  button.th-sort {
+    background: none; border: 0; padding: 0; margin: 0;
+    font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit;
+    font-weight: inherit; font-size: inherit; cursor: pointer; white-space: nowrap;
+  }
+  button.th-sort:hover { color: var(--text); }
+  button.th-sort:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   thead th:hover { color: var(--text); }
   thead th .chev { opacity: 0.4; font-size: 0.7em; margin-left: 2px; }
   thead th.sorted .chev { opacity: 1; color: var(--accent); }
@@ -539,16 +549,16 @@
         </span>
       </div>
       <div class="muted" id="chartTokensNote" style="display:none; margin-bottom:0.5rem;" title="Input, output and cache write are priced very differently per token (output costs several times more than input), so they're shown separately rather than summed.">Cache read is charted separately below — it dwarfs the other three.</div>
-      <svg id="chart"></svg>
+      <svg id="chart" role="img" aria-label="Daily spend chart"></svg>
       <div id="cacheReadChartWrap" style="display:none; margin-top:1.2rem; padding-top:1rem; border-top:1px solid var(--border);">
         <div class="card-head" style="margin-bottom:0.3rem;"><h2 style="font-size:0.85rem;">Cache read</h2><span class="muted" id="cacheReadChartNote"></span></div>
-        <svg id="cacheReadChart"></svg>
+        <svg id="cacheReadChart" role="img" aria-label="Cache read chart"></svg>
       </div>
     </div>
 
     <div class="card" id="hourlyCard" style="margin-top: 1rem; display:none;">
       <div class="card-head"><h2>Hourly <span id="hourlyMetricLabel"></span> <span id="hourlyDayLabel">(today)</span></h2><span class="muted" id="hourlyChartNote"></span></div>
-      <svg id="hourlyChart"></svg>
+      <svg id="hourlyChart" role="img" aria-label="Hourly spend chart"></svg>
     </div>
 
     <div class="card" style="margin-top: 1rem;">
@@ -557,7 +567,7 @@
         <span class="muted" id="acctChartNote"></span>
       </div>
       <div class="acct-legend" id="acctLegend"></div>
-      <svg id="acctChart"></svg>
+      <svg id="acctChart" role="img" aria-label="Spend by account chart"></svg>
     </div>
   </section>
 
@@ -569,11 +579,11 @@
       </div>
       <table id="modelTable">
         <thead><tr>
-          <th data-k="model">Model <span class="chev">&#9662;</span></th>
-          <th class="right" data-k="cost">Cost <span class="chev">&#9662;</span></th>
-          <th class="right" data-k="input" title="Prompt/context tokens sent to the model, excluding cache.">Input <span class="chev">&#9662;</span></th>
-          <th class="right" data-k="output" title="Tokens the model generated — priced several times higher per-token than input.">Output <span class="chev">&#9662;</span></th>
-          <th class="right" data-k="tokens" title="Input + output only — excludes cache read/create. Hover a row for the full cache breakdown.">Real total <span class="chev">&#9662;</span></th>
+          <th data-k="model" aria-sort="none"><button type="button" class="th-sort">Model <span class="chev">&#9662;</span></button></th>
+          <th class="right" data-k="cost" aria-sort="none"><button type="button" class="th-sort">Cost <span class="chev">&#9662;</span></button></th>
+          <th class="right" data-k="input" aria-sort="none" title="Prompt/context tokens sent to the model, excluding cache."><button type="button" class="th-sort">Input <span class="chev">&#9662;</span></button></th>
+          <th class="right" data-k="output" aria-sort="none" title="Tokens the model generated. Priced several times higher per token than input."><button type="button" class="th-sort">Output <span class="chev">&#9662;</span></button></th>
+          <th class="right" data-k="tokens" aria-sort="none" title="Input plus output only. Excludes cache read and cache create. Hover a row for the full cache breakdown."><button type="button" class="th-sort">Real total <span class="chev">&#9662;</span></button></th>
           <th>Share</th>
         </tr></thead>
         <tbody></tbody>
@@ -586,11 +596,11 @@
         <button id="modelDetailClose" class="pill" style="cursor:pointer; border:none; background:var(--border); color:var(--text);">Close &times;</button>
       </div>
       <div class="muted" style="margin-bottom:0.5rem;">Heaviest days highlighted in amber; table defaults to costliest day first.</div>
-      <svg id="modelDetailChart"></svg>
+      <svg id="modelDetailChart" role="img" aria-label="Daily spend for the selected model"></svg>
       <table id="modelDetailTable" style="margin-top:0.8rem;">
         <thead><tr>
-          <th data-k="period">Date <span class="chev">&#9662;</span></th>
-          <th class="right" data-k="cost">Cost <span class="chev">&#9662;</span></th>
+          <th data-k="period" aria-sort="none"><button type="button" class="th-sort">Date <span class="chev">&#9662;</span></button></th>
+          <th class="right" data-k="cost" aria-sort="none"><button type="button" class="th-sort">Cost <span class="chev">&#9662;</span></button></th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -606,10 +616,10 @@
       </div>
       <table id="dailyTable">
         <thead><tr>
-          <th data-k="period">Date <span class="chev">&#9662;</span></th>
-          <th data-k="agents">Agents <span class="chev">&#9662;</span></th>
-          <th class="right" data-k="tokens">Tokens <span class="chev">&#9662;</span></th>
-          <th class="right" data-k="totalCost">Cost <span class="chev">&#9662;</span></th>
+          <th data-k="period" aria-sort="none"><button type="button" class="th-sort">Date <span class="chev">&#9662;</span></button></th>
+          <th data-k="agents" aria-sort="none"><button type="button" class="th-sort">Agents <span class="chev">&#9662;</span></button></th>
+          <th class="right" data-k="tokens" aria-sort="none"><button type="button" class="th-sort">Tokens <span class="chev">&#9662;</span></button></th>
+          <th class="right" data-k="totalCost" aria-sort="none" title="USD list price"><button type="button" class="th-sort">Cost <span class="chev">&#9662;</span></button></th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -888,7 +898,12 @@ function attachSort(tableId, state) {
   });
 }
 function markSort(tableId, state) {
-  document.querySelectorAll(`#${tableId} th`).forEach(th => th.classList.toggle('sorted', th.dataset.k === state.k));
+  document.querySelectorAll(`#${tableId} th`).forEach(th => {
+    const on = th.dataset.k === state.k;
+    th.classList.toggle('sorted', on);
+    if (!th.dataset.k) return;
+    th.setAttribute('aria-sort', on ? (state.dir < 0 ? 'descending' : 'ascending') : 'none');
+  });
 }
 attachSort('modelTable', modelSort);
 attachSort('dailyTable', dailySort);
@@ -947,6 +962,12 @@ function rowsForFilter(days, accountSessions, filterValue) {
     .filter(d => d.value !== null);
 }
 
+function labelSvg(svg, text) {
+  if (!svg) return;
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', text);
+}
+
 function bindDayBar(rect, period) {
   rect.classList.add('day-bar');
   rect.addEventListener('click', () => setSingleDay(period));
@@ -959,11 +980,13 @@ function drawChart(rows) {
 
   if (!rows.length) {
     chartNote.textContent = 'No data in this range';
+    labelSvg(svg, 'Daily spend chart, no data in this range');
     return;
   }
 
   if (rows.length === 1) {
     chartNote.textContent = rows[0].period;
+    labelSvg(svg, `Spend by model on ${rows[0].period}, USD list price`);
     const v = rows[0].value;
     const models = Object.entries(v.modelBreakdowns.reduce((acc, mb) => {
       acc[mb.modelName] = (acc[mb.modelName] || 0) + mb.cost; return acc;
@@ -999,6 +1022,7 @@ function drawChart(rows) {
   }
 
   chartNote.textContent = `${rows[0].period} → ${rows[rows.length - 1].period}`;
+  labelSvg(svg, `Daily spend from ${rows[0].period} to ${rows[rows.length - 1].period}, USD list price. Choose a bar to show that day.`);
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900, H = 220, padL = 46, padB = 22, padT = 10;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -1075,9 +1099,14 @@ function drawHourlyChart(rows, extraNote) {
   const svg = document.getElementById('hourlyChart');
   const note = document.getElementById('hourlyChartNote');
   svg.innerHTML = '';
-  if (!rows.length) { note.textContent = extraNote || 'No data for today yet'; return; }
+  if (!rows.length) {
+    note.textContent = extraNote || 'No data for today yet';
+    labelSvg(svg, `Hourly spend chart. ${note.textContent}`);
+    return;
+  }
   const span = `${rows[0].hourLabel} → ${rows[rows.length - 1].hourLabel}`;
   note.textContent = extraNote ? `${extraNote} ${span}` : span;
+  labelSvg(svg, `Hourly spend chart, ${span}. ${extraNote || 'USD list price.'}`);
 
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900, H = 180, padL = 46, padB = 22, padT = 10;
@@ -1134,9 +1163,14 @@ function drawHourlyTokensChart(rows, extraNote) {
   const svg = document.getElementById('hourlyChart');
   const note = document.getElementById('hourlyChartNote');
   svg.innerHTML = '';
-  if (!rows.length) { note.textContent = extraNote || 'No data for today yet'; return; }
+  if (!rows.length) {
+    note.textContent = extraNote || 'No data for today yet';
+    labelSvg(svg, `Hourly tokens chart. ${note.textContent}`);
+    return;
+  }
   const span = `${rows[0].hourLabel} → ${rows[rows.length - 1].hourLabel}`;
   note.textContent = extraNote ? `${extraNote} ${span}` : span;
+  labelSvg(svg, `Hourly tokens chart, ${span}. ${extraNote || ''}`.trim());
 
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900, H = 180, padL = 46, padB = 22, padT = 10;
@@ -1219,10 +1253,16 @@ function drawTokensChart(rows) {
   const chartNote = document.getElementById('chartNote');
   svg.innerHTML = '';
 
-  if (!rows.length) { chartNote.textContent = 'No data in this range'; drawCacheReadChart(rows); return; }
+  if (!rows.length) {
+    chartNote.textContent = 'No data in this range';
+    labelSvg(svg, 'Daily tokens chart, no data in this range');
+    drawCacheReadChart(rows);
+    return;
+  }
 
   if (rows.length === 1) {
     chartNote.textContent = rows[0].period;
+    labelSvg(svg, `Tokens by kind on ${rows[0].period}`);
     const t = tokensOfDay(rows[0].value);
     const total = TOKEN_MAIN_KEYS.reduce((s, k) => s + t[k], 0) || 1;
     const ns = 'http://www.w3.org/2000/svg';
@@ -1258,6 +1298,7 @@ function drawTokensChart(rows) {
   }
 
   chartNote.textContent = `${rows[0].period} → ${rows[rows.length - 1].period}`;
+  labelSvg(svg, `Daily tokens from ${rows[0].period} to ${rows[rows.length - 1].period}. Choose a bar to show that day.`);
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900, H = 220, padL = 46, padB = 22, padT = 10;
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
@@ -1327,8 +1368,11 @@ function drawCacheReadChart(rows) {
 
   const dayCacheRead = rows.map(r => ({ period: r.period, cacheRead: tokensOfDay(r.value).cacheRead }));
   const total = dayCacheRead.reduce((s, d) => s + d.cacheRead, 0);
-  if (!total) { wrap.style.display = 'none'; return; }
+  if (!total) { wrap.style.display = 'none'; labelSvg(svg, 'Cache read chart, no data in this range'); return; }
   wrap.style.display = '';
+  labelSvg(svg, rows.length === 1
+    ? `Cache read on ${rows[0].period}`
+    : `Cache read from ${rows[0].period} to ${rows[rows.length - 1].period}. Choose a bar to show that day.`);
 
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900;
@@ -1411,6 +1455,7 @@ function drawAccountChart(rows) {
   const note = document.getElementById('acctChartNote');
   const legend = document.getElementById('acctLegend');
   svg.innerHTML = '';
+  labelSvg(svg, 'Spend by account, USD list price');
 
   // every bucket key seen anywhere in the window — these are whatever real
   // identities (emails) or "<agent> (no account data)" labels the server found,
@@ -2256,7 +2301,7 @@ function usageHistoryChartHtml(samples, series, title) {
     <div class="muted" style="margin-top:0.8rem; font-size:0.78rem; font-weight:600;">${title}
       <span class="muted" style="font-weight:400;">(tracking since ${since})</span>
     </div>
-    <svg viewBox="0 0 ${W} ${H}" style="width:100%; height:${H}px; margin-top:0.3rem;">${gridlines}${paths}</svg>
+    <svg role="img" aria-label="${escAttr(title)}" viewBox="0 0 ${W} ${H}" style="width:100%; height:${H}px; margin-top:0.3rem;">${gridlines}${paths}</svg>
     <div class="cache-legend" style="margin-top:0.2rem;">${legend}</div>
   `;
 }
@@ -2382,6 +2427,7 @@ function renderMaxUsage(list) {
 function drawModelDetailChart(rows, heavySet) {
   const svg = document.getElementById('modelDetailChart');
   svg.innerHTML = '';
+  labelSvg(svg, `Daily list-price spend for ${selectedModel || 'the selected model'}`);
   if (!rows.length) return;
 
   const ns = 'http://www.w3.org/2000/svg';
