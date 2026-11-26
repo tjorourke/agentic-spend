@@ -83,7 +83,7 @@ brew update && brew upgrade agentic-spend
 
 ## Live Claude usage (optional, recommended)
 
-Self-service from the UI: Settings → "Live Claude usage" → **Enable**. No file
+Self-service from the UI: Settings → "Live Claude usage" → **Turn on**. No file
 editing needed. Under the hood it's Anthropic's own documented status line mechanism
 (https://code.claude.com/docs/en/statusline): `statusline.py` (in this repo) gets wired into
 `~/.claude/settings.json`'s `"statusLine"` — this is global, every Claude Code session on the

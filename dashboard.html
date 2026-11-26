@@ -797,12 +797,20 @@ function shortReset(iso) {
 }
 
 const GROKBOT_STALE_MS = 1000 * 60 * 60 * 12;
+const GROKBOT_FRESH_MS = 1000 * 60 * 60;
 
 function grokBotIsStale(iso) {
   if (!iso) return false;
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return false;
   return Date.now() - t > GROKBOT_STALE_MS;
+}
+
+function grokBotIsFresh(iso) {
+  if (!iso) return false;
+  const t = new Date(iso).getTime();
+  if (Number.isNaN(t)) return false;
+  return Date.now() - t <= GROKBOT_FRESH_MS;
 }
 
 function formatPct(pct) {
@@ -2114,8 +2122,23 @@ function shortenPath(p) {
   }
   return { short, full };
 }
-function srcChip(text, kind) { return `<span class="src-chip${kind ? ' src-chip-' + kind : ''}">${text}</span>`; }
+function srcChip(text, kind, title) {
+  const tip = title ? ` title="${escAttr(title)}"` : '';
+  return `<span class="src-chip${kind ? ' src-chip-' + kind : ''}"${tip}>${text}</span>`;
+}
 function srcMiniBar(pct) { return `<span class="src-minibar"><span style="width:${Math.min(pct ?? 0, 100)}%"></span></span>`; }
+
+function grokPlanKnown() {
+  const plans = (data && data.plans) || {};
+  const grok = plans.grok;
+  if (grok && (grok.plan || grok.coveredByPlan)) return true;
+  const accounts = ((data && data.grokBot) || {}).accounts || [];
+  if (accounts.some(a => a.plan || a.planLabel)) return true;
+  const sources = (data && data.sources) || [];
+  if (sources.some(s => (s.tool === 'grok' || s.grokBot) && s.plan)) return true;
+  if (sources.some(s => s.grokBilling && s.grokBilling.plan)) return true;
+  return false;
+}
 const SRC_ROW_WEIGHT = { 'src-bad': 0, '': 1, 'src-ok': 2 };
 
 // One compact row per source: a provenance chip (live/cached/manual/estimate
@@ -2171,11 +2194,17 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
   }
 
   if (s.kind === 'local-live') {
-    const amount = s.costKnown === false ? 'cost unverified' : `${fmt(estimate)} CLI`;
-    return { cls: '', html: `
+    const planKnown = grokPlanKnown();
+    const covered = s.costKnown !== false && planKnown;
+    const amount = s.costKnown === false ? 'cost unverified' : `${fmt(estimate)} list`;
+    const bits = [];
+    if (covered) bits.push('covered by your Grok plan');
+    if (modelDetail) bits.push(modelDetail.replace(/^ /, ''));
+    else bits.push('local usage.json');
+    return { cls: covered ? 'src-ok' : '', html: `
       ${srcChip('LIVE', 'live')}
       <span class="src-label">${escHtml(s.label)}</span>
-      <span class="src-extra">local usage.json</span>
+      <span class="src-extra">${bits.join(' · ')}</span>
       <span class="src-amount tnum">${amount}</span>
     `, title: s.note || '' };
   }
@@ -2184,24 +2213,26 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
     const acct = s.grokBotAccount || {};
     const pct = acct.weeklyPct ?? s.weeklyLimitPercent;
     const credits = acct.creditsUsd ?? s.creditsUsd;
-    const stale = grokBotIsStale(acct.updatedAt || s.asOf);
+    const asOf = acct.updatedAt || s.asOf;
+    const fresh = grokBotIsFresh(asOf);
     const bits = [];
     if (s.plan) bits.push(escHtml(s.plan));
-    if (pct != null) bits.push(`${srcMiniBar(pct)} ${escHtml(formatPct(pct))} of weekly limit`);
+    if (pct != null) bits.push(srcMiniBar(pct));
     if (s.resetsAt) bits.push(escHtml(fmtResetCountdown(s.resetsAt)));
-    if (stale) bits.push('cached, may be stale');
-    const amount = credits != null
-      ? `$${Number(credits).toFixed(2)} credits`
-      : (pct == null ? 'no cache yet' : 'included');
+    if (credits != null) bits.push(`$${Number(credits).toFixed(2)} extra credit left`);
+    const amount = pct != null
+      ? `${escHtml(formatPct(pct))}% of weekly limit`
+      : (credits != null ? 'no weekly figure yet' : 'no cache yet');
+    const chipTitle = "Read from the Grok Bot app's local usage cache on this Mac. This is a share of a weekly limit shared with other Grok apps, not tokens or dollars.";
     const chip = pct == null
       ? srcChip('ESTIMATE', '')
-      : srcChip('CACHED', 'cached');
+      : (fresh ? srcChip('LIVE', 'live', chipTitle) : srcChip('CACHED', 'cached', chipTitle));
     return { cls: '', html: `
       ${chip}
       <span class="src-label">${escHtml(s.label)}</span>
       <span class="src-extra">${bits.join(' · ') || 'no local usage cache yet'}</span>
       <span class="src-amount tnum">${amount}</span>
-    `, title: s.note || '' };
+    `, title: s.note || chipTitle };
   }
 
   if (s.tool === 'grok' && s.kind === 'unofficial-live') {
@@ -2398,8 +2429,12 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
 
   // every source with any spend in the selected range, or any live/manual
   // reading at all (so a $0-but-covered source like Claude still shows)
+  const hasGrokCli = (sources || []).some(s => s.kind === 'local-live');
   const rows = (sources || []).map(s => ({ s, ...sourceRangeEstimate(s, accountSessions, days, cutoff, today) }))
-    .filter(r => r.estimate > 0 || r.s.kind !== 'none');
+    .filter(r => r.estimate > 0 || r.s.kind !== 'none')
+    // A Grok CLI local-live row already shows the same spend as the older
+    // manual "grok (Super plan)" note, so drop the duplicate.
+    .filter(r => !(hasGrokCli && r.s.tool === 'grok' && (r.s.kind === 'manual' || r.s.kind === 'none')));
 
   lastPlansCtx = { sources, plans, providerStatus, liveUsageSetup, unofficialToggles };
   if (!rows.length) {
@@ -2418,8 +2453,10 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
   // few % for sessions spanning midnight) lands on the $0 "covered" side
   // instead of silently zeroing out real money that's actually unverified.
   let realTotal = 0;
-  const hasGrokCli = (sources || []).some(s => s.kind === 'local-live');
+  const planKnown = grokPlanKnown();
   rows.forEach(({ s, estimate }) => {
+    // Grok Bot reports a weekly share, not dollars.
+    if (s.grokBot) return;
     if (hasGrokCli && s.kind === 'unofficial-live' && s.tool === 'grok') {
       const extra = (s.grokBilling && s.grokBilling.onDemandUsedUsd) || 0;
       if (extra > 0) realTotal += extra;
@@ -2429,6 +2466,7 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
       (s.tool === 'claude' && s.maxUsage && (s.maxUsage.usageCredits || {}).usedMinor === 0) ||
       (s.tool === 'codex' && s.kind === 'official-live' && s.codexLive.ordinaryUsageAllowed !== false) ||
       (s.tool === 'grok' && s.kind === 'unofficial-live' && (s.grokBilling.onDemandUsedUsd ?? 0) === 0) ||
+      (s.kind === 'local-live' && planKnown && s.costKnown !== false) ||
       (s.kind === 'manual' && s.coveredByPlan);
     if (!covered) realTotal += estimate;
   });
@@ -2468,7 +2506,7 @@ function renderLiveNudge() {
   const cached = (data.maxUsage || []).some(m => m && m.session && m.session.percent != null && !m.live);
   if (tab === 'overview' && canEnable && cached) {
     box.style.display = '';
-    box.innerHTML = 'Plan limit is cached. Enable live Claude usage for a reading from the status line. <button type="button" id="liveNudgeBtn">Enable</button>';
+    box.innerHTML = 'Your Claude limits may be out of date. Turn on live updates to refresh them every time you use Claude Code. <button type="button" id="liveNudgeBtn">Turn on</button>';
     document.getElementById('liveNudgeBtn').onclick = enableLiveUsage;
   } else {
     box.style.display = 'none';
@@ -2508,20 +2546,22 @@ function liveUsageSectionHtml(setup) {
   const state = (setup || {}).state || 'none';
   const stateText = {
     none: '<span>not set up</span>',
-    other: '<span style="color:var(--bad-text); font-weight:600;">a different status line is configured — click Enable to wrap it (your existing one keeps showing, nothing is lost)</span>',
-    ours: '<span style="color:var(--ok-text); font-weight:600;">enabled</span>',
-    wraps_other: '<span style="color:var(--ok-text); font-weight:600;">enabled (wrapping your existing status line — it still shows normally)</span>',
+    other: '<span style="color:var(--bad-text); font-weight:600;">a different status line is already configured. Turn on to wrap it; your existing one keeps showing, nothing is lost</span>',
+    ours: '<span style="color:var(--ok-text); font-weight:600;">on</span>',
+    wraps_other: '<span style="color:var(--ok-text); font-weight:600;">on (wrapping your existing status line, which still shows as usual)</span>',
   }[state];
   const canEnable = state === 'none' || state === 'other';
   return `
     <div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem;">Live Claude usage (optional)</div>
     <div class="muted" style="margin-bottom:0.4rem;">
-      Adds a status line to Claude Code (global — every session, not just this project) that
-      reports real server-side session/week % on every reply, instead of waiting on Claude
-      Code's own cache. Reads no credentials, makes no network calls. Status: ${stateText}
+      Turn this on to refresh your Claude session and weekly limits every time you use Claude Code.
+      It adds a status line to Claude Code on this Mac (every session, not just this project).
+      If you already have a status line, this wraps it rather than replacing it.
+      No credentials are read, and no network calls are made. You can turn it off at any time.
+      Status: ${stateText}
     </div>
     <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.9rem;">
-      ${canEnable ? '<button id="liveUsageEnableBtn">Enable</button>' : '<button id="liveUsageDisableBtn">Disable</button>'}
+      ${canEnable ? '<button id="liveUsageEnableBtn">Turn on</button>' : '<button id="liveUsageDisableBtn">Turn off</button>'}
       <span class="muted" id="liveUsageStatus"></span>
     </div>
   `;
