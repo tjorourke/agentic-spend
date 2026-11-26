@@ -262,10 +262,14 @@
   .card-head h2 { font-size: 0.95rem; margin: 0; }
   .muted { color: var(--muted); font-size: 0.8rem; }
 
-  #chart, #acctChart, #modelDetailChart, #hourlyChart, #grokBotDailyChart, #grokBotHourlyChart { width: 100%; height: 220px; overflow: visible; display: block; }
+  #chart, #acctChart, #modelDetailChart, #hourlyChart, #grokBotDailyChart, #grokBotHourlyChart, #grokBotWeeklyChart { width: 100%; height: 220px; overflow: visible; display: block; }
   #acctChart { height: 140px; }
   #hourlyChart { height: 180px; }
-  #grokBotDailyChart, #grokBotHourlyChart { height: 140px; }
+  #grokBotDailyChart, #grokBotHourlyChart, #grokBotWeeklyChart { height: 140px; }
+  .tab-intro { margin: 0 0 0.9rem; font-size: 0.85rem; color: var(--muted); }
+  .how-this-works { margin-top: 1.2rem; font-size: 0.82rem; color: var(--muted); }
+  .how-this-works summary { cursor: pointer; color: var(--muted); font-size: 0.82rem; }
+  .how-this-works-body { margin-top: 0.5rem; max-width: 42rem; line-height: 1.45; color: var(--muted); }
   #grokBotTodayCard .today-fig { font-size: 1.35rem; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
   #grokBotTodayCard .today-note { margin-top: 0.25rem; }
   .bar-rect { fill: var(--accent); transition: opacity 0.1s; }
@@ -606,6 +610,15 @@
       <svg id="grokBotDailyChart" role="img" aria-label="Grok Bot usage by day, percent of weekly limit"></svg>
     </div>
 
+    <div class="card" id="grokBotWeeklyCard" style="margin-top: 1rem; display:none;">
+      <div class="card-head">
+        <h2>Grok Bot by week</h2>
+        <span class="muted" id="grokBotWeeklyChartNote"></span>
+      </div>
+      <svg id="grokBotWeeklyChart" role="img" aria-label="Grok Bot usage by week, percent of weekly limit"></svg>
+      <div class="muted" id="grokBotWeeklyPartialNote" style="margin-top:0.4rem;"></div>
+    </div>
+
     <div class="card" id="hourlyCard" style="margin-top: 1rem; display:none;">
       <div class="card-head"><h2>Hourly <span id="hourlyMetricLabel"></span> <span id="hourlyDayLabel">(today)</span></h2><span class="muted" id="hourlyChartNote"></span></div>
       <svg id="hourlyChart" role="img" aria-label="Hourly spend chart"></svg>
@@ -680,18 +693,7 @@
   </section>
 
   <section id="view-accounts" class="view">
-    <div class="banner">
-      This splits spend by the Claude account that incurred it, using the <code>accountUuid</code>
-      each Claude Code session transcript already carries. Other CLI agents (Codex, Grok, OpenCode)
-      don't record an account in their logs, so their spend is listed separately below, not attributed.
-      Claude sessions are attributed to their last-active day, so the range picker above matches the
-      other tabs but is approximate for sessions spanning midnight.
-      Dollar figures on this page are USD list price. Usage credits further down use the account's
-      own currency and include the currency code.
-      Grok CLI sessions do not record the account. A session updated after this app last looked
-      is tagged with whoever is signed in to the grok CLI then. Older sessions stay
-      "Unattributed Grok account" until you name them here.
-    </div>
+    <p class="tab-intro">Spend by account. USD list price unless a currency is shown.</p>
     <div id="grokBotCards" style="display:flex; flex-direction:column; gap:1rem; margin-bottom:1rem;"></div>
     <div class="muted" style="margin-bottom: 0.8rem;" id="maxUsageIntro"></div>
     <div id="maxUsageContainer" style="display:flex; flex-direction:column; gap:1rem; margin-bottom:1rem;"></div>
@@ -704,16 +706,16 @@
         <tbody></tbody>
       </table>
     </div>
+    <details class="how-this-works">
+      <summary>How this works</summary>
+      <div class="how-this-works-body">
+        This splits spend by the Claude account that incurred it, using the account id each Claude Code session transcript already carries. Other CLI agents (Codex, Grok, OpenCode) do not record an account in their logs, so their spend is listed separately below, not attributed. Claude sessions are attributed to their last-active day, so the range picker above matches the other tabs but is approximate for sessions that span midnight. Dollar figures on this page are USD list price. Usage credits further down use the account's own currency and include the currency code. Grok CLI sessions do not record the account. A session updated after this app last looked is tagged with whoever is signed in to the grok CLI then. Older sessions stay "Unattributed Grok account" until you name them here. Claude plan-limit figures come from claude.ai Settings, Usage, cached locally by Claude Code. An account is only refreshed while Claude Code is logged into it, so a switched-away account shows its last-known snapshot.
+      </div>
+    </details>
   </section>
 
   <section id="view-projects" class="view">
-    <div class="banner">
-      Spend per repo for Claude Code and the Grok CLI. Claude uses the working directory in the
-      transcript. Grok uses the folder name under ~/.grok/sessions, which is the project path.
-      Other CLI agents still do not record a project path.
-      Sessions whose directory wasn't captured land in "Unattributed" rather than silently dropping.
-      The account menu above filters these rows. Long paths are shortened; the full path is on the row tooltip.
-    </div>
+    <p class="tab-intro">Spend per repo for Claude Code and the Grok CLI.</p>
     <div class="muted" id="projRangeNote" style="margin-bottom: 0.8rem;"></div>
     <div class="card">
       <table id="projectsTable">
@@ -726,6 +728,12 @@
         <tbody></tbody>
       </table>
     </div>
+    <details class="how-this-works">
+      <summary>How this works</summary>
+      <div class="how-this-works-body">
+        Claude uses the working directory in the transcript. Grok uses the folder name under ~/.grok/sessions, which is the project path. Other CLI agents still do not record a project path. Sessions whose directory was not captured land in "Unattributed" rather than silently dropping. The account menu above filters these rows. Long paths are shortened; the full path is on the row tooltip.
+      </div>
+    </details>
   </section>
 
   <section id="view-settings" class="view">
@@ -912,6 +920,57 @@ function signedPct(pct) {
   return body;
 }
 
+function localIsoDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function formatResetDateLabel(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const opts = { day: 'numeric', month: 'short' };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = 'numeric';
+  return d.toLocaleDateString(undefined, opts);
+}
+
+function formatCoverageStarted(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const date = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return date + ' ' + hh + ':' + mm;
+}
+
+function weeklyWindowLabel(w) {
+  const n = formatPct(w.peakPct);
+  return w.current ? (n + '% so far') : ('reached ' + n + '% by reset');
+}
+
+function grokBotWindows() {
+  const acct = preferredGrokBotAccount();
+  return (acct && acct.windows) || [];
+}
+
+function grokBotWindowsInRange(cutoff, windowEnd, allWindows) {
+  const windows = grokBotWindows();
+  if (allWindows) return windows.slice();
+  return windows.filter(w => {
+    if (w.current) return true;
+    const resetDate = localIsoDate(w.resetAt);
+    const first = localIsoDate(w.firstReadingAt);
+    const last = localIsoDate(w.lastReadingAt);
+    if (resetDate && resetDate >= cutoff && resetDate <= windowEnd) return true;
+    if (first && first <= windowEnd && (last || first) >= cutoff) return true;
+    if (last && last >= cutoff && last <= windowEnd) return true;
+    return false;
+  });
+}
+
 function grokBotEmptyCopy() {
   return 'No Grok Bot usage cache found on this Mac yet. The Grok Bot desktop app writes one under ~/Library/Application Support/Grok Bot/ when it has fetched your usage. Open the Grok Bot app once (its own Usage page is enough), then refresh this dashboard. This tool only reads that local file; it does not call Grok\'s servers.';
 }
@@ -980,6 +1039,7 @@ function renderGrokBotCards() {
       <p style="margin-top:0.8rem;">${escHtml(credits)}</p>
       ${refuse}
       ${usageHistoryChartHtml(history, [{ key: 'weeklyPct', label: 'Weekly limit', color: 'var(--accent)' }], 'Weekly usage over time')}
+      ${grokBotWeeklyChartHtml(a.windows || [])}
       <p class="muted" style="margin-top:0.8rem;">${escHtml(a.note || 'Grok Bot reports usage as a share of a weekly limit shared with other apps, not tokens or dollars.')} Read from the Grok Bot app\'s local usage cache on this Mac. This dashboard does not call Grok\'s servers.</p>
     </div>`;
   }).join('');
@@ -2825,10 +2885,11 @@ function renderSettingsPage() {
 const DH_WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const DH_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function renderDayHeatmap(windowed, cutoff, windowEnd) {
+function renderDayHeatmap(windowed, cutoff, windowEnd, grokByDate) {
   const box = document.getElementById('dayHeatmap');
   const byPeriod = {};
   windowed.forEach(d => { byPeriod[d.period] = d.value.totalCost; });
+  grokByDate = grokByDate || {};
   const maxCost = Math.max(0, ...Object.values(byPeriod));
   const selectedPeriod = (customFrom && customFrom === customTo)
     ? customFrom
@@ -2862,12 +2923,18 @@ function renderDayHeatmap(windowed, cutoff, windowEnd) {
     const cells = Array(leadBlanks).fill('<div class="dh-cell"></div>').concat(
       month.days.map(period => {
         const cost = byPeriod[period] || 0;
-        const has = cost > 0;
+        const grokPct = grokByDate[period] || 0;
+        const has = cost > 0 || grokPct > 0;
         const selected = period === selectedPeriod ? ' selected' : '';
-        const action = has
-          ? `Show ${period}, USD list price ${fmt(cost)}`
-          : `Show ${period}, no list-price spend`;
-        return `<div class="dh-cell${has ? ' has-data' : ''}${selected}" style="${colorFor(cost)}" data-period="${period}" role="button" tabindex="0" aria-label="${escAttr(action)}" title="${escAttr(period + ': ' + fmt(cost) + ' USD list price')}"></div>`;
+        const grokBit = grokPct > 0 ? `Grok Bot ${signedPct(grokPct)}% of weekly limit` : '';
+        const action = cost > 0
+          ? `Show ${period}, USD list price ${fmt(cost)}` + (grokBit ? `, ${grokBit}` : '')
+          : (grokBit ? `Show ${period}, ${grokBit}` : `Show ${period}, no list-price spend`);
+        const style = cost > 0 ? colorFor(cost) : (grokPct > 0 ? 'background: color-mix(in srgb, var(--accent) 40%, var(--border));' : '');
+        const tip = cost > 0
+          ? (period + ': ' + fmt(cost) + ' USD list price' + (grokBit ? '. ' + grokBit : ''))
+          : (grokBit ? (period + ': ' + grokBit + ' (not priced)') : (period + ': no list-price spend'));
+        return `<div class="dh-cell${has ? ' has-data' : ''}${selected}" style="${style}" data-period="${period}" role="button" tabindex="0" aria-label="${escAttr(action)}" title="${escAttr(tip)}"></div>`;
       })
     );
     const weekdays = `<div class="dh-weekdays" aria-hidden="true">${DH_WEEKDAYS.map(d => `<span>${d}</span>`).join('')}</div>`;
@@ -3013,9 +3080,7 @@ function renderMaxUsage(list) {
     return;
   }
 
-  intro.textContent = list.length > 1
-    ? 'Real plan-limit data from claude.ai’s own Settings → Usage page — not an estimate. Each account is only refreshed while Claude Code is actually logged into it, so a switched-away account shows its last-known snapshot.'
-    : 'This is the real plan-limit data from claude.ai’s own Settings → Usage page — not an estimate. It’s cached locally by Claude Code, refreshed only while this account is the one logged in.';
+  intro.textContent = '';
 
   container.innerHTML = list.map(mu => {
     const { stale, asOf } = snapshotAge(mu);
@@ -3336,6 +3401,79 @@ function renderGrokBotDailyChart(cutoff, windowEnd) {
   drawPctBarChart(svg, rows, '%', `Grok Bot usage by day from ${cutoff} to ${windowEnd}, percent of weekly limit`);
 }
 
+function renderGrokBotWeeklyChart(cutoff, windowEnd) {
+  const card = document.getElementById('grokBotWeeklyCard');
+  const svg = document.getElementById('grokBotWeeklyChart');
+  const note = document.getElementById('grokBotWeeklyChartNote');
+  const partialNote = document.getElementById('grokBotWeeklyPartialNote');
+  if (!card || !svg) return;
+  const presetLong = !customFrom && !customTo && (range === 30 || range >= 9999);
+  const windows = presetLong && showGrokBotUsage(agent) ? grokBotWindowsInRange(cutoff, windowEnd, range >= 9999) : [];
+  if (!windows.length) {
+    card.style.display = 'none';
+    svg.innerHTML = '';
+    if (partialNote) partialNote.textContent = '';
+    return;
+  }
+  card.style.display = '';
+  const rows = windows.map(w => ({
+    label: weeklyWindowLabel(w),
+    tick: formatResetDateLabel(w.resetAt),
+    value: w.peakPct || 0,
+    title: weeklyWindowLabel(w) + (w.partialCoverage ? (' · partial coverage, readings started ' + formatCoverageStarted(w.firstReadingAt)) : ''),
+  }));
+  if (note) {
+    note.textContent = range >= 9999
+      ? 'Peak share of each weekly limit, not priced'
+      : (cutoff + ' to ' + windowEnd + ' · peak share of each weekly limit, not priced');
+  }
+  drawPctBarChart(svg, rows, '%', 'Grok Bot usage by week, percent of weekly limit');
+  const titles = svg.querySelectorAll('rect.bar-rect title');
+  titles.forEach((t, i) => { if (rows[i] && rows[i].title) t.textContent = rows[i].tick + ': ' + rows[i].title; });
+  if (partialNote) {
+    const partials = windows.filter(w => w.partialCoverage);
+    partialNote.textContent = partials.length
+      ? partials.map(w => 'The week resetting ' + formatResetDateLabel(w.resetAt) + ' has partial coverage (readings started ' + formatCoverageStarted(w.firstReadingAt) + ').').join(' ')
+      : '';
+  }
+}
+
+function grokBotWeeklyChartHtml(windows) {
+  if (!windows || !windows.length) return '';
+  const W = 560, H = 110, padL = 36, padR = 8, padT = 10, padB = 22;
+  const max = Math.max(...windows.map(w => w.peakPct || 0), 0.01);
+  const niceMax = max * 1.15;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+  const bw = plotW / windows.length;
+  const yOf = v => padT + plotH - (v / niceMax) * plotH;
+  const grid = [0, 0.5, 1].map(t => {
+    const y = yOf(t * niceMax);
+    const label = formatPct(t * niceMax) + '%';
+    return '<line x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y + '" y2="' + y + '" class="gridline"/><text x="2" y="' + (y + 3) + '" class="axis-label">' + label + '</text>';
+  }).join('');
+  const bars = windows.map((w, i) => {
+    const value = w.peakPct || 0;
+    if (value <= 0) return '';
+    const h = (value / niceMax) * plotH;
+    const x = padL + i * bw + bw * 0.12;
+    const y = padT + plotH - h;
+    const tip = formatResetDateLabel(w.resetAt) + ': ' + weeklyWindowLabel(w) + (w.partialCoverage ? (' · partial coverage, readings started ' + formatCoverageStarted(w.firstReadingAt)) : '');
+    return '<rect class="bar-rect" x="' + x + '" y="' + y + '" width="' + Math.max(bw * 0.76, 1) + '" height="' + Math.max(h, 0.5) + '"><title>' + escAttr(tip) + '</title></rect>';
+  }).join('');
+  const ticks = windows.map((w, i) => {
+    const x = padL + i * bw + bw / 2;
+    return '<text x="' + x + '" y="' + (H - 4) + '" class="axis-label" text-anchor="middle">' + escHtml(formatResetDateLabel(w.resetAt)) + '</text>';
+  }).join('');
+  const partials = windows.filter(w => w.partialCoverage).map(w =>
+    'The week resetting ' + formatResetDateLabel(w.resetAt) + ' has partial coverage (readings started ' + formatCoverageStarted(w.firstReadingAt) + ').'
+  ).join(' ');
+  return '<div class="muted" style="margin-top:0.9rem; font-size:0.78rem; font-weight:600;">Grok Bot by week'
+    + ' <span class="muted" style="font-weight:400;">Peak share of each weekly limit, not priced</span></div>'
+    + '<svg role="img" aria-label="Grok Bot usage by week, percent of weekly limit" viewBox="0 0 ' + W + ' ' + H + '" style="width:100%; height:' + H + 'px; margin-top:0.3rem;">'
+    + grid + bars + ticks + '</svg>'
+    + (partials ? '<div class="muted" style="margin-top:0.3rem;">' + escHtml(partials) + '</div>' : '');
+}
+
 function renderGrokBotHourlyChart(today) {
   const wrap = document.getElementById('grokBotHourlyChartWrap');
   const svg = document.getElementById('grokBotHourlyChart');
@@ -3494,6 +3632,7 @@ function update() {
 
     renderGrokBotTodayCard(cutoff, windowEnd, isSingleDay);
     renderGrokBotDailyChart(cutoff, windowEnd);
+    renderGrokBotWeeklyChart(cutoff, windowEnd);
 
     const hourlyCard = document.getElementById('hourlyCard');
     // ccusage blocks are fetched for today only, so a past day has no hourly series.
@@ -3558,9 +3697,22 @@ function update() {
       tokens: v.input + v.output, totalTokens: v.tokens, input: v.input, output: v.output, cacheRead: v.cacheRead, cacheCreate: v.cacheCreate }))
     .filter(r => r.model.toLowerCase().includes(modelFilter));
   modelRows.sort((a, b) => modelSort.dir * (a[modelSort.k] > b[modelSort.k] ? 1 : a[modelSort.k] < b[modelSort.k] ? -1 : 0));
+  const grokModelPct = (showGrokBotUsage(agent) ? grokBotUsedPctSum(cutoff, windowEnd) : 0) || 0;
+  const grokModelName = 'Grok Bot (model not reported)';
+  if (grokModelPct > 0 && grokModelName.toLowerCase().includes(modelFilter)) {
+    modelRows.push({ model: grokModelName, grokBot: true, grokBotPct: grokModelPct, cost: 0, share: 0, tokens: 0, input: 0, output: 0, totalTokens: 0, cacheRead: 0, cacheCreate: 0 });
+  }
   markSort('modelTable', modelSort);
-  document.getElementById('modelCount').textContent = `${modelRows.length} of ${Object.keys(modelAgg).length}`;
+  const modelSourceCount = Object.keys(modelAgg).length + (grokModelPct > 0 ? 1 : 0);
+  document.getElementById('modelCount').textContent = `${modelRows.length} of ${modelSourceCount}`;
   document.querySelector('#modelTable tbody').innerHTML = modelRows.map(r => {
+    if (r.grokBot) {
+      return `<tr><td>${escHtml(r.model)}</td><td class="right tnum">–</td>
+        <td class="right tnum">–</td>
+        <td class="right tnum">–</td>
+        <td class="right tnum">–</td>
+        <td><span class="muted">${escHtml(signedPct(r.grokBotPct))}% of weekly limit</span></td></tr>`;
+    }
     const pct = r.share * 100;
     const selected = r.model === selectedModel ? ' selected-model' : '';
     const breakdown = `real (input+output): ${fmtTok(r.tokens)}  (in ${fmtTok(r.input)} / out ${fmtTok(r.output)})\ncache read: ${fmtTok(r.cacheRead)}\ncache create: ${fmtTok(r.cacheCreate)}\ntotal incl. cache: ${fmtTok(r.totalTokens)}`;
@@ -3574,20 +3726,34 @@ function update() {
   renderModelDetail(windowed);
 
   // ---- days ----
-  if (tab === 'days') renderDayHeatmap(windowed, cutoff, windowEnd);
+  const grokByDate = {};
+  if (showGrokBotUsage(agent)) {
+    grokBotDaysInRange(cutoff, windowEnd).forEach(d => { grokByDate[d.date] = d.usedPct || 0; });
+  }
+  if (tab === 'days') renderDayHeatmap(windowed, cutoff, windowEnd, grokByDate);
   const totalTokensOf = v => (v ? v.modelBreakdowns.reduce((s, mb) => s + (mb.inputTokens || 0) + (mb.outputTokens || 0) + (mb.cacheReadTokens || 0) + (mb.cacheCreationTokens || 0), 0) : 0);
   let dailyRows = windowed
     .map(d => ({
       period: d.period, agents: d.value.agentsPresent.join(','), totalCost: d.value.totalCost, agentsPresent: d.value.agentsPresent,
       tokens: realTokensOf(d.value), totalTokens: totalTokensOf(d.value),
+      grokBotPct: grokByDate[d.period] || 0,
     }));
+  const seenDays = new Set(dailyRows.map(r => r.period));
+  Object.keys(grokByDate).forEach(date => {
+    if ((grokByDate[date] || 0) > 0 && !seenDays.has(date) && date >= cutoff && date <= windowEnd) {
+      dailyRows.push({ period: date, agents: '', totalCost: 0, agentsPresent: [], tokens: 0, totalTokens: 0, grokBotPct: grokByDate[date] });
+    }
+  });
   dailyRows.sort((a, b) => dailySort.dir * (a[dailySort.k] > b[dailySort.k] ? 1 : a[dailySort.k] < b[dailySort.k] ? -1 : 0));
   markSort('dailyTable', dailySort);
-  document.getElementById('dayCount').textContent = `${dailyRows.length} of ${windowed.length}`;
+  document.getElementById('dayCount').textContent = `${dailyRows.length} of ${Math.max(dailyRows.length, windowed.length)}`;
   document.querySelector('#dailyTable tbody').innerHTML = dailyRows.map(r => {
     const pills = r.agentsPresent.map(a => `<span class="pill">${escHtml(a)}</span>`).join('');
-    const tooltip = `real (input+output): ${fmtTok(r.tokens)}\ntotal incl. cache: ${fmtTok(r.totalTokens)}`;
-    return `<tr class="day-row" role="button" data-period="${r.period}" tabindex="0" title="Show ${r.period}"><td class="tnum">${r.period}</td><td>${pills}</td>
+    const grokNote = (r.grokBotPct > 0)
+      ? `<span class="muted">Grok Bot ${escHtml(signedPct(r.grokBotPct))}% of weekly limit</span>`
+      : '';
+    const tooltip = `real (input+output): ${fmtTok(r.tokens)}\ntotal incl. cache: ${fmtTok(r.totalTokens)}` + (r.grokBotPct > 0 ? `\nGrok Bot ${signedPct(r.grokBotPct)}% of weekly limit (not priced)` : '');
+    return `<tr class="day-row" role="button" data-period="${r.period}" tabindex="0" title="Show ${r.period}"><td class="tnum">${r.period}</td><td>${pills}${pills && grokNote ? ' ' : ''}${grokNote}</td>
       <td class="right tnum" title="${tooltip}">${fmtTok(r.tokens)}</td>
       <td class="right tnum">${fmt(r.totalCost)}</td></tr>`;
   }).join('') || '<tr><td colspan="4" class="muted">No matching dates.</td></tr>';

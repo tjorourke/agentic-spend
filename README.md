@@ -186,9 +186,15 @@ match a manual plan note you've saved, the UI flags it rather than silently pref
   The card shows the plan name, weekly percentage, reset time (local, with a countdown), extra
   credits, and a short history of the percentage. Overview also shows usage by day, derived
   from positive increases in that history within the same weekly window, and a today figure
-  when you are looking at a single day. A reading is taken whenever the dashboard loads usage,
-  and every ten minutes while the server is running, so the day fills in even if the page is
-  closed. Grok Bot reports a share of a weekly limit
+  when you are looking at a single day. On a 30-day or all-time range, and on the Accounts
+  card, a "Grok Bot by week" chart shows the highest weekly share reached in each weekly
+  window. History is kept for 400 days. Readings from the last 14 days are stored in full
+  (still dropping unchanged samples within 30 minutes); older readings are downsampled to
+  one per hour, plus each window's last reading before reset, so the file stays modest. A
+  compact per-window summary (reset time, peak percentage, first and last reading) is kept
+  so the weekly trend survives that downsampling. A reading is taken whenever the dashboard
+  loads usage, and every ten minutes while the server is running, so the day fills in even
+  if the page is closed. Grok Bot reports a share of a weekly limit
   shared with other apps on the plan, not tokens or a dollar spend. This dashboard only reads
   that local file; it does not call Grok's servers or use cookies or tokens. If the cache is
   not there yet, the card explains how to get one: open the Grok Bot app so it can write the

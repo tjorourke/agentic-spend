@@ -27,7 +27,8 @@ import urllib.parse
 import data_dir
 
 HISTORY_PATH = data_dir.path("grokbot-usage.json")
-HISTORY_DAYS = 60
+HISTORY_DAYS = 400
+FULL_RES_DAYS = 14
 DEDUPE_SECONDS = 30 * 60
 DEFAULT_NOTE = (
     "Grok Bot reports usage as a share of a weekly limit shared with other apps, "
@@ -242,8 +243,9 @@ def _iso(dt):
 
 def append_history(history, weekly_pct, at, now=None, reset_at=None):
     """Append a point, dropping same-value samples within 30 minutes and
-    anything older than 60 days. ``history`` is a list of {at, weeklyPct}
-    and an optional resetAt on each point."""
+    anything older than 400 days. ``history`` is a list of {at, weeklyPct}
+    and an optional resetAt on each point. Callers downsample older points
+    with downsample_history so the file stays modest."""
     now = now or datetime.datetime.now(datetime.timezone.utc)
     if now.tzinfo is None:
         now = now.replace(tzinfo=datetime.timezone.utc)
@@ -302,8 +304,16 @@ def merge_snapshot(store, snapshot, now=None):
         now=now,
         reset_at=snapshot.get("resetAt"),
     )
+    windows = merge_window_summaries(
+        existing.get("windows") or [],
+        history,
+        current_reset_at=snapshot.get("resetAt"),
+        now=now,
+    )
+    history = downsample_history(history, now=now, current_reset_at=snapshot.get("resetAt"))
     entry = dict(snapshot)
     entry["history"] = history
+    entry["windows"] = windows
     accounts[account_id] = entry
     return {"accounts": accounts}
 
@@ -450,6 +460,221 @@ def daily_usage_from_history(history, tz=None, now=None, current_reset_at=None):
     return {"days": day_list, "hours": hour_list}
 
 
+
+def _point_row(at, weekly_pct, reset_at=None):
+    row = {"at": _iso(at), "weeklyPct": float(weekly_pct)}
+    reset_iso = _iso(reset_at) if reset_at else None
+    if reset_iso:
+        row["resetAt"] = reset_iso
+    return row
+
+
+
+def _group_weekly_windows(points, current_reset_at=None):
+    """Group readings that share a weekly limit window.
+
+    Points with the same reset time stay together even if the percentage
+    dips. A new group starts when a reading is at or after the previous
+    point's reset, or when resetAt changes. If no reset is stored, a drop
+    is treated as the start of a new window.
+    """
+    reset_now = _parse_iso(current_reset_at) if isinstance(current_reset_at, str) else current_reset_at
+    groups = []
+    current = []
+    current_reset = None
+    for point in points:
+        if not current:
+            current = [point]
+            current_reset = point.get("resetAt")
+            continue
+        prev = current[-1]
+        new_window = False
+        deadline = prev.get("resetAt")
+        if deadline is None and reset_now is not None and prev["at"] < reset_now:
+            deadline = reset_now
+        if deadline is not None and point["at"] >= deadline:
+            new_window = True
+        this_reset = point.get("resetAt")
+        if this_reset is not None and current_reset is not None and this_reset != current_reset:
+            new_window = True
+        if (
+            this_reset is None
+            and prev.get("resetAt") is None
+            and deadline is None
+            and point["weeklyPct"] < prev["weeklyPct"] - 1e-9
+        ):
+            new_window = True
+        if new_window:
+            groups.append(current)
+            current = [point]
+            current_reset = this_reset
+        else:
+            current.append(point)
+            if this_reset is not None:
+                current_reset = this_reset
+    if current:
+        groups.append(current)
+    return groups
+
+
+def downsample_history(history, now=None, current_reset_at=None):
+    """Keep full resolution for the last 14 days; older points are reduced
+    to one reading per UTC hour, plus each weekly window's last reading
+    before reset. Points older than HISTORY_DAYS are dropped.
+    """
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=datetime.timezone.utc)
+    cutoff = now - datetime.timedelta(days=HISTORY_DAYS)
+    full_after = now - datetime.timedelta(days=FULL_RES_DAYS)
+    points = _history_points(history)
+    kept = [p for p in points if p["at"] >= cutoff]
+    if not kept:
+        return []
+    recent = [p for p in kept if p["at"] >= full_after]
+    older = [p for p in kept if p["at"] < full_after]
+    if not older:
+        return [_point_row(p["at"], p["weeklyPct"], p["resetAt"]) for p in kept]
+
+    window_last_isos = set()
+    for group in _group_weekly_windows(list(kept), current_reset_at=current_reset_at):
+        last = group[-1]
+        if last["at"] < full_after:
+            window_last_isos.add(_iso(last["at"]))
+
+    by_hour = {}
+    for point in older:
+        key = point["at"].astimezone(datetime.timezone.utc).strftime("%Y-%m-%dT%H")
+        prev = by_hour.get(key)
+        if prev is None or point["at"] >= prev["at"]:
+            by_hour[key] = point
+    chosen = {id(p): p for p in by_hour.values()}
+    have = {_iso(p["at"]) for p in chosen.values()}
+    for point in older:
+        iso = _iso(point["at"])
+        if iso in window_last_isos and iso not in have:
+            chosen[id(point)] = point
+            have.add(iso)
+    older_rows = sorted(chosen.values(), key=lambda p: p["at"])
+    rows = [_point_row(p["at"], p["weeklyPct"], p["resetAt"]) for p in older_rows + recent]
+    return rows
+
+
+def _partial_coverage(first_at, reset_at, previous_reset=None):
+    if first_at is None or reset_at is None:
+        return True
+    start = previous_reset if previous_reset is not None else (reset_at - datetime.timedelta(days=7))
+    return first_at > start + datetime.timedelta(hours=1)
+
+
+def window_summaries_from_history(history, current_reset_at=None, now=None):
+    """One compact summary per weekly window, keyed by that window's reset time."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=datetime.timezone.utc)
+    reset_now = _parse_iso(current_reset_at) if isinstance(current_reset_at, str) else current_reset_at
+    groups = _group_weekly_windows(_history_points(history), current_reset_at=reset_now)
+    summaries = []
+    previous_reset = None
+    for group in groups:
+        reset = None
+        for point in group:
+            if point["resetAt"] is not None:
+                reset = point["resetAt"]
+                break
+        if reset is None and reset_now is not None and group[0]["at"] < reset_now:
+            reset = reset_now
+        if reset is None:
+            # No stored reset: still record a window keyed by the last reading
+            # plus seven days so a summary can exist for trend charts.
+            reset = group[-1]["at"] + datetime.timedelta(days=7)
+        first = group[0]["at"]
+        last = group[-1]["at"]
+        peak = max(p["weeklyPct"] for p in group)
+        current = reset > now
+        summaries.append({
+            "resetAt": _iso(reset),
+            "peakPct": round(float(peak), 6),
+            "firstReadingAt": _iso(first),
+            "lastReadingAt": _iso(last),
+            "partialCoverage": _partial_coverage(first, reset, previous_reset),
+            "current": current,
+        })
+        previous_reset = reset
+    return summaries
+
+
+def merge_window_summaries(existing, history, current_reset_at=None, now=None):
+    """Combine stored window summaries with a fresh pass over history.
+
+    Peak, first reading and last reading take the wider of the two so a
+    later downsample cannot erase a trend already recorded.
+    """
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=datetime.timezone.utc)
+    by_reset = {}
+    for row in existing or []:
+        if not isinstance(row, dict):
+            continue
+        key = _iso(row.get("resetAt")) if row.get("resetAt") else None
+        if not key:
+            continue
+        try:
+            peak = float(row.get("peakPct"))
+        except (TypeError, ValueError):
+            continue
+        by_reset[key] = {
+            "resetAt": key,
+            "peakPct": peak,
+            "firstReadingAt": _iso(row.get("firstReadingAt")) or None,
+            "lastReadingAt": _iso(row.get("lastReadingAt")) or None,
+        }
+    for row in window_summaries_from_history(history, current_reset_at=current_reset_at, now=now):
+        key = row["resetAt"]
+        if key in by_reset:
+            old = by_reset[key]
+            firsts = [t for t in (old.get("firstReadingAt"), row.get("firstReadingAt")) if t]
+            lasts = [t for t in (old.get("lastReadingAt"), row.get("lastReadingAt")) if t]
+            row = {
+                "resetAt": key,
+                "peakPct": max(old["peakPct"], row["peakPct"]),
+                "firstReadingAt": min(firsts) if firsts else None,
+                "lastReadingAt": max(lasts) if lasts else None,
+            }
+        by_reset[key] = {
+            "resetAt": key,
+            "peakPct": row["peakPct"],
+            "firstReadingAt": row.get("firstReadingAt"),
+            "lastReadingAt": row.get("lastReadingAt"),
+        }
+
+    cutoff = now - datetime.timedelta(days=HISTORY_DAYS)
+    ordered = sorted(by_reset.values(), key=lambda w: w["resetAt"] or "")
+    previous_reset = None
+    out = []
+    for row in ordered:
+        reset = _parse_iso(row["resetAt"])
+        last = _parse_iso(row.get("lastReadingAt"))
+        first = _parse_iso(row.get("firstReadingAt"))
+        if reset is None:
+            previous_reset = reset
+            continue
+        if not (reset >= cutoff or reset > now or (last is not None and last >= cutoff)):
+            previous_reset = reset
+            continue
+        out.append({
+            "resetAt": row["resetAt"],
+            "peakPct": round(float(row["peakPct"]), 6),
+            "firstReadingAt": row.get("firstReadingAt"),
+            "lastReadingAt": row.get("lastReadingAt"),
+            "partialCoverage": _partial_coverage(first, reset, previous_reset),
+            "current": reset > now,
+        })
+        previous_reset = reset
+    return out
+
+
 def default_timezone():
     """The machine's current local timezone, DST-aware where zoneinfo applies."""
     return datetime.datetime.now().astimezone().tzinfo
@@ -513,6 +738,12 @@ def _public_account(entry, tz=None, now=None):
         "history": history,
         "dailyUsage": usage["days"],
         "hourlyUsage": usage["hours"],
+        "windows": merge_window_summaries(
+            entry.get("windows") or [],
+            history,
+            current_reset_at=entry.get("resetAt"),
+            now=now,
+        ),
     }
 
 

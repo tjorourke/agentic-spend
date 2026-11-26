@@ -159,11 +159,11 @@ class HistoryTests(unittest.TestCase):
         changed = grokbot_usage.append_history(first, 13.0, "2026-01-03T10:05:00+00:00", now=now)
         self.assertEqual([p["weeklyPct"] for p in changed], [12.5, 13.0])
 
-    def test_drops_points_older_than_60_days(self):
+    def test_drops_points_older_than_400_days(self):
         now = datetime.datetime(2026, 3, 10, tzinfo=datetime.timezone.utc)
         history = [
-            {"at": "2025-12-01T00:00:00+00:00", "weeklyPct": 1.0},
-            {"at": "2026-02-01T00:00:00+00:00", "weeklyPct": 2.0},
+            {"at": "2024-12-01T00:00:00+00:00", "weeklyPct": 1.0},
+            {"at": "2025-06-01T00:00:00+00:00", "weeklyPct": 2.0},
         ]
         out = grokbot_usage.append_history(history, 3.0, "2026-03-10T00:00:00+00:00", now=now)
         self.assertEqual([p["weeklyPct"] for p in out], [2.0, 3.0])
