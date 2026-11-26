@@ -3,7 +3,6 @@ class AgenticSpend < Formula
   homepage "https://github.com/tjorourke/agentic-spend"
   url "https://github.com/tjorourke/agentic-spend/archive/refs/tags/v1.6.0.tar.gz"
   sha256 "94ab793af63e0cfba82ce491356758911d5faae7f7af85868965550e0137ed03"
-  version "1.6.0"
 
   license "Apache-2.0"
 
@@ -11,15 +10,12 @@ class AgenticSpend < Formula
 
   # ccusage 20 is a native binary. We bundle the build for this Mac from its
   # npm packages (MIT, see THIRD_PARTY_NOTICES.md), so no Node.js is needed.
-  on_arm do
-    resource "ccusage" do
+  resource "ccusage" do
+    on_arm do
       url "https://registry.npmjs.org/@ccusage/ccusage-darwin-arm64/-/ccusage-darwin-arm64-20.1.2.tgz"
       sha256 "042f5da67678cc232bb45b4a5f81eb3370e8373d53f7d7bcf07759a0e5accac8"
     end
-  end
-
-  on_intel do
-    resource "ccusage" do
+    on_intel do
       url "https://registry.npmjs.org/@ccusage/ccusage-darwin-x64/-/ccusage-darwin-x64-20.1.2.tgz"
       sha256 "1bfa504ee2fc21eb2fcffc5b80915915af0c366a6109e4c37d7b770c9a4e4728"
     end
@@ -101,12 +97,15 @@ class AgenticSpend < Formula
   end
 
   test do
+    modules = %w[server account_usage provider_usage statusline_setup data_dir token_sources grok_usage
+                 grokbot_usage source_detection insights notify digest login_item ccusage_bin]
     system "python3", "-c",
-           "import sys; sys.path.insert(0, '#{libexec}'); import server, account_usage, provider_usage, statusline_setup, data_dir, token_sources, grok_usage, grokbot_usage, source_detection, insights, notify, digest, login_item, ccusage_bin"
+           "import sys; sys.path.insert(0, '#{libexec}'); import #{modules.join(", ")}"
     assert_match "usage: agentic-spend", shell_output("#{bin}/agentic-spend --help")
     assert_match "ccusage 20.1.2", shell_output("#{libexec}/vendor/ccusage --version")
-    assert_predicate libexec/"THIRD_PARTY_NOTICES.md", :exist?
+    assert_path_exists libexec/"THIRD_PARTY_NOTICES.md"
     system "python3", "-c",
-           "import sys; sys.path.insert(0, '#{libexec}'); import ccusage_bin; r = ccusage_bin.resolve(env={}); assert r['source'] == 'bundled', r"
+           "import sys; sys.path.insert(0, '#{libexec}'); import ccusage_bin; " \
+           "r = ccusage_bin.resolve(env={}); assert r['source'] == 'bundled', r"
   end
 end
