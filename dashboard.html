@@ -1548,6 +1548,36 @@ function drawCacheReadChart(rows) {
 
 const ACCOUNT_PALETTE = ['#7c3aed', '#14b8a6', '#f59e0b', '#ef4444', '#3b82f6', '#ec4899', '#84cc16', '#8b5cf6'];
 
+function accountChartRows(days, accountSessions, filterValue, cutoff, windowEnd) {
+  // Every series comes from rowsForFilter, the same path as Daily spend and the KPIs.
+  const inRange = rows => rows.filter(d => d.period >= cutoff && d.period <= windowEnd && (d.value.totalCost || 0) > 0);
+  const byPeriod = {};
+  const addSeries = (name, filter) => {
+    inRange(rowsForFilter(days, accountSessions, filter)).forEach(r => {
+      const row = byPeriod[r.period] || (byPeriod[r.period] = { period: r.period });
+      row[name] = (row[name] || 0) + (r.value.totalCost || 0);
+    });
+  };
+  if (!filterValue || filterValue === 'all') {
+    const seen = new Set();
+    (accountSessions || []).forEach(s => {
+      if (!s.accountUuid || seen.has(s.accountUuid)) return;
+      seen.add(s.accountUuid);
+      addSeries(s.label || s.accountUuid, 'account:' + s.accountUuid);
+    });
+    const tools = new Set();
+    days.forEach(d => ((d.metadata && d.metadata.agents) || []).forEach(a => { if (a !== 'claude') tools.add(a); }));
+    [...tools].sort().forEach(tool => addSeries(tool, tool));
+  } else if (String(filterValue).startsWith('account:')) {
+    const uuid = filterValue.slice('account:'.length);
+    const sample = (accountSessions || []).find(s => s.accountUuid === uuid);
+    addSeries((sample && sample.label) || uuid, filterValue);
+  } else {
+    addSeries(String(filterValue), filterValue);
+  }
+  return Object.values(byPeriod).sort((a, b) => a.period.localeCompare(b.period));
+}
+
 function drawAccountChart(rows) {
   const svg = document.getElementById('acctChart');
   const note = document.getElementById('acctChartNote');
@@ -1566,7 +1596,7 @@ function drawAccountChart(rows) {
   buckets.forEach((b, i) => { colorOf[b] = ACCOUNT_PALETTE[i % ACCOUNT_PALETTE.length]; });
 
   legend.innerHTML = buckets.map(b =>
-    `<span class="item"><span class="swatch" style="background:${colorOf[b]}"></span>${b} <span class="amt tnum">${fmt(totals[b])}</span></span>`
+    `<span class="item"><span class="swatch" style="background:${colorOf[b]}"></span>${escHtml(b)} <span class="amt tnum">${fmt(totals[b])}</span></span>`
   ).join('');
 
   if (!rows.length || !buckets.length) { note.textContent = 'No data in this range'; return; }
@@ -2805,8 +2835,7 @@ function update() {
       hourlyCard.style.display = 'none';
     }
 
-    const bucketRows = (data.dailyByBucket || []).filter(d => d.period >= cutoff && d.period <= windowEnd);
-    drawAccountChart(bucketRows);
+    drawAccountChart(accountChartRows(days, data.accountSessions, agent, cutoff, windowEnd));
   }
 
   // Always runs (not just on the overview tab) — it's also what populates
