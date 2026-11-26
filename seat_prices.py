@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Seat prices you enter, and the API-equivalent value of each subscription.
 
-Claude does not expose what a seat costs, so there is no default: an account
-with no saved price shows "set seat price". The price is stored per account
-in seat-prices.json in the data directory (never in the repo), in the
-account's billing currency.
+When the plan is detected from local data (plan_detection), the default is
+the shipped list price for that plan (plan_prices.json, from the provider's
+own pricing page). A price you enter overrides it and is stored per account
+in seat-prices.json in the data directory (never in the repo). An account
+whose plan is unknown, or whose plan has no public price, shows "set seat
+price".
 
 The API-equivalent figure is ccusage's own cost for that account's sessions
 (LiteLLM list prices, in US dollars), month to date, attributed by each
@@ -18,6 +20,7 @@ import os
 import re
 
 import data_dir
+import plan_prices
 
 PATH = data_dir.path("seat-prices.json")
 _ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:@+\-]{0,120}$")
@@ -98,13 +101,65 @@ def billing_currencies(max_usage):
     return out
 
 
-def team_value(max_usage, account_sessions, prices, today=None):
-    """One entry per subscription account (Claude accounts with a plan
-    reading). Month to date, by session last-active day."""
+def _effective_seat(user_price, default_row):
+    """Your price wins; otherwise the shipped list price for the detected plan."""
+    if user_price:
+        return dict(user_price, source="user")
+    if default_row:
+        return {"amount": float(default_row["perMonth"]), "currency": default_row["currency"],
+                "period": "month", "source": "default"}
+    return None
+
+
+def _list_price(default_row, plan_id, table):
+    rows = plan_prices.rows_for(plan_id, table) if plan_id else []
+    return {
+        "default": default_row,
+        "rows": rows,
+        "contactSales": bool(rows) and all(r.get("contactSales") or r.get("perMonth") is None for r in rows),
+    }
+
+
+def _value_entry(key, label, provider, api, sessions, month_start, today_s, billing_currency,
+                 user_price, detection, table):
+    plan_id = (detection or {}).get("planId")
+    default_row = plan_prices.default_for(plan_id, billing_currency, table)
+    seat = _effective_seat(user_price, default_row)
+    entry = {
+        "accountUuid": key,
+        "key": key,
+        "provider": provider,
+        "label": label,
+        "monthStart": month_start,
+        "through": today_s,
+        "apiEquivalentUsd": round(api, 2),
+        "sessions": sessions,
+        "billingCurrency": billing_currency,
+        "plan": detection,
+        "listPrice": _list_price(default_row, plan_id, table),
+        "userSeat": user_price,
+        "seat": seat,
+        "multiple": None,
+    }
+    if seat and seat.get("currency") == "USD" and seat.get("amount"):
+        entry["multiple"] = round(api / seat["amount"], 1)
+    entry["currency"] = billing_currency or (seat or {}).get("currency")
+    return entry
+
+
+def team_value(max_usage, account_sessions, prices, today=None, detections=None,
+               daily=None, table=None):
+    """One entry per subscription account: each Claude account with a plan
+    reading, plus every other tool plan detection knows about (Codex, Grok,
+    OpenCode, other ccusage sources). Month to date. Claude accounts are
+    attributed by session last-active day; other tools use ccusage's daily
+    per-agent cost (one account each)."""
     today = today or datetime.date.today()
     month_start = today.replace(day=1).isoformat()
     today_s = today.isoformat()
     currencies = billing_currencies(max_usage)
+    table = table if table is not None else plan_prices.load()
+    det = {d.get("key"): d for d in (detections or [])}
     out = []
     for mu in max_usage or []:
         uuid = (mu or {}).get("accountUuid")
@@ -119,21 +174,24 @@ def team_value(max_usage, account_sessions, prices, today=None):
             if month_start <= period <= today_s:
                 api += float(s.get("totalCost") or 0.0)
                 sessions += 1
-        price = (prices or {}).get(uuid)
-        currency = currencies.get(uuid) or (price or {}).get("currency")
-        entry = {
-            "accountUuid": uuid,
-            "label": mu.get("label"),
-            "monthStart": month_start,
-            "through": today_s,
-            "apiEquivalentUsd": round(api, 2),
-            "sessions": sessions,
-            "billingCurrency": currencies.get(uuid),
-            "seat": price,
-            "multiple": None,
-        }
-        if price and price.get("currency") == "USD":
-            entry["multiple"] = round(api / price["amount"], 1) if price["amount"] else None
-        entry["currency"] = currency
+        out.append(_value_entry(uuid, mu.get("label"), "claude", api, sessions, month_start, today_s,
+                                currencies.get(uuid), (prices or {}).get(uuid), det.get(uuid), table))
+    for d in detections or []:
+        if d.get("provider") == "claude":
+            continue
+        key = d.get("key")
+        api = 0.0
+        days = 0
+        for row in daily or []:
+            period = (row.get("period") or row.get("date") or "")[:10]
+            if not (month_start <= period <= today_s):
+                continue
+            for a in row.get("agents") or []:
+                if a.get("agent") == key and float(a.get("totalCost") or 0) > 0:
+                    api += float(a.get("totalCost") or 0.0)
+                    days += 1
+        entry = _value_entry(key, d.get("label"), d.get("provider"), api, None, month_start, today_s,
+                             d.get("billingCurrency"), (prices or {}).get(key), d, table)
+        entry["activeDays"] = days
         out.append(entry)
     return out

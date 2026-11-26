@@ -35,6 +35,8 @@ import ccusage_bin
 import ccusage_sources
 import model_mix
 import seat_prices
+import plan_detection
+import plan_prices
 import token_sources
 
 PORT = int(os.environ.get("AGENTIC_SPEND_PORT", "8787"))
@@ -288,9 +290,27 @@ def get_model_mix(daily_rows, force=False):
     return data
 
 
+def _plan_detection(payload):
+    """Plan per account/tool from local files only (see plan_detection)."""
+    try:
+        accounts = [(mu.get("accountUuid"), mu.get("label")) for mu in payload.get("maxUsage") or []
+                    if mu.get("accountUuid")]
+        return plan_detection.detect_all(
+            accounts,
+            codex_live=payload.get("codexLive"),
+            grokbot=payload.get("grokBot"),
+            ccusage_sources=payload.get("ccusageSources"),
+            billing_currencies=seat_prices.billing_currencies(payload.get("maxUsage")),
+        )
+    except Exception:
+        return []
+
+
 def _team_value(payload):
     try:
-        return seat_prices.team_value(payload.get("maxUsage"), payload.get("accountSessions"), seat_prices.load())
+        return seat_prices.team_value(payload.get("maxUsage"), payload.get("accountSessions"),
+                                      seat_prices.load(), detections=payload.get("planDetection"),
+                                      daily=payload.get("daily"))
     except Exception:
         return []
 
@@ -529,6 +549,8 @@ def refresh_usage(force=False):
         detection = source_detection.detect(hints=hints)
         payload["detection"] = detection
         payload["ccusageSources"] = ccusage_sources.present(raw.get("daily") or [], raw.get("session") or [], detection)
+        payload["planDetection"] = _plan_detection(payload)
+        payload["planPrices"] = plan_prices.load()
         payload["teamValue"] = _team_value(payload)
         payload["planInsights"] = _plan_insights_from(payload)
         payload["sources"] = source_detection.annotate_sources(
