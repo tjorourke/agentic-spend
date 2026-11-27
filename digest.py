@@ -181,14 +181,105 @@ def _peak_in(samples, lo, hi):
     return best
 
 
-def plan_peaks(payload, start, end, tz):
+def _allowance_samples(allowance, field="weeklyPct"):
+    """key -> [(at, pct)] from allowance-history records."""
+    out = {}
+    for r in allowance or []:
+        if r.get("key") and r.get(field) is not None:
+            out.setdefault(r["key"], []).append((r.get("at"), r.get(field)))
+    return out
+
+
+def plan_series(payload, start, end, tz, allowance=None):
+    """Plan limit through the week, per account: every reading in the week
+    from allowance-history.jsonl, plus the older per-tool histories (Claude's
+    status line samples, Grok Bot and Codex), oldest first, with the peak."""
+    lo, hi = _local_bounds(start, end, tz)
+    series = {}
+
+    def put(key, label, tool, at, weekly, session=None, window=None, credits=None):
+        dt = insights.parse_time(at)
+        if dt is None or not (lo <= dt < hi) or (weekly is None and session is None):
+            return
+        s = series.setdefault(key, {"key": key, "label": label, "tool": tool, "windowSeconds": window,
+                                    "points": {}, "credits": None})
+        if label and not s.get("label"):
+            s["label"] = label
+        if window and not s.get("windowSeconds"):
+            s["windowSeconds"] = window
+        iso = dt.astimezone(datetime.timezone.utc).isoformat(timespec="seconds")
+        pt = s["points"].setdefault(iso, {"at": iso, "weekly": None, "session": None})
+        if weekly is not None:
+            pt["weekly"] = round(float(weekly), 1)
+        if session is not None:
+            pt["session"] = round(float(session), 1)
+        if credits:
+            s["credits"] = credits
+
+    labels = {"claude:" + m["accountUuid"]: "Claude: " + (m.get("label") or m["accountUuid"][:8])
+              for m in payload.get("maxUsage") or [] if m.get("accountUuid")}
+    for r in allowance or []:
+        key = r.get("key")
+        if not key:
+            continue
+        credits = ({"used": r.get("creditsUsed"), "limit": r.get("creditsLimit"), "currency": r.get("creditsCurrency")}
+                   if r.get("creditsUsed") is not None else None)
+        label = labels.get(key) or ("Claude: " + r["label"] if r.get("tool") == "claude" and r.get("label") else r.get("label"))
+        put(key, label, r.get("tool"), r.get("at"), r.get("weeklyPct"), r.get("sessionPct"),
+            r.get("windowSeconds"), credits)
+    for h in (payload.get("usageHistory") or {}).get("claude") or []:
+        uuid = h.get("accountUuid")
+        if uuid:
+            put("claude:" + uuid, labels.get("claude:" + uuid) or "Claude: " + (h.get("label") or uuid[:8]), "claude",
+                h.get("time"), h.get("sevenDayPercent"), h.get("fiveHourPercent"), 604800)
+    for a in (payload.get("grokBot") or {}).get("accounts") or []:
+        key = "grok-bot:" + str(a.get("accountId") or "default")
+        label = "Grok Bot" + (" (%s)" % a["plan"] if a.get("plan") else "")
+        for h in a.get("history") or []:
+            put(key, label, "grok-bot", h.get("at"), h.get("weeklyPct"), None, 604800)
+    for h in (payload.get("usageHistory") or {}).get("codex") or []:
+        put("codex:primary", "Codex", "codex", h.get("time"), h.get("percent"), None, h.get("windowSeconds"))
+    out = []
+    for s in series.values():
+        pts = sorted(s["points"].values(), key=lambda p: p["at"])
+        weekly = [p["weekly"] for p in pts if p["weekly"] is not None]
+        session = [p["session"] for p in pts if p["session"] is not None]
+        out.append(dict(s, points=pts,
+                        peakWeeklyPct=max(weekly) if weekly else None,
+                        peakSessionPct=max(session) if session else None))
+    out.sort(key=lambda s: (-(s.get("peakWeeklyPct") or 0), s.get("label") or ""))
+    return out
+
+
+def seat_value_week(payload, start, end):
+    """Seat value for the week: usage value at API prices per subscription
+    account vs its seat price prorated to the week (days / days in month).
+    Only accounts with a seat price and some usage in the week."""
+    import seat_prices
+    try:
+        rows = seat_prices.team_value(
+            payload.get("maxUsage"), payload.get("accountSessions"), payload.get("seatPrices") or {},
+            detections=payload.get("planDetection"), daily=payload.get("daily"),
+            table=payload.get("planPrices"), region_currency=(payload.get("pricingRegion") or {}).get("currency"),
+            today=end, start=start, end=end)
+    except Exception:
+        return []
+    return [r for r in rows if r.get("seat") and (r.get("apiEquivalentUsd") or 0) > 0]
+
+
+def plan_peaks(payload, start, end, tz, allowance=None):
     """Highest reading recorded during the week for each plan, plus the week
     before, where history has readings for it."""
+    extra = _allowance_samples(allowance)
     lo, hi = _local_bounds(start, end, tz)
     plo, phi = _local_bounds(start - datetime.timedelta(days=7), start - datetime.timedelta(days=1), tz)
     rows = []
 
+    done = set()
+
     def add(key, label, samples, window_peaks=None):
+        done.add(key)
+        samples = list(samples) + extra.get(key, [])
         peak = _peak_in(samples, lo, hi)
         prev = _peak_in(samples, plo, phi)
         for w in window_peaks or []:
@@ -223,6 +314,10 @@ def plan_peaks(payload, start, end, tz):
     codex_hist = (payload.get("usageHistory") or {}).get("codex") or []
     if codex_hist:
         add("codex:primary", "Codex", [(s.get("time"), s.get("percent")) for s in codex_hist])
+    names = {r.get("key"): r.get("label") for r in allowance or [] if r.get("key")}
+    for key in sorted(k for k in extra if k not in done):
+        label = labels.get(key.split(":", 1)[1]) if key.startswith("claude:") else None
+        add(key, ("Claude: " + label) if label else (names.get(key) or key), [])
     return rows
 
 
@@ -241,7 +336,7 @@ def parse_week(value, latest_start):
     return monday
 
 
-def build_digest(payload, today=None, tz=None, now=None, week=None):
+def build_digest(payload, today=None, tz=None, now=None, week=None, allowance=None):
     """``week`` (a Monday) picks an earlier complete week; default is the
     last complete one."""
     tz = tz or datetime.datetime.now().astimezone().tzinfo
@@ -293,5 +388,7 @@ def build_digest(payload, today=None, tz=None, now=None, week=None):
         "topModels": [{"model": k, "cost": round(v["cost"], 2), "tokens": v["tokens"], "tok": v["tok"]}
                       for k, v in sorted(models.items(), key=lambda kv: -kv[1]["cost"])[:5]],
         "topProjects": _top_projects(payload, start, end),
-        "plans": plan_peaks(payload, start, end, tz),
+        "plans": plan_peaks(payload, start, end, tz, allowance),
+        "allowance": plan_series(payload, start, end, tz, allowance),
+        "seatValue": seat_value_week(payload, start, end),
     }

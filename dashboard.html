@@ -648,6 +648,28 @@
   .tok-legend-item b { color: var(--text); font-weight: 600; }
   .digest-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
   .digest-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+  /* 1.8.5 allowance charts, sparklines, seat value */
+  .al-block { margin: 0.4rem 0 0.9rem; }
+  .al-head { display:flex; justify-content:space-between; gap:1rem; flex-wrap:wrap; font-size:0.85rem; margin-bottom:0.2rem; }
+  .al-label { font-weight:600; }
+  .al-chart { display:block; height:130px; }
+  .al-chart .al-grid { stroke: var(--border); stroke-width:1; }
+  .al-chart .al-day { stroke-dasharray: 2 3; }
+  .al-chart .al-axis { fill: var(--muted); font-size:10px; }
+  .al-chart .al-line { stroke-width:2; vector-effect: non-scaling-stroke; }
+  .al-chart .al-weekly { stroke:#4b5bd6; fill:#4b5bd6; }
+  .al-chart polyline.al-weekly, .al-chart polyline.al-session { fill:none; }
+  .al-chart .al-session { stroke:#f59e0b; fill:#f59e0b; }
+  .al-chart polyline.al-session { stroke-width:1.2; stroke-dasharray: 4 3; }
+  .al-legend { font-size:0.78rem; margin-bottom:0.3rem; }
+  .al-key { display:inline-block; width:14px; height:0; border-top:2px solid #4b5bd6; vertical-align:middle; margin:0 0.2rem 0 0.4rem; }
+  .al-key.al-session { border-top:2px dashed #f59e0b; }
+  .al-spark { vertical-align:middle; margin-left:0.35rem; }
+  .al-spark polyline { stroke:#4b5bd6; stroke-width:1.5; }
+  .seat-table td, .seat-table th { white-space:nowrap; }
+  .seat-ratio { font-weight:700; color: var(--good, #047857); }
+  .archive-note { border:1px solid var(--border); border-radius:8px; padding:0.5rem 0.7rem; margin-bottom:1rem; font-size:0.82rem; }
+  .seat-foot { font-size:0.78rem; margin-top:0.4rem; }
   .digest-two.digest-one { grid-template-columns: 1fr; }  /* 1.8.4: Tokens + Text tables need the full width */
   .settings-app .row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; margin-bottom: 0.5rem; font-size: 0.85rem; }
   .settings-app input[type=text] { font: inherit; padding: 0.3rem 0.5rem; border: 1px solid var(--border); border-radius: 6px; background: var(--card, transparent); color: var(--text); width: 9rem; }
@@ -793,6 +815,8 @@
     <div class="card" id="realCostOverview" style="display:none; margin-bottom: 1rem;"></div>
     <div class="card" id="grokBotTodayCard" style="display:none; margin-bottom: 1rem;"></div>
     <div id="appLimitCards" class="app-limit-cards" style="display:none;"></div>
+    <div id="seatValueCard" class="card" style="display:none; margin-bottom:1rem;"></div>
+    <div id="archiveNote" class="archive-note muted" style="display:none;"></div>
     <div class="cards">
       <div class="card kpi" id="kpiSpend" title="ccusage list price for this range: token counts times published prices, in USD. Real and covered underneath reuse the split on the card below.">
         <div class="label">Usage value (API prices)</div>
@@ -1672,6 +1696,88 @@ function coverageRows(o) {
   const noLocal = (o.chatApps || []).map(a => ({ id: a.id, label: a.label, kind: 'D', installed: !!a.installed, link: a.link, where: a.where }))
     .sort((a, b) => (b.installed - a.installed) || a.label.localeCompare(b.label));
   return { active, idle, noLocal };
+}
+// 1.8.5: allowance history. Points are {at, weekly, session} (percent).
+// A line chart of the plan limit through a period: weekly (or the plan's
+// own long window) solid, the 5-hour session thin and dashed. Fixed 0-100
+// scale so accounts compare at a glance. Every point has an exact tooltip.
+function allowanceChartSvg(points, fromIso, toIso, opts) {
+  const o = opts || {};
+  const W = o.width || 640, H = o.height || 130, L = 34, R = 8, T = 8, B = 20;
+  const t0 = Date.parse(fromIso), t1 = Date.parse(toIso);
+  if (!(t1 > t0)) return '';
+  const x = t => L + (W - L - R) * Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
+  const y = p => T + (H - T - B) * (1 - Math.min(100, Math.max(0, p)) / 100);
+  const pts = (points || []).filter(p => p && Number.isFinite(Date.parse(p.at)));
+  const line = (field, cls) => {
+    const xs = pts.filter(p => p[field] != null);
+    if (!xs.length) return '';
+    const d = xs.map(p => `${x(Date.parse(p.at)).toFixed(1)},${y(p[field]).toFixed(1)}`).join(' ');
+    const dots = xs.map(p => `<circle class="al-dot ${cls}" cx="${x(Date.parse(p.at)).toFixed(1)}" cy="${y(p[field]).toFixed(1)}" r="2.2"><title>${escHtml((o.fmtWhen ? o.fmtWhen(p.at) : p.at) + ': ' + (field === 'weekly' ? (o.weeklyLabel || 'Weekly') : 'Session (5-hour)') + ' ' + formatPct(p[field]) + '%')}</title></circle>`).join('');
+    return `<polyline class="al-line ${cls}" points="${d}" fill="none"/>${dots}`;
+  };
+  const grid = [0, 50, 100].map(v => `<line class="al-grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="al-axis" x="${L - 4}" y="${y(v) + 3}" text-anchor="end">${v}%</text>`).join('');
+  const days = [];
+  for (let t = t0; t < t1; t += 86400000) days.push(t);
+  const ticks = days.map(t => `<line class="al-grid al-day" x1="${x(t)}" x2="${x(t)}" y1="${T}" y2="${H - B}"/><text class="al-axis" x="${x(t + 43200000)}" y="${H - 6}" text-anchor="middle">${escHtml(o.dayLabel ? o.dayLabel(t) : new Date(t).toISOString().slice(5, 10))}</text>`).join('');
+  return `<svg class="al-chart" viewBox="0 0 ${W} ${H}" width="100%" preserveAspectRatio="none" role="img" aria-label="${escAttr(o.aria || 'Plan limit through the period')}">${grid}${ticks}${line('session', 'al-session')}${line('weekly', 'al-weekly')}</svg>`;
+}
+// Small trend line for the plan card: weekly % over the last few days.
+function allowanceSparkSvg(points, opts) {
+  const o = opts || {};
+  const W = o.width || 64, H = o.height || 16;
+  const xs = (points || []).filter(p => p && p.weekly != null && Number.isFinite(Date.parse(p.at)));
+  if (xs.length < 2) return '';
+  const t0 = Date.parse(xs[0].at), t1 = Date.parse(xs[xs.length - 1].at);
+  const span = Math.max(1, t1 - t0);
+  const d = xs.map(p => `${(1 + (W - 2) * (Date.parse(p.at) - t0) / span).toFixed(1)},${(1 + (H - 2) * (1 - Math.min(100, Math.max(0, p.weekly)) / 100)).toFixed(1)}`).join(' ');
+  const last = xs[xs.length - 1].weekly;
+  const peak = Math.max(...xs.map(p => p.weekly));
+  return `<svg class="al-spark" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}"><title>${escHtml(`${o.label || 'Plan limit'}: ${xs.length} readings since ${o.fmtWhen ? o.fmtWhen(xs[0].at) : xs[0].at}, now ${formatPct(last)}%, peak ${formatPct(peak)}%`)}</title><polyline points="${d}" fill="none"/></svg>`;
+}
+// Allowance-history records -> points for one key, between from and to (ISO).
+function allowancePoints(records, key, fromIso, toIso) {
+  const lo = fromIso ? Date.parse(fromIso) : -Infinity, hi = toIso ? Date.parse(toIso) : Infinity;
+  return (records || []).filter(r => r && r.key === key && Date.parse(r.at) >= lo && Date.parse(r.at) < hi)
+    .map(r => ({ at: r.at, weekly: r.weeklyPct, session: r.sessionPct }))
+    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+}
+// 1.8.5: seat value. Rows from teamValue (month) or the report's seatValue
+// (week). Only accounts with a paid seat and some usage in the period.
+function seatValueRows(list) {
+  return (list || []).filter(tv => tv && tv.seat && Number(tv.seat.amount) > 0 && Number(tv.apiEquivalentUsd) > 0)
+    .map(tv => {
+      const frac = tv.periodFraction != null ? Number(tv.periodFraction) : 1;
+      const seatAmt = tv.seatForPeriod != null ? Number(tv.seatForPeriod) : Number(tv.seat.amount) * frac;
+      const priceLabel = tv.seat.source === 'user' ? 'your price' : 'list price';
+      let ratio = null, ratioNote = '';
+      if (tv.multiple != null) ratio = Number(tv.multiple);
+      else if (tv.multipleUsdList != null) { ratio = Number(tv.multipleUsdList); ratioNote = `against the US list price ($${Number(tv.usdList.amount).toFixed(2)}/month), as your seat is in ${tv.seat.currency}`; }
+      const c = tv.credits;
+      return {
+        key: tv.key || tv.accountUuid, label: tv.label || tv.key,
+        value: Number(tv.apiEquivalentUsd), seatAmt, seatCurrency: tv.seat.currency, seatMonthly: Number(tv.seat.amount),
+        priceLabel, prorated: frac < 0.999, ratio, ratioNote,
+        credits: c && c.used != null ? { used: Number(c.used), limit: c.limit, currency: c.currency } : null,
+      };
+    }).sort((a, b) => b.value - a.value);
+}
+function seatValueCardHtml(rows, opts) {
+  const o = opts || {};
+  if (!rows || !rows.length) return '';
+  const money = (v, cur) => (o.fmtMoney ? o.fmtMoney(v, cur) : (cur === 'USD' ? '$' : cur + ' ') + Number(v).toFixed(2));
+  const body = rows.map(r => {
+    const seat = `${money(r.seatAmt, r.seatCurrency)}${r.prorated ? ` <span class="muted">(${money(r.seatMonthly, r.seatCurrency)}/month × ${escHtml(o.days || '7')}/${escHtml(o.daysInMonth || '30')})</span>` : ''}`;
+    const ratio = r.ratio != null ? `<span class="seat-ratio" title="${escAttr(r.ratioNote || 'Usage value divided by the seat cost for the period.')}">~${escHtml(r.ratio >= 10 ? Math.round(r.ratio) : r.ratio.toFixed(1))}×</span>${r.ratioNote ? ' <span class="muted">US list</span>' : ''}`
+      : '<span class="muted" title="The seat is billed in another currency and no US dollar price is published, so no ratio is given.">no ratio</span>';
+    const credits = r.credits ? `${money(r.credits.used, r.credits.currency || 'USD')}${r.credits.limit != null ? ' of ' + money(r.credits.limit, r.credits.currency || 'USD') : ''}` : '<span class="muted">–</span>';
+    return `<tr data-seat-row="${escAttr(r.key)}"><td>${escHtml(r.label)}</td><td class="right tnum">$${Number(r.value).toFixed(2)}</td>
+      <td class="right tnum">${seat} <span class="seat-src seat-src-${r.priceLabel === 'your price' ? 'user' : 'default'}">${escHtml(r.priceLabel)}</span></td>
+      <td class="right tnum">${ratio}</td><td class="right tnum">${credits}</td></tr>`;
+  }).join('');
+  return `<div class="card-head"><h2>${escHtml(o.title || 'Seat value')}</h2><span class="muted">${escHtml(o.range || '')}</span></div>
+    <div class="table-scroll"><table class="seat-table"><thead><tr><th>Account</th><th class="right">Usage value (API prices)</th><th class="right">Seat cost${o.prorated ? ' for the week' : ''}</th><th class="right">Ratio</th><th class="right">Usage credits used</th></tr></thead><tbody>${body}</tbody></table></div>
+    <div class="muted seat-foot">${escHtml(o.note || '')}</div>`;
 }
 // </pure-helpers>
 
@@ -3113,7 +3219,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
     return { cls: cls + (pace && pace.warn ? ' src-pace-warn' : ''), html: `
       ${chip}
       <span class="src-label">${escHtml(mu.label)}</span>
-      <span class="src-extra">${extra}</span>
+      <span class="src-extra">${extra}${allowanceSparkHtml('claude:' + s.id, mu.label)}</span>
       <span class="src-amount tnum">${hasOverage ? fmtCredits(c.usedMinor, c.currency, c.exponent) : 'unknown'}</span>
       ${planInsightHtml(insight, 'src-insight')}
       ${extraLine}
@@ -3128,7 +3234,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
     return { cls: blocked ? 'src-bad' : 'src-ok', html: `
       ${srcChip('LIVE', 'live')}
       <span class="src-label">${escHtml(s.label)}${planSuffix(cx.planType)}</span>
-      <span class="src-extra">${windowLabel(p.windowMins)} ${srcMiniBar(p.percent)} ${p.percent ?? '?'}%</span>
+      <span class="src-extra">${windowLabel(p.windowMins)} ${srcMiniBar(p.percent)} ${p.percent ?? '?'}%${allowanceSparkHtml('codex:primary', 'Codex')}</span>
       <span class="src-amount tnum">${realValue}</span>
       ${planInsightHtml(planInsight('codex:primary'), 'src-insight')}
       ${planValueLine('codex')}
@@ -3172,7 +3278,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
     return { cls: '', html: `
       ${chip}
       <span class="src-label">${escHtml(s.label)}</span>
-      <span class="src-extra">${bits.join(' · ') || 'no local usage cache yet'}</span>
+      <span class="src-extra">${bits.join(' · ') || 'no local usage cache yet'}${allowanceSparkHtml(grokBotInsightKey(acct), s.label)}</span>
       <span class="src-amount tnum">${amount}</span>
       ${planInsightHtml(planInsight(grokBotInsightKey(acct)), 'src-insight')}
       ${planValueLine('grok')}
@@ -3908,6 +4014,27 @@ function renderDigest() {
   const kindHead = stackOn ? TOK_KINDS.map(k => TOK_KIND_LABELS[k]) : [];
   const kindCells = x => stackOn ? TOK_KINDS.map(k => `<td class="right tnum" title="${escAttr(fmtExact(rowTok(x)[k]) + ' tokens')}">${fmtTok(rowTok(x)[k])}</td>`).join('') : '';
   const plans = d.plans || [];
+  // 1.8.5: plan limit through the week, one chart per account, from
+  // allowance-history.jsonl and the older per-tool histories.
+  const wkFrom = d.weekStart + 'T00:00:00', wkTo = d.weekEnd ? new Date(Date.parse(d.weekEnd + 'T00:00:00') + 86400000).toISOString() : null;
+  const wkFromIso = new Date(Date.parse(wkFrom)).toISOString();
+  const dayName = t => new Date(t).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric' });
+  const allowanceHtml = (d.allowance || []).filter(a => (a.points || []).length).map(a => {
+    const windowName = a.windowSeconds && a.windowSeconds > 604800 ? `${Math.round(a.windowSeconds / 86400)}-day` : 'Weekly';
+    const peaks = [a.peakWeeklyPct != null ? `${windowName} peak <b>${escHtml(formatPct(a.peakWeeklyPct))}%</b>` : '',
+      a.peakSessionPct != null ? `session peak <b>${escHtml(formatPct(a.peakSessionPct))}%</b>` : ''].filter(Boolean).join(' · ');
+    const cr = a.credits && a.credits.used != null ? ` · usage credits used ${escHtml(fmtCurrencyAmount(a.credits.used, a.credits.currency || 'USD'))}${a.credits.limit != null ? ' of ' + escHtml(fmtCurrencyAmount(a.credits.limit, a.credits.currency || 'USD')) : ''}` : '';
+    return `<div class="al-block" data-allowance-key="${escAttr(a.key)}">
+      <div class="al-head"><span class="al-label">${escHtml(a.label || a.key)}</span><span class="muted tnum">${peaks}${cr} · ${a.points.length} reading${a.points.length === 1 ? '' : 's'}</span></div>
+      ${allowanceChartSvg(a.points, wkFromIso, wkTo, { weeklyLabel: windowName, dayLabel: dayName, fmtWhen: iso => new Date(iso).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }), aria: `${a.label}: plan limit through the week` })}
+    </div>`;
+  }).join('');
+  const allowanceLegend = allowanceHtml ? `<div class="al-legend muted"><span class="al-key al-weekly"></span> weekly (or the plan's own window) <span class="al-key al-session"></span> 5-hour session · each dot is a reading; hover for the time and figure. Readings are only taken while Agentic Spend or the status line is running.</div>` : '';
+  const svRows = seatValueRows(d.seatValue || []);
+  const dim = d.weekStart ? new Date(+d.weekStart.slice(0, 4), +d.weekStart.slice(5, 7), 0).getDate() : 30;
+  const seatWeekHtml = seatValueCardHtml(svRows, { title: 'Seat value for the week', range: `${d.weekStart} to ${d.weekEnd}`, prorated: true, days: '7', daysInMonth: String(dim),
+    fmtMoney: (v, c) => fmtCurrencyAmount(v, c),
+    note: "Usage value is ccusage's cost at the providers' API prices (US dollars) for the week. Seat cost is the monthly price prorated to the week (7 / days in the month). List price comes from the provider's pricing page; your price is what you entered in Settings. Usage credits are the latest reading, which covers the month. Nothing is converted between currencies." });
   const delta = p => p.deltaPct == null ? '–' : (p.deltaPct > 0 ? '+' : p.deltaPct < 0 ? '-' : '') + formatPct(Math.abs(p.deltaPct)) + ' pts';
   const planTable = table(['Plan', 'Peak', 'Week before', 'Change'], plans.map(p => `<tr><td>${escHtml(p.label)}</td><td class="right tnum">${escHtml(formatPct(p.peakPct))}%</td>
     <td class="right tnum">${p.previousPeakPct == null ? '–' : escHtml(formatPct(p.previousPeakPct)) + '%'}</td>
@@ -3944,9 +4071,11 @@ function renderDigest() {
       <div class="card kpi"><div class="label">Tokens</div><div class="value">${fmtTok(tk.total)}</div>${digestChangeHtml(tk.changePct, 'the week before')}</div>
     </div>
     <div class="card" style="margin-bottom:1rem;" data-report-card="plans">
-      <div class="card-head"><h2>Plan limits, highest reading in the week</h2></div>
-      ${pick(planTable, planGraph)}
+      <div class="card-head"><h2>${allowanceHtml ? 'Plan limit through the week' : 'Plan limits, highest reading in the week'}</h2></div>
+      ${allowanceHtml ? allowanceLegend + allowanceHtml : ''}
+      ${allowanceHtml && !plans.length ? '' : pick(planTable, planGraph)}
     </div>
+    ${seatWeekHtml ? `<div class="card" style="margin-bottom:1rem;" data-report-card="seat-value" id="seatValueWeek">${seatWeekHtml}</div>` : ''}
     <div class="digest-two${stackOn && view !== 'graph' ? ' digest-one' : ''}">
       <div class="card" data-report-card="projects"><div class="card-head"><h2>Top projects</h2></div>${pick(projTable, projGraph)}</div>
       <div class="card" data-report-card="models"><div class="card-head"><h2>Top models</h2></div>${pick(modelTable, modelGraph)}</div>
@@ -4987,6 +5116,45 @@ function codexPlanCardHtml(r) {
     <div class="muted app-limit-foot">${src}</div>
   </div>`;
 }
+// 1.8.5: seat value for the month on the Overview. Hidden when no account
+// has a paid seat and usage this month.
+function renderSeatValueCard() {
+  const box = document.getElementById('seatValueCard');
+  if (!box) return;
+  const list = (data && data.teamValue) || [];
+  const rows = seatValueRows(list);
+  const first = list[0] || {};
+  box.innerHTML = seatValueCardHtml(rows, {
+    title: 'Seat value this month', range: first.monthStart ? `${first.monthStart} to ${first.through}` : '',
+    fmtMoney: (v, c) => fmtCurrencyAmount(v, c),
+    note: "Usage value is ccusage's cost at the providers' API prices (US dollars), month to date, whatever range is selected above. Seat cost is the monthly list price for the detected plan, or your price from Settings. Usage credits are the latest reading. Nothing is converted between currencies.",
+  });
+  box.style.display = rows.length ? '' : 'none';
+  box.querySelectorAll('[data-goto-settings]').forEach(b => { b.onclick = () => setTab('settings'); });
+}
+// 1.8.5: days in the range [from, to] that came from the usage archive.
+function archiveDaysIn(archive, from, to) {
+  return ((archive && archive.filledDays) || []).filter(d => d >= from && d <= to);
+}
+function archiveNoteText(days) {
+  if (!days || !days.length) return '';
+  const span = days.length === 1 ? days[0] : `${days[0]} to ${days[days.length - 1]}`;
+  return `${days.length} day${days.length === 1 ? '' : 's'} in this range (${span}) ${days.length === 1 ? 'comes' : 'come'} from the usage archive: the transcripts for ${days.length === 1 ? 'that day are' : 'those days are'} no longer on this Mac, so the totals saved earlier are used. Live data is used for every other day.`;
+}
+function renderArchiveNote(cutoff, windowEnd) {
+  const box = document.getElementById('archiveNote');
+  if (!box) return;
+  const text = archiveNoteText(archiveDaysIn(data && data.archive, cutoff, windowEnd));
+  box.textContent = text;
+  box.style.display = text ? '' : 'none';
+}
+// 1.8.5: weekly % over the last 7 days, for a plan row on the Overview.
+function allowanceSparkHtml(key, label) {
+  const since = new Date(Date.now() - 7 * 86400000).toISOString();
+  const svg = allowanceSparkSvg(allowancePoints((data && data.allowanceHistory) || [], key, since, null),
+    { label: label || 'Plan limit', fmtWhen: iso => new Date(iso).toLocaleString('en-GB', { weekday: 'short', hour: '2-digit', minute: '2-digit' }) });
+  return svg ? ` <span class="al-spark-wrap" data-spark-key="${escAttr(key)}">${svg}</span>` : '';
+}
 function renderAppLimitCards(cutoff, windowEnd) {
   const box = document.getElementById('appLimitCards');
   if (!box) return;
@@ -5467,6 +5635,8 @@ function update() {
     renderCacheEfficiency(windowed);
     renderModelMix(windowed, cutoff, windowEnd);
     renderAppLimitCards(cutoff, windowEnd);
+    renderSeatValueCard();
+    renderArchiveNote(cutoff, windowEnd);
     renderCoverage(cutoff, windowEnd);
     const tokenSpan = tokenWindow(cutoff, windowEnd);
     loadTokenSources(tokenSpan.since, tokenSpan.until);

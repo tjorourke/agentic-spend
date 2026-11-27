@@ -246,6 +246,39 @@ brew update && brew upgrade agentic-spend
   showed US dollars from a UK Mac, and neither ChatGPT's nor OpenCode's pricing pages could
   be read as a published UK pound list, so no GBP rows are shipped for those.
 
+## Version 1.8.5
+
+- **Allowance history.** Every time the server reads your plan limits (Claude session and weekly
+  %, Codex, Grok Bot, reset times and usage credits), it adds a line to
+  `~/.agentic-spend/allowance-history.jsonl`, one per account. A reading that repeats the last one
+  is skipped, apart from one every three hours so a quiet week still draws a line. Each line holds
+  the account key, a label, percentages, reset times and credit figures. No emails, tokens or
+  transcript text. Readings are only taken while the server or the Claude status line is running,
+  so a week with the Mac asleep will have gaps.
+- **Plan limit through the week.** The Weekly report now draws a line chart per account: the
+  weekly limit (or the plan's own window, such as Codex's 30 days) and the 5-hour session, with
+  the week's peaks and the usage credits used. Hover a dot for the time and figure. The table of
+  peaks against the week before is still there. Weeks before 1.8.5 only have what the status line,
+  Grok Bot and Codex recorded at the time.
+- **Trend on the plan card.** Overview's Plans and real spend card shows a small line of the last
+  seven days of weekly % next to each plan that has at least two readings.
+- **Seat value.** A card on the Overview compares each subscription's usage value at API prices,
+  month to date, with what the seat costs: the list price for the detected plan (labelled list
+  price) or the price you enter in Settings, Plans and seat prices (labelled your price). It shows
+  the ratio, for example about 15x, and the usage credits used. The Weekly report has the same card
+  with the seat cost prorated to the week (7 / days in the month). Only accounts with a paid seat
+  and some usage in the period appear. Usage value is in US dollars and nothing is converted, so a
+  seat billed in pounds gets a ratio only against the provider's US list price, marked US list.
+- **Usage archive.** Claude Code and the other tools delete old transcripts, and ccusage can only
+  count what is still on disk. Once a day, and on the first start when there is no archive, the
+  server writes each complete day's totals to `~/.agentic-spend/archive/YYYY-MM.json`: per day,
+  account, agent, model and project, tokens by type and cost. It never copies transcript content.
+  When a day is no longer in the transcripts, the dashboard uses the archived totals and says so on
+  the Overview. A day that is still live always uses the live figures, so nothing is counted twice
+  and live totals still match ccusage exactly. An archived day is only ever replaced by a fuller
+  live reading, never a smaller one. The first run seeds the archive from everything ccusage can see
+  today.
+
 ## Version 1.8.4
 
 - **Token bars stacked by kind.** In the Tokens view, the Weekly report's Top projects, Top models,
