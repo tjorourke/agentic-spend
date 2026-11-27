@@ -81,6 +81,24 @@ def _source_estimate(source, payload, start, end):
     return total
 
 
+def claude_real_spend(estimate, credits):
+    """Real money for a Claude account, from its list-price estimate and the
+    usage credits Claude Code last cached (dashboard.html's claudeRealSpend).
+    No credit data: unverified, the whole estimate. None used: covered. Some
+    used: that amount, capped at the estimate. Other currencies are not
+    converted, so the estimate stays unverified."""
+    credits = credits or {}
+    used = credits.get("usedMinor")
+    if used is None:
+        return estimate
+    if used == 0:
+        return 0.0
+    if str(credits.get("currency") or "").upper() != "USD":
+        return estimate
+    exponent = credits.get("exponent")
+    return min(estimate, used / (10 ** (2 if exponent is None else exponent)))
+
+
 def real_spend(payload, start, end):
     """Same covered-versus-real rules as the Overview's cost card, applied to
     one date range. Coverage reflects each plan's status now."""
@@ -102,9 +120,11 @@ def real_spend(payload, start, end):
             continue
         estimate = _source_estimate(s, payload, start, end)
         mu = s.get("maxUsage") or {}
+        if s.get("tool") == "claude" and mu:
+            real += claude_real_spend(estimate, mu.get("usageCredits"))
+            continue
         covered = (
-            (s.get("tool") == "claude" and (mu.get("usageCredits") or {}).get("usedMinor") == 0)
-            or (s.get("tool") == "codex" and s.get("kind") == "official-live"
+            (s.get("tool") == "codex" and s.get("kind") == "official-live"
                 and (s.get("codexLive") or {}).get("ordinaryUsageAllowed") is not False)
             or (s.get("tool") == "grok" and s.get("kind") == "unofficial-live"
                 and ((s.get("grokBilling") or {}).get("onDemandUsedUsd") or 0) == 0)

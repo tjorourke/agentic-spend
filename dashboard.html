@@ -1673,6 +1673,22 @@ function coverageRows(o) {
     .sort((a, b) => (b.installed - a.installed) || a.label.localeCompare(b.label));
   return { active, idle, noLocal };
 }
+// Real money for a Claude account in a range, given its list-price estimate
+// and the usage credits Claude Code last cached for it. Usage on a plan is
+// paid for by the subscription; the only money on top is the usage credits
+// drawn once a plan limit is hit, which is the figure the account's row
+// shows. No credit data: unverified, so the whole estimate. None used: all
+// covered. Some used: that amount (this billing period so far), never more
+// than the estimate. Credits in another currency are not converted, so the
+// estimate stays unverified.
+function claudeRealSpend(estimate, credits) {
+  const c = credits || {};
+  if (c.usedMinor == null) return estimate;
+  if (c.usedMinor === 0) return 0;
+  if (String(c.currency || '').toUpperCase() !== 'USD') return estimate;
+  const used = c.usedMinor / Math.pow(10, c.exponent == null ? 2 : c.exponent);
+  return Math.min(estimate, used);
+}
 // </pure-helpers>
 
 function fmtWhenShort(iso) {
@@ -3467,8 +3483,12 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
       if (extra > 0) realTotal += extra;
       return;
     }
+    if (s.tool === 'claude' && s.maxUsage) {
+      // Matches the row: the credits drawn, not the whole list-price estimate.
+      realTotal += claudeRealSpend(estimate, s.maxUsage.usageCredits);
+      return;
+    }
     const covered =
-      (s.tool === 'claude' && s.maxUsage && (s.maxUsage.usageCredits || {}).usedMinor === 0) ||
       (s.tool === 'codex' && s.kind === 'official-live' && s.codexLive.ordinaryUsageAllowed !== false) ||
       (s.tool === 'grok' && s.kind === 'unofficial-live' && (s.grokBilling.onDemandUsedUsd ?? 0) === 0) ||
       (s.kind === 'local-live' && planKnown && s.costKnown !== false) ||

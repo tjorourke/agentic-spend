@@ -48,6 +48,29 @@ def payload():
     }
 
 
+class ClaudeRealSpendTests(unittest.TestCase):
+    """Claude usage on a plan costs only the usage credits drawn, not its
+    list-price estimate."""
+
+    def test_rule(self):
+        f = digest.claude_real_spend
+        self.assertEqual(f(100.0, None), 100.0)                                   # no credit data: unverified
+        self.assertEqual(f(100.0, {}), 100.0)
+        self.assertEqual(f(100.0, {"usedMinor": 0}), 0.0)                         # nothing drawn: covered
+        self.assertEqual(f(100.0, {"usedMinor": 723, "currency": "USD", "exponent": 2}), 7.23)
+        self.assertEqual(f(5.0, {"usedMinor": 723, "currency": "USD", "exponent": 2}), 5.0)   # never above the estimate
+        self.assertEqual(f(100.0, {"usedMinor": 723, "currency": "USD"}), 7.23)   # exponent defaults to 2
+        self.assertEqual(f(100.0, {"usedMinor": 723, "currency": "GBP", "exponent": 2}), 100.0)  # not converted
+        self.assertEqual(f(100.0, {"usedMinor": 723}), 100.0)                     # currency unknown
+
+    def test_week_with_credits_used_counts_the_credits(self):
+        p = payload()
+        p["sources"][0]["maxUsage"] = {"usageCredits": {"usedMinor": 250, "currency": "USD", "exponent": 2}}
+        start, end = datetime.date(2026, 11, 16), datetime.date(2026, 11, 22)
+        zero = payload()
+        self.assertAlmostEqual(digest.real_spend(p, start, end) - digest.real_spend(zero, start, end), 2.50)
+
+
 class DigestTests(unittest.TestCase):
     def test_last_complete_week(self):
         self.assertEqual(digest.last_complete_week(datetime.date(2026, 11, 26)),
