@@ -270,6 +270,26 @@ brew update && brew upgrade agentic-spend
   - The pricing region comes from `LANG` and friends.
   - The launcher opens the browser with `xdg-open`. On a machine with no desktop it prints the URL.
   - The dashboard says "this computer" on Linux and "this Mac" on a Mac.
+- **Overview, reorganised.** Same figures, laid out so the first screen answers "how am I doing
+  today". Nothing was dropped.
+  - A tab per detected tool or account along the top: Overview, then one per named Claude account,
+    Codex, Grok (CLI and Grok Bot together) and OpenCode. Only the ones found on this machine
+    appear. A tab is the old agent filter, so its plan rows, daily chart, model mix, all-models
+    table and cache stats are that tool's own. The agent picker is gone from Overview, it's still
+    on the other tabs.
+  - A Today strip: today against yesterday, and the plan nearest its limit with its forecast
+    ("would hit 100% around" and a time).
+  - Last 14 days as one bar chart, stacked by agent. Click a bar to open that day.
+  - A By tool list on Overview, one row per tab with its plan %, forecast and range total. Click
+    a row to open its tab.
+  - Plans and real spend is one line per plan: a status dot (green, amber from 70% or a limit
+    forecast, red from 90% or real spend), the name, the % and the amount. Click a row, or the
+    "Show details" link, for the full row as before. Open rows stay open when the page refreshes.
+  - Seat value, cache efficiency and "where tokens went" moved to a new Value tab. A tool tab
+    still shows its own cache card.
+  - The Today tile now shows the right figure for a single Claude account. It said $0.00 before.
+  - The Claude desktop card only shows on Overview and the Claude tabs, and the Codex plan card
+    only on Overview and Codex.
 - **Accounts card after a reset.** Straight after a session or weekly reset the card said
   "reset Fri 15:00, no use since" with nothing after "since". It now says "reset Fri 15:00".
   A window with no use since its last reading says "no use since 17:23".
