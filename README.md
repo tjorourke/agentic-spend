@@ -58,7 +58,8 @@ open "/Applications/Agentic Spend.app"
 
 ## Prerequisites
 
-- **macOS** (the Homebrew formula and the `agentic-spend` launcher script are macOS-only).
+- **macOS** for the Homebrew formula and the menu bar app. On Linux it runs from a git clone:
+  see [Linux](#linux-from-a-git-clone).
 - **No Node.js needed.** Agentic Spend reads your usage with [`ccusage`](https://ccusage.com),
   and the Homebrew install bundles ccusage's native macOS binary (version 20.1.2, MIT, see
   `THIRD_PARTY_NOTICES.md`) in `libexec/vendor/ccusage`. From a git clone (`python3 server.py`)
@@ -78,6 +79,37 @@ brew install agentic-spend
 If Homebrew refuses to load the formula ("untrusted tap"), run `brew trust tjorourke/agentic-spend`
 (the whole tap) or `brew trust --formula tjorourke/agentic-spend/agentic-spend` and install again (same as
 [flightbay](https://github.com/tjorourke/flightbay)).
+
+## Linux (from a git clone)
+
+The Homebrew formula and the menu bar app are macOS only. On Linux the server and dashboard run
+from a clone, with a launcher that takes the same commands as the Homebrew one:
+
+```bash
+git clone https://github.com/tjorourke/agentic-spend ~/.local/share/agentic-spend
+~/.local/share/agentic-spend/linux/install-ccusage.sh    # ccusage's native Linux build, into vendor/
+ln -s ~/.local/share/agentic-spend/linux/agentic-spend ~/.local/bin/agentic-spend
+agentic-spend                                            # starts it and opens http://127.0.0.1:8787
+```
+
+It needs `python3`, plus `curl` and `openssl` for the install script (x86-64 or arm64).
+`install-ccusage.sh` downloads the ccusage version `ccusage_bin.py` expects and checks it against
+the hash the npm registry publishes; run it again after an upgrade that changes that version.
+
+What differs from macOS:
+
+- **Browser:** opened with `xdg-open`.
+- **Notifications:** sent with `notify-send` (libnotify).
+- **Start at login:** `agentic-spend login on|off|status` and the Settings toggle use a systemd
+  user unit, `~/.config/systemd/user/agentic-spend.service`. Like the LaunchAgent it starts the
+  server once at login and does not restart it.
+- **Settings file:** the launcher reads optional `KEY=VALUE` lines from
+  `~/.config/agentic-spend/env` on every start, so a start at login and a start from any shell
+  see the same thing. For example `CLAUDE_CONFIG_DIR=/home/you/.claude,/home/you/.claude-work`
+  (full paths), or `CCUSAGE_TELEMETRY_DISABLED=1`.
+- **Pricing region:** detected from the session locale (`LC_ALL`, `LC_MONETARY`, `LANG`).
+- **Not there:** the menu bar app, and the Claude desktop and Grok Bot cards, which read files
+  those macOS apps write. Some wording in the dashboard still says "this Mac".
 
 ## Menu bar app (optional)
 

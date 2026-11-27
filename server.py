@@ -16,6 +16,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
@@ -26,7 +27,6 @@ import digest
 import grok_usage
 import grokbot_usage
 import insights
-import login_item
 import notify
 import provider_usage
 import source_detection
@@ -41,6 +41,11 @@ import pricing_region
 import opencode_backends
 import token_sources
 import statusline_multi as statusline_setup  # statusline_setup, for every Claude config directory
+
+if sys.platform.startswith("linux"):
+    import login_item_linux as login_item  # systemd user unit
+else:
+    import login_item  # macOS LaunchAgent
 
 PORT = int(os.environ.get("AGENTIC_SPEND_PORT", "8787"))
 _LABEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")
@@ -1070,7 +1075,7 @@ def apply_settings(body, cached=None):
                 login_item.turn_on() if login else login_item.turn_off()
             login_status = login_item.status()
             if login_status.get("enabled") != login:
-                warnings.append("Start at login did not stick. Check ~/Library/LaunchAgents.")
+                warnings.append("Start at login did not stick. Check %s." % (os.path.dirname(login_status.get("plistPath") or "") or "~/Library/LaunchAgents"))
             elif current.get("enabled") != login:
                 saved.append("start at login")
         except Exception as e:
@@ -1245,7 +1250,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # Read back rather than trusting the launchctl exit code.
         st = login_item.status()
         ok = st["enabled"] == enabled
-        return {"ok": ok, "status": st, "error": None if ok else "The setting did not stick. Check ~/Library/LaunchAgents."}
+        return {"ok": ok, "status": st, "error": None if ok else "The setting did not stick. Check %s." % (os.path.dirname(st.get("plistPath") or "") or "~/Library/LaunchAgents")}
 
     def _handle_digest_get(self):
         try:
@@ -1499,7 +1504,8 @@ def first_run_open(url, opener=None, env=None):
         return False
     if opener is None:
         def opener(u):
-            subprocess.Popen(["open", u], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            cmd = "xdg-open" if sys.platform.startswith("linux") else "open"
+            subprocess.Popen([cmd, u], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         opener(url)
     except Exception:

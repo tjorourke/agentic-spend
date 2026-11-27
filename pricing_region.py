@@ -10,6 +10,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 
 import data_dir
 
@@ -41,7 +42,13 @@ def region_from_locale(locale):
 
 
 def detect_mac_locale():
-    """AppleLocale from `defaults`, otherwise None (non-Mac or unread)."""
+    """AppleLocale from `defaults`, otherwise None (non-Mac or unread). On
+    Linux, the locale the session uses for money, e.g. en_GB.UTF-8."""
+    if sys.platform.startswith("linux"):
+        for var in ("LC_ALL", "LC_MONETARY", "LANG"):
+            if os.environ.get(var):
+                return os.environ[var]
+        return None
     try:
         out = subprocess.check_output(
             ["defaults", "read", "-g", "AppleLocale"],

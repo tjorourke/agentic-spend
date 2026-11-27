@@ -1,0 +1,101 @@
+#!/bin/bash
+# Linux launcher for Agentic Spend: the script the Homebrew formula writes on
+# macOS, with xdg-open, a systemd user unit for "login", and an optional
+# settings file. Symlink it onto PATH, e.g. ~/.local/bin/agentic-spend.
+set -euo pipefail
+
+SELF="$(readlink -f "${BASH_SOURCE[0]}")"
+LIBEXEC="${AGENTIC_SPEND_HOME:-$(dirname "$(dirname "$SELF")")}"
+
+# Optional KEY=VALUE settings, e.g. CLAUDE_CONFIG_DIR=/a/.claude,/b/.claude-work
+# when Claude Code runs from more than one config directory (full paths: a ~
+# is only expanded at the start of a value). Read on every
+# start, so a login start and a start from any shell see the same thing.
+ENV_FILE="${AGENTIC_SPEND_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/agentic-spend/env}"
+if [[ -f "$ENV_FILE" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+fi
+
+DATA_DIR="${AGENTIC_SPEND_DATA_DIR:-$HOME/.agentic-spend}"
+mkdir -p "$DATA_DIR"
+PORT="${AGENTIC_SPEND_PORT:-8787}"
+URL="http://127.0.0.1:${PORT}/"
+PIDFILE="$DATA_DIR/.server.pid"
+PY="$(command -v python3 || echo /usr/bin/python3)"
+export PYTHONUNBUFFERED=1  # so .server.log shows the server's lines as they happen
+
+# The pid must be alive and still be this server, not a reused number.
+is_running() {
+  [[ -f "$PIDFILE" ]] || return 1
+  local pid
+  pid="$(cat "$PIDFILE" 2>/dev/null)" || return 1
+  [[ "$pid" =~ ^[1-9][0-9]*$ ]] && kill -0 "$pid" 2>/dev/null || return 1
+  [[ ! -r "/proc/$pid/cmdline" ]] || tr '\0' ' ' <"/proc/$pid/cmdline" | grep -q "server\.py"
+}
+usage() {
+  echo "usage: agentic-spend [start|--no-open|serve|stop|status|login on|off|status]"
+  echo "  start      start the server if needed and open the dashboard (default)"
+  echo "  --no-open  start the server if needed, do not open a browser"
+  echo "  serve      run the server in the foreground (used by the login unit)"
+  echo "  stop       stop the server started by this launcher"
+  echo "  status     say whether the server is running"
+  echo "  login      on, off or status: start the server at login (systemd user unit)"
+}
+
+cmd="${1:-start}"
+case "$cmd" in
+  serve)
+    if is_running; then
+      echo "agentic-spend: server already running (pid $(cat "$PIDFILE"))"
+      exit 0
+    fi
+    echo $$ > "$PIDFILE"
+    exec "$PY" "$LIBEXEC/server.py"
+    ;;
+  login)
+    exec "$PY" "$LIBEXEC/login_item_linux.py" "${2:-status}"
+    ;;
+  stop)
+    if is_running; then
+      kill "$(cat "$PIDFILE")" && rm -f "$PIDFILE"
+      echo "agentic-spend: stopped"
+    else
+      echo "agentic-spend: not running"
+    fi
+    ;;
+  status)
+    if is_running; then echo "agentic-spend: running (pid $(cat "$PIDFILE")) at $URL"; else echo "agentic-spend: not running"; fi
+    ;;
+  start|open|--no-open)
+    if is_running; then
+      echo "agentic-spend: server already running (pid $(cat "$PIDFILE")) at $URL"
+    else
+      echo "agentic-spend: starting server at $URL"
+      # This command opens the browser itself below, so the server's
+      # open-once-on-first-run would give a second tab.
+      if [[ "$cmd" != "--no-open" && -z "${AGENTIC_SPEND_NO_OPEN:-}" ]]; then
+        export AGENTIC_SPEND_NO_FIRST_RUN_OPEN=1
+      fi
+      nohup setsid "$PY" "$LIBEXEC/server.py" >"$DATA_DIR/.server.log" 2>&1 </dev/null &
+      echo $! > "$PIDFILE"
+      sleep 0.6
+      if ! is_running; then
+        echo "agentic-spend: the server did not start. See $DATA_DIR/.server.log" >&2
+        exit 1
+      fi
+    fi
+    if [[ "$cmd" != "--no-open" && -z "${AGENTIC_SPEND_NO_OPEN:-}" ]]; then
+      xdg-open "$URL" >/dev/null 2>&1 || echo "Open $URL in your browser."
+    fi
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 os.environ.setdefault("AGENTIC_SPEND_DATA_DIR", tempfile.mkdtemp(prefix="agentic-spend-test-"))
@@ -152,7 +153,7 @@ class DeliveryTests(unittest.TestCase):
             self.assertEqual(notify.record_heartbeat(now=NOW, path=state_path), [])
 
     def test_stale_heartbeat_uses_osascript(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(notify, "IS_LINUX", False):
             state_path = os.path.join(d, "state.json")
             notify.record_heartbeat(now=NOW - datetime.timedelta(minutes=10), path=state_path)
             run = FakeRun()
