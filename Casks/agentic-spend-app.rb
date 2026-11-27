@@ -33,8 +33,11 @@ cask "agentic-spend-app" do
 
     If the icon still does not appear, macOS is hiding it:
       System Settings > Menu Bar > Allow in the Menu Bar > Agentic Spend
-    (switch it on, or off and on again). The app now stays open and shows these
-    steps when that happens.
+    (switch it on). If it already shows as on and the icon still does not appear,
+    macOS has kept a stale setting for the app. Reset it: quit Agentic Spend,
+    brew uninstall --cask agentic-spend-app, open System Settings > Menu Bar once,
+    then brew install --cask agentic-spend-app and approve it again (step 2).
+    The app stays open and shows these steps when its icon is hidden.
 
     It reads usage through the agentic-spend formula, which bundles the
     ccusage binary (MIT; notice in THIRD_PARTY_NOTICES.md in the formula's libexec).

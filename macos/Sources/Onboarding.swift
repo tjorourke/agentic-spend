@@ -20,11 +20,13 @@ enum OnboardingText {
     """
     static let hiddenTitle = "macOS is hiding the Agentic Spend icon"
     static let hiddenBody = """
-    Agentic Spend is running, but macOS will not show its menu bar icon yet.
-    1. System Settings > Privacy & Security: scroll to Security and click Open Anyway next to \
-    "Agentic Spend". This is needed once per version, because the app is not notarised by Apple.
-    2. System Settings > Menu Bar: under Allow in the Menu Bar, switch Agentic Spend on. \
-    If it already shows as on, switch it off and on again.
+    Agentic Spend is running, but macOS (Control Center) is hiding its menu bar icon.
+    1. System Settings > Menu Bar: under Allow in the Menu Bar, switch Agentic Spend on.
+    2. If it already shows as on and the icon still does not appear, macOS has kept a stale \
+    setting for this app. Reset it: quit Agentic Spend, run \
+    brew uninstall --cask agentic-spend-app, open System Settings > Menu Bar once so macOS \
+    forgets the old entry, then brew install --cask agentic-spend-app and approve it under \
+    Privacy & Security > Open Anyway.
     Then click Show icon again. The dashboard keeps working at http://127.0.0.1:8787 in the meantime.
     """
 }

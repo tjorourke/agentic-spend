@@ -40,7 +40,21 @@ iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 # bundle lost LSUIElement / its identifier (1.8.2 regression guard).
 "$APP/Contents/MacOS/AgenticSpend" --self-test
 
-codesign --force --deep --sign - --timestamp=none "$APP"
+# Signing: ad hoc by default (CI and releases). For your own dev builds you can
+# use a self-signed code-signing certificate from your login keychain instead:
+# set AGENTIC_SPEND_SIGN_IDENTITY, or name the certificate "Agentic Spend Local".
+# Optional; releases never depend on it, and it does not change Gatekeeper or
+# the menu bar (macOS keys menu bar items by bundle id, not by signature).
+SIGN_ID="${AGENTIC_SPEND_SIGN_IDENTITY:-}"
+if [[ -z "$SIGN_ID" ]] && security find-identity -v -p codesigning 2>/dev/null | grep -q '"Agentic Spend Local"'; then
+  SIGN_ID="Agentic Spend Local"
+fi
+if [[ -n "$SIGN_ID" ]]; then
+  echo "signing with identity: $SIGN_ID"
+  codesign --force --deep --sign "$SIGN_ID" --timestamp=none "$APP"
+else
+  codesign --force --deep --sign - --timestamp=none "$APP"
+fi
 codesign --verify --deep --strict --verbose=2 "$APP"
 lipo -archs "$APP/Contents/MacOS/AgenticSpend"
 
