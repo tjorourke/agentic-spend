@@ -27,6 +27,27 @@ def _real_tokens(breakdowns):
     return sum((mb.get("inputTokens") or 0) + (mb.get("outputTokens") or 0) for mb in breakdowns or [])
 
 
+TOKEN_KINDS = ("input", "output", "cacheWrite", "cacheRead")
+
+
+def _split(breakdowns):
+    """The four token kinds ccusage reports per model, summed (1.8.4). They
+    do not overlap, so they add up to ccusage's totalTokens."""
+    out = dict.fromkeys(TOKEN_KINDS, 0)
+    for mb in breakdowns or []:
+        out["input"] += mb.get("inputTokens") or 0
+        out["output"] += mb.get("outputTokens") or 0
+        out["cacheWrite"] += mb.get("cacheCreationTokens") or 0
+        out["cacheRead"] += mb.get("cacheReadTokens") or 0
+    return out
+
+
+def _add_split(into, more):
+    for k in TOKEN_KINDS:
+        into[k] += more.get(k) or 0
+    return into
+
+
 def _grok_plan_known(payload):
     plans = payload.get("plans") or {}
     grok = plans.get("grok") or {}
@@ -102,6 +123,8 @@ def _week_totals(payload, start, end):
     agents = {}
     agent_tokens = {}
     models = {}
+    agent_split = {}
+    week_split = dict.fromkeys(TOKEN_KINDS, 0)
     for d in payload.get("daily") or []:
         if not _in(d.get("period"), start, end):
             continue
@@ -109,16 +132,20 @@ def _week_totals(payload, start, end):
         list_total += cost
         day_tokens = _real_tokens(d.get("modelBreakdowns"))
         tokens += day_tokens
-        days.append({"date": d["period"][:10], "cost": round(cost, 2), "tokens": day_tokens})
+        day_split = _split(d.get("modelBreakdowns"))
+        _add_split(week_split, day_split)
+        days.append({"date": d["period"][:10], "cost": round(cost, 2), "tokens": day_tokens, "tok": day_split})
         for sub in d.get("agents") or []:
             name = "Grok CLI" if sub.get("agent") == "grok" else sub.get("agent")
             agents[name] = agents.get(name, 0.0) + (sub.get("totalCost") or 0.0)
             agent_tokens[name] = agent_tokens.get(name, 0) + _real_tokens(sub.get("modelBreakdowns"))
+            _add_split(agent_split.setdefault(name, dict.fromkeys(TOKEN_KINDS, 0)), _split(sub.get("modelBreakdowns")))
         for mb in d.get("modelBreakdowns") or []:
-            m = models.setdefault(mb.get("modelName") or "unknown", {"cost": 0.0, "tokens": 0})
+            m = models.setdefault(mb.get("modelName") or "unknown", {"cost": 0.0, "tokens": 0, "tok": dict.fromkeys(TOKEN_KINDS, 0)})
             m["cost"] += mb.get("cost") or 0.0
             m["tokens"] += (mb.get("inputTokens") or 0) + (mb.get("outputTokens") or 0)
-    return list_total, tokens, sorted(days, key=lambda x: x["date"]), agents, models, agent_tokens
+            _add_split(m["tok"], _split([mb]))
+    return list_total, tokens, sorted(days, key=lambda x: x["date"]), agents, models, agent_tokens, agent_split, week_split
 
 
 def _top_projects(payload, start, end, limit=5):
@@ -127,9 +154,10 @@ def _top_projects(payload, start, end, limit=5):
         if not _in(s.get("period"), start, end):
             continue
         key = s.get("project") or "Unattributed"
-        b = agg.setdefault(key, {"project": key, "cost": 0.0, "sessions": 0, "tokens": 0})
+        b = agg.setdefault(key, {"project": key, "cost": 0.0, "sessions": 0, "tokens": 0, "tok": dict.fromkeys(TOKEN_KINDS, 0)})
         b["cost"] += s.get("totalCost") or 0.0
         b["tokens"] += _real_tokens(s.get("modelBreakdowns"))
+        _add_split(b["tok"], _split(s.get("modelBreakdowns")))
         b["sessions"] += s.get("sessions") or 1
     rows = sorted(agg.values(), key=lambda r: -r["cost"])[:limit]
     for r in rows:
@@ -225,8 +253,8 @@ def build_digest(payload, today=None, tz=None, now=None, week=None):
         start, end = latest_start, _latest_end
     pstart, pend = start - datetime.timedelta(days=7), end - datetime.timedelta(days=7)
 
-    list_total, tokens, days, agents, models, agent_tokens = _week_totals(payload, start, end)
-    prev_list, prev_tokens, _, _, _, _ = _week_totals(payload, pstart, pend)
+    list_total, tokens, days, agents, models, agent_tokens, agent_split, week_split = _week_totals(payload, start, end)
+    prev_list, prev_tokens = _week_totals(payload, pstart, pend)[:2]
     earliest = min((d.get("period", "")[:10] for d in payload.get("daily") or [] if d.get("period")), default=None)
     has_prev = bool(earliest) and earliest <= pend.isoformat()
     real = real_spend(payload, start, end)
@@ -254,13 +282,15 @@ def build_digest(payload, today=None, tz=None, now=None, week=None):
         },
         "tokens": {
             "total": tokens,
+            "split": week_split,
             "previous": prev_tokens if has_prev else None,
             "changePct": insights.pct_change(tokens, prev_tokens) if has_prev else None,
         },
         "days": days,
-        "agents": [{"agent": k, "cost": round(v, 2), "tokens": agent_tokens.get(k, 0)}
-                   for k, v in sorted(agents.items(), key=lambda kv: -kv[1]) if v > 0],
-        "topModels": [{"model": k, "cost": round(v["cost"], 2), "tokens": v["tokens"]}
+        "agents": [{"agent": k, "cost": round(v, 2), "tokens": agent_tokens.get(k, 0),
+                    "tok": agent_split.get(k, dict.fromkeys(TOKEN_KINDS, 0))}
+                   for k, v in sorted(agents.items(), key=lambda kv: -kv[1]) if v > 0 or agent_tokens.get(k, 0) > 0],
+        "topModels": [{"model": k, "cost": round(v["cost"], 2), "tokens": v["tokens"], "tok": v["tok"]}
                       for k, v in sorted(models.items(), key=lambda kv: -kv[1]["cost"])[:5]],
         "topProjects": _top_projects(payload, start, end),
         "plans": plan_peaks(payload, start, end, tz),

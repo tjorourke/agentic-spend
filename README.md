@@ -12,12 +12,17 @@ browsed from a phone — there's no mobile layout, and none is planned.
 
 ```bash
 brew tap tjorourke/agentic-spend https://github.com/tjorourke/agentic-spend
+brew trust tjorourke/agentic-spend         # newer Homebrew refuses untrusted taps (see below)
 brew install agentic-spend                 # server + dashboard
 agentic-spend                              # starts it and opens http://127.0.0.1:8787
 brew install --cask agentic-spend-app      # optional menu bar app
 open "/Applications/Agentic Spend.app"
 ```
 
+- **`brew trust`:** recent Homebrew versions refuse to install anything from a third-party tap
+  until you trust it, and stop with an "untrusted tap" error. `brew trust tjorourke/agentic-spend`
+  trusts this tap once (it changes your Homebrew settings, nothing else); the formula and the
+  cask then install normally. Per-item alternatives are below under Install.
 - **Dashboard:** http://127.0.0.1:8787. The server opens it once in your browser the first
   time it runs (set `AGENTIC_SPEND_NO_FIRST_RUN_OPEN=1` to skip that). `agentic-spend login on`
   starts the server at login.
@@ -66,11 +71,12 @@ open "/Applications/Agentic Spend.app"
 
 ```bash
 brew tap tjorourke/agentic-spend
+brew trust tjorourke/agentic-spend
 brew install agentic-spend
 ```
 
-If Homebrew refuses to load the formula ("untrusted tap"), run
-`brew trust --formula tjorourke/agentic-spend/agentic-spend` and install again (same as
+If Homebrew refuses to load the formula ("untrusted tap"), run `brew trust tjorourke/agentic-spend`
+(the whole tap) or `brew trust --formula tjorourke/agentic-spend/agentic-spend` and install again (same as
 [flightbay](https://github.com/tjorourke/flightbay)).
 
 ## Menu bar app (optional)
@@ -239,6 +245,87 @@ brew update && brew upgrade agentic-spend
   (excluding tax). On 26 Nov 2026, [claude.com/pricing](https://claude.com/pricing) still
   showed US dollars from a UK Mac, and neither ChatGPT's nor OpenCode's pricing pages could
   be read as a published UK pound list, so no GBP rows are shipped for those.
+
+## Version 1.8.4
+
+- **Token bars stacked by kind.** In the Tokens view, the Weekly report's Top projects, Top models,
+  By agent and By day bars, and Overview's Model mix, are stacked and colour-coded by input, output,
+  cache write and cache read, with a legend. Hover a bar for exact counts. These bars count every
+  token, cache included, so they match ccusage's totals (the Tokens tile still shows input plus
+  output). The Text view gains the four columns; the $ view is unchanged. The Daily chart's tooltips
+  now give exact counts too, and it has the same legend.
+- **Claude desktop card.** Reads the Claude desktop app's `plan-usage-history.json`: the 5-hour and
+  weekly plan limits, per Claude organisation, as percentages only (no tokens or cost), with when
+  each reading was taken. The app writes it now and then while it is open, so it can be days old.
+- **Codex plan limit without the codex CLI.** When the `codex` binary or its app-server isn't
+  available (Codex desktop or IDE users), the plan percentage comes from the newest rate-limit
+  reading in `~/.codex/sessions`, labelled with when Codex wrote it, never "live". Codex is
+  detected from `~/.codex` alone.
+- **Cards only when there's something to show.** The Claude desktop and Codex plan cards appear
+  only when that app has usage or readings in the period on screen (day, week or custom range);
+  otherwise they are left out, with no empty cards.
+- **What's covered** (bottom of Overview). Which apps had usage or readings in the period, which are
+  on this Mac with nothing in the period (collapsed), and the chat apps that keep no usage data on
+  disk, with each vendor's own usage page. See Desktop and chat apps below.
+- **Install:** the Quick start now includes `brew trust tjorourke/agentic-spend`.
+
+## Desktop and chat apps (1.8.4)
+
+Agentic Spend only reads files already on your Mac. It never opens cookies, browser storage,
+keychains or auth files, and it does not scrape websites.
+
+| App | What Agentic Spend shows | Where it comes from |
+| --- | --- | --- |
+| Claude Code, Codex, OpenCode, Gemini CLI, Copilot CLI, Grok CLI and the rest of ccusage's list | Tokens and usage value | Local logs, read by the bundled ccusage |
+| Claude desktop | 5-hour and weekly plan limits, percentages only | `~/Library/Application Support/Claude/plan-usage-history.json` |
+| Codex desktop or IDE | Tokens (via ccusage) and the plan limit percentage | `~/.codex/sessions` |
+| Grok Bot app | Share of the weekly Grok limit | The app's local usage cache |
+| ChatGPT, Gemini app and web, Perplexity, Grok app, Microsoft Copilot, Cursor (individual plan) | Nothing: no usable usage data on disk | Check the app's own usage page (linked from What's covered) |
+
+Browser chat (claude.ai, chatgpt.com, gemini.google.com) is not covered. Chat in the browser and in
+Claude Code draws on the same Claude plan limit, so the Claude limit bars already include it; there
+is no supported way to split out how much came from chat.
+
+### GitHub Copilot in VS Code (opt-in)
+
+Copilot Chat in VS Code writes no token log unless you turn on its OpenTelemetry export. To have
+ccusage (and so Agentic Spend) read it, export to a file under `~/.copilot/otel/`, which is where
+ccusage looks for Copilot OpenTelemetry files. In VS Code's `settings.json`:
+
+```json
+{
+  "github.copilot.chat.otel.enabled": true,
+  "github.copilot.chat.otel.exporterType": "file",
+  "github.copilot.chat.otel.outfile": "/Users/YOU/.copilot/otel/vscode-copilot-chat.jsonl"
+}
+```
+
+Use your own home folder in the path and create `~/.copilot/otel` first. Prompts and responses are
+not written unless you also turn on `captureContent`. See VS Code's
+[Monitor agent usage with OpenTelemetry](https://code.visualstudio.com/docs/agents/guides/monitoring-agents)
+and ccusage's [Copilot source](https://ccusage.com/guide/copilot/). Only usage from after you turn it
+on is recorded. The Copilot CLI needs nothing extra: ccusage reads `~/.copilot/session-state`.
+
+### Gemini CLI telemetry (opt-in)
+
+ccusage reads Gemini CLI's own chat files in `~/.gemini/tmp`, and shows nothing for sessions whose
+files have no token counts (some Gemini CLI versions write none). Gemini CLI can also record token
+counts per request to a local telemetry file. In `~/.gemini/settings.json`:
+
+```json
+{
+  "telemetry": {
+    "enabled": true,
+    "target": "local",
+    "logPrompts": false,
+    "outfile": ".gemini/telemetry.log"
+  }
+}
+```
+
+`logPrompts: false` keeps prompt text out of the file. See
+[Gemini CLI telemetry](https://geminicli.com/docs/cli/telemetry). Agentic Spend does not read that
+telemetry file yet; inside a session, `/stats` shows the same token figures.
 
 ## Version 1.8.3
 

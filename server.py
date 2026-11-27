@@ -33,6 +33,7 @@ import source_detection
 import statusline_setup
 import ccusage_bin
 import ccusage_sources
+import desktop_sources
 import model_mix
 import seat_prices
 import plan_detection
@@ -588,6 +589,20 @@ def refresh_usage(force=False):
         detection = source_detection.detect(hints=hints)
         payload["detection"] = detection
         payload["ccusageSources"] = ccusage_sources.present(raw.get("daily") or [], raw.get("session") or [], detection)
+        # 1.8.4: desktop and chat apps. Claude desktop's plan-usage file
+        # (percentages only) and the chat apps with no local usage data.
+        try:
+            labels = account_usage.load_labels()
+        except Exception:
+            labels = {}
+        try:
+            payload["claudeDesktop"] = desktop_sources.claude_desktop_plan_usage(labels=labels)
+        except Exception as e:
+            payload["claudeDesktop"] = {"found": False, "orgs": [], "error": str(e)}
+        try:
+            payload["chatApps"] = desktop_sources.chat_app_coverage()
+        except Exception:
+            payload["chatApps"] = []
         payload["planDetection"] = _plan_detection(payload)
         payload["planPrices"] = plan_prices.load()
         payload["pricingRegion"] = pricing_region.current()

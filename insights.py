@@ -379,6 +379,14 @@ def _codex_insights(codex_live, codex_history, now):
     mins = primary.get("windowMins")
     if pct is None or reset is None or not mins:
         return []
+    # 1.8.4: a reading taken from Codex's session log (no app-server) is
+    # only meaningful until its window resets; after that it is stale.
+    if codex_live.get("source") == "session-log":
+        try:
+            if reset <= now:
+                return []
+        except TypeError:
+            return []
     window = int(mins) * 60
     points = []
     samples = []
