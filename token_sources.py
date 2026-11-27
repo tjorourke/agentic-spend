@@ -26,6 +26,8 @@ import glob
 import json
 import os
 
+import claude_dirs
+
 CLAUDE_PROJECTS = os.path.expanduser("~/.claude/projects")
 CODEX_SESSIONS = os.path.expanduser("~/.codex/sessions")
 
@@ -138,7 +140,12 @@ def iter_claude_session_files():
     """(path, in_subagent_file, subagent_type) for every Claude Code
     transcript on this machine — the main session file and, separately, each
     of its subagent transcripts, since both need their own dedupe pass."""
-    for session_path in glob.glob(os.path.join(CLAUDE_PROJECTS, "*", "*.jsonl")):
+    if CLAUDE_PROJECTS != os.path.expanduser("~/.claude/projects"):
+        roots = [CLAUDE_PROJECTS]  # pointed somewhere on purpose (a test)
+    else:
+        roots = claude_dirs.projects_dirs()  # every Claude config directory
+    session_paths = [p for root in roots for p in glob.glob(os.path.join(root, "*", "*.jsonl"))]
+    for session_path in session_paths:
         yield session_path, False, None
         session_dir = session_path[:-len(".jsonl")]
         for agent_path in glob.glob(os.path.join(session_dir, "subagents", "agent-*.jsonl")):
