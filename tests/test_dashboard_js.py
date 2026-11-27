@@ -37,6 +37,20 @@ class DashboardHelperTests(unittest.TestCase):
         self.assertEqual(out["day"], {"from": "2026-11-25", "to": "2026-11-25", "days": 1})
         self.assertEqual(out["dst"]["days"], 7)
 
+    def test_claude_real_spend(self):
+        out = run_js([
+            "out.none = claudeRealSpend(100, null);",
+            "out.empty = claudeRealSpend(100, {});",
+            "out.zero = claudeRealSpend(100, {usedMinor: 0});",
+            "out.used = claudeRealSpend(100, {usedMinor: 723, currency: 'USD', exponent: 2});",
+            "out.capped = claudeRealSpend(5, {usedMinor: 723, currency: 'USD', exponent: 2});",
+            "out.defaultExp = claudeRealSpend(100, {usedMinor: 723, currency: 'USD'});",
+            "out.gbp = claudeRealSpend(100, {usedMinor: 723, currency: 'GBP', exponent: 2});",
+            "out.noCurrency = claudeRealSpend(100, {usedMinor: 723});",
+        ])
+        self.assertEqual(out, {"none": 100, "empty": 100, "zero": 0, "used": 7.23, "capped": 5,
+                               "defaultExp": 7.23, "gbp": 100, "noCurrency": 100})
+
     def test_compare_labels(self):
         out = run_js([
             "out.up = compareLabel(112, 100, compareNoun(7, null, null, 7));",
