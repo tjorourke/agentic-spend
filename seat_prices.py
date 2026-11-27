@@ -211,7 +211,7 @@ def team_value(max_usage, account_sessions, prices, today=None, detections=None,
             period = (s.get("period") or "")[:10]
             if month_start <= period <= today_s:
                 api += float(s.get("totalCost") or 0.0)
-                sessions += 1
+                sessions += 1 if s.get("sessions") is None else s["sessions"]
         out.append(_value_entry(uuid, mu.get("label"), "claude", api, sessions, month_start, today_s,
                                 currencies.get(uuid), (prices or {}).get(uuid), det.get(uuid), table,
                                 region_currency=region_currency, fraction=fraction,

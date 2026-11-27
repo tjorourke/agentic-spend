@@ -6201,7 +6201,7 @@ function update() {
         cost: 0, sessions: 0, tokens: 0, first: null, last: null, models: {},
       });
       bucket.cost += s.totalCost;
-      bucket.sessions += 1;
+      bucket.sessions += (s.sessions ?? 1);
       bucket.tokens += s.totalTokens || 0;
       if (s.period) {
         if (!bucket.first || s.period < bucket.first) bucket.first = s.period;
@@ -6276,7 +6276,7 @@ function update() {
     sessionsInRange.forEach(s => {
       const bucket = projAgg[s.project] || (projAgg[s.project] = { project: s.project, cost: 0, sessions: 0, tokens: 0, tok: zeroTok(), models: {}, accounts: {} });
       bucket.cost += s.totalCost;
-      bucket.sessions += s.sessions || 1;
+      bucket.sessions += (s.sessions ?? 1);
       const acctName = accountBucketName(s);
       const acct = bucket.accounts[acctName] || (bucket.accounts[acctName] = { cost: 0, tokens: 0, tok: zeroTok() });
       acct.cost += s.totalCost;

@@ -158,7 +158,7 @@ def _top_projects(payload, start, end, limit=5):
         b["cost"] += s.get("totalCost") or 0.0
         b["tokens"] += _real_tokens(s.get("modelBreakdowns"))
         _add_split(b["tok"], _split(s.get("modelBreakdowns")))
-        b["sessions"] += s.get("sessions") or 1
+        b["sessions"] += 1 if s.get("sessions") is None else s["sessions"]
     rows = sorted(agg.values(), key=lambda r: -r["cost"])[:limit]
     for r in rows:
         r["cost"] = round(r["cost"], 2)

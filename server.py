@@ -21,6 +21,7 @@ import time
 import urllib.parse
 
 import account_usage
+import session_days
 import allowance_history
 import usage_archive
 import data_dir
@@ -497,6 +498,16 @@ def _with_grok_sources(sources, grok_report, plans, grokbot=None):
     return sources
 
 
+def _claude_daily(daily_rows):
+    """{day: Claude Code cost} from ccusage daily rows."""
+    out = {}
+    for d in daily_rows or []:
+        for a in d.get("agents") or []:
+            if a.get("agent") == "claude":
+                out[d.get("period")] = out.get(d.get("period"), 0.0) + (a.get("totalCost") or 0.0)
+    return out
+
+
 def refresh_usage(force=False):
     try:
         result = subprocess.run(
@@ -517,8 +528,13 @@ def refresh_usage(force=False):
         )
         account_usage.save_labels(labels)
         session_account_map, session_project_map = account_usage.build_session_account_map()
+        try:
+            day_weights = session_days.collect()
+        except Exception:  # a transcript we can't read must not break the dashboard
+            day_weights = None
         account_list, no_account_data, daily_by_bucket, account_sessions = account_usage.compute_accounts(
-            session_rows, session_account_map, labels, session_project_map,
+            session_rows, session_account_map, labels, session_project_map, day_weights,
+            _claude_daily(daily_rows),
         )
         if grok_report["found"]:
             for row in grok_report["sessions"]:
