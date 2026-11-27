@@ -214,6 +214,7 @@
   .day-pill { display: inline-flex; align-items: center; gap: 0.3rem; margin: 0.1rem 0.25rem 0.1rem 0; }
   .day-pill .swatch { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .share-track { width: 110px; min-width: 110px; }
   .h2-unit { font-size: 0.74rem; font-weight: 400; color: var(--muted); margin-left: 0.35rem; }
   /* one look for every real action button: filled purple primary, outlined secondary */
   .btn, .btn-primary {
@@ -1056,9 +1057,11 @@
           <th class="right" data-k="sessions" aria-sort="none"><button type="button" class="th-sort">Sessions <span class="chev">&#9662;</span></button></th>
           <th class="right" data-k="tokens" aria-sort="none" title="Input plus output, excluding cache."><button type="button" class="th-sort">Tokens <span class="chev">&#9662;</span></button></th>
           <th class="right" data-k="cost" aria-sort="none" title="At API prices, USD"><button type="button" class="th-sort">Usage value <span class="chev">&#9662;</span></button></th>
+          <th>Share</th>
         </tr></thead>
         <tbody></tbody>
       </table>
+      <div class="muted" id="projUntracked" style="font-size:0.8rem; margin-top:0.6rem;"></div>
     </div>
     <details class="how-this-works">
       <summary>How this works</summary>
@@ -6587,6 +6590,20 @@ function update() {
     const pfmt = v => metric === 'tokens' ? fmtTok(Math.round(v)) + ' tok' : fmt(v);
     document.getElementById('projLegend').innerHTML = projectRows.length ? bucketLegendHtml(projBuckets, metric) : '';
     const maxCost = Math.max(0, ...projectRows.map(pv)) || 1;
+    const shareTotal = projectRows.reduce((a, r) => a + pv(r), 0) || 1;
+    // Tools that never record a project folder, so the table can't include them.
+    const untracked = {};
+    if (agent === 'all' || (agent && !String(agent).startsWith('account:') && agent !== 'claude' && agent !== 'grok')) {
+      days.filter(d => d.period >= cutoff && d.period <= windowEnd).forEach(d => (d.agents || []).forEach(sub => {
+        if (sub.agent === 'claude' || sub.agent === 'grok') return;
+        if (agent !== 'all' && sub.agent !== agent) return;
+        untracked[sub.agent] = (untracked[sub.agent] || 0) + (sub.totalCost || 0);
+      }));
+    }
+    const untrackedList = Object.entries(untracked).filter(([, c]) => c > 0.0049).sort((a, b) => b[1] - a[1]);
+    document.getElementById('projUntracked').textContent = untrackedList.length
+      ? `Not in this table: ${untrackedList.map(([a, c]) => `${AGENT_BUCKET_NAMES[a] || a} ${fmt(c)}`).join(', ')} in this range. ${untrackedList.length === 1 ? 'It doesn\u2019t' : 'They don\u2019t'} record which project folder ${untrackedList.length === 1 ? 'it' : 'they'} ran in, so there is nothing to group by.`
+      : 'Codex and OpenCode don\u2019t record which project folder they ran in, so they never appear here.';
     document.querySelector('#projectsTable tbody').innerHTML = projectRows.map(p => {
       const path = shortenPath(p.project);
       const open = expandedProjects.has(p.project);
@@ -6602,9 +6619,10 @@ function update() {
       const summary = `${accounts.map(a => escHtml(a.name)).join(', ')} · ${models.length} model${models.length === 1 ? '' : 's'}`;
       return `<tr class="proj-row${open ? ' open' : ''}" data-project="${escAttr(p.project)}" tabindex="0" role="button" aria-expanded="${open}">
           <td class="proj-path" title="${escAttr(path.full)}" aria-label="${escAttr(path.full)}"><span class="chev-toggle">${open ? '&#9662;' : '&#9656;'}</span> ${escHtml(path.short)}<div class="muted proj-summary">${summary}</div>${bar}</td>
-          <td class="right tnum">${p.sessions}</td><td class="right tnum" title="${escAttr(tokTitle(p.tok))}">${fmtTok(p.tokens)}</td><td class="right tnum">${fmt(p.cost)}</td></tr>
-        <tr class="proj-detail" ${open ? '' : 'hidden'}><td colspan="4"><div class="proj-detail-grid">${detail}</div></td></tr>`;
-    }).join('') || `<tr><td colspan="4" class="muted">${emptyCopy}</td></tr>`;
+          <td class="right tnum">${p.sessions}</td><td class="right tnum" title="${escAttr(tokTitle(p.tok))}">${fmtTok(p.tokens)}</td><td class="right tnum">${fmt(p.cost)}</td>
+          <td><div class="bar-cell">${stackedBarHtml(byAcct, projBuckets, pv(p), shareTotal, pfmt).replace('class="stack-track"', 'class="stack-track share-track"')}<span class="muted tnum">${(100 * pv(p) / shareTotal).toFixed(1)}%</span></div></td></tr>
+        <tr class="proj-detail" ${open ? '' : 'hidden'}><td colspan="5"><div class="proj-detail-grid">${detail}</div></td></tr>`;
+    }).join('') || `<tr><td colspan="5" class="muted">${emptyCopy}</td></tr>`;
     document.querySelectorAll('#projectsTable tr.proj-row').forEach(tr => {
       const toggle = () => {
         const key = tr.dataset.project;
