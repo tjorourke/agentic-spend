@@ -232,7 +232,7 @@ class ModelMixTokenTests(unittest.TestCase):
         self.assertTrue(out["t"].index("tok") < out["t"].index("$437.25"))
 
     def test_account_token_split_sums_to_model_totals(self):
-        out = run_js(self.HELPERS + ["accountBucketName", "modelAccountSplit", "finishAccountSplit"], """
+        out = run_js(self.HELPERS + ["accountBucketName", "modelAccountSplit", "finishAccountSplit", "seriesColour"], """
           const mb = (c, i, o, cw, cr) => ({modelName: 'sonnet', cost: c, inputTokens: i, outputTokens: o, cacheCreationTokens: cw, cacheReadTokens: cr});
           const days = [{period: '2026-11-24', agents: [{agent: 'claude', modelBreakdowns: [mb(100, 1000, 500, 300, 9000)]},
                                                          {agent: 'opencode', modelBreakdowns: [{modelName: 'g', cost: 5, inputTokens: 40, outputTokens: 4}]}]}];
@@ -240,7 +240,7 @@ class ModelMixTokenTests(unittest.TestCase):
             {period: '2026-11-24', accountUuid: 'w', label: 'Work', modelBreakdowns: [mb(30, 100, 400, 0, 1000)]},
             {period: '2026-11-24', accountUuid: 'p', label: 'Personal', modelBreakdowns: [mb(70, 900, 100, 300, 8000)]}];
           out.r = modelAccountSplit(days, sessions, '2026-11-20', '2026-11-26', 'all');
-        """, consts=("ACCOUNT_BUCKET_COLOURS", "AGENT_BUCKET_NAMES"))
+        """, consts=("ACCOUNT_BUCKET_COLOURS", "AGENT_BUCKET_NAMES", "SERIES_FIXED_COLOURS", "CLAUDE_ACCOUNT_COLOURS", "OTHER_SERIES_COLOURS"))
         tok = out["r"]["tokens"]["sonnet"]
         for k, total in (("input", 1000), ("output", 500), ("cacheWrite", 300), ("cacheRead", 9000)):
             self.assertAlmostEqual(sum(b[k] for b in tok.values()), total)

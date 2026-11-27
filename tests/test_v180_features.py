@@ -279,7 +279,7 @@ class DashboardJsTests(unittest.TestCase):
         self.assertEqual(out["parsed"], [80, 95])
 
     def test_model_mix_by_account_adds_up(self):
-        out = run_js(["tokVec", "zeroTok", "addTok", "tokAll", "accountBucketName", "modelAccountSplit", "finishAccountSplit"], """
+        out = run_js(["tokVec", "zeroTok", "addTok", "tokAll", "accountBucketName", "modelAccountSplit", "finishAccountSplit", "seriesColour"], """
           const days = [{period: '2026-11-24', agents: [
             {agent: 'claude', modelBreakdowns: [{modelName: 'sonnet', cost: 100}]},
             {agent: 'opencode', modelBreakdowns: [{modelName: 'gemini', cost: 12.17}]},
@@ -291,7 +291,7 @@ class DashboardJsTests(unittest.TestCase):
             {period: '2026-11-24', accountUuid: 'unknown-session', label: 'Older', modelBreakdowns: [{modelName: 'sonnet', cost: 10}]},
             {period: '2026-11-24', agent: 'grok', accountUuid: 'grok-unattributed', modelBreakdowns: [{modelName: 'grok-4', cost: 4.04}]}];
           out.r = modelAccountSplit(days, sessions, '2026-11-20', '2026-11-26', 'all');
-        """, consts=("ACCOUNT_BUCKET_COLOURS", "AGENT_BUCKET_NAMES"))
+        """, consts=("ACCOUNT_BUCKET_COLOURS", "AGENT_BUCKET_NAMES", "SERIES_FIXED_COLOURS", "CLAUDE_ACCOUNT_COLOURS", "OTHER_SERIES_COLOURS"))
         m = out["r"]["models"]
         self.assertAlmostEqual(m["sonnet"]["Work"], 30)
         self.assertAlmostEqual(m["sonnet"]["Personal"], 60)
@@ -353,7 +353,9 @@ class StaticMarkupTests(unittest.TestCase):
         self.assertNotIn(">Digest<", src)
         self.assertIn("Weekly report", src)
         self.assertNotIn("<h2>Spend by account</h2>", src)
-        self.assertIn("Usage value by account (API prices)", src)
+        # 1.8.7: the Accounts page became the Limits section on each tool tab.
+        self.assertNotIn('data-tab="accounts"', src)
+        self.assertIn("if (tab === 'accounts') tab = 'overview';", src)
         self.assertNotIn("What's actually costing you money", src)
         self.assertNotIn("Those three amounts are USD list price", src)
         self.assertNotIn('id="kpiPlan"', src)
@@ -365,7 +367,7 @@ class StaticMarkupTests(unittest.TestCase):
         src = html()
         self.assertIn('class="topbar"', src)
         self.assertIn('class="refresh-button"', src)
-        self.assertEqual(src.count('class="nav-icon"'), 7)   # 1.8.6 adds Value
+        self.assertEqual(src.count('class="nav-icon"'), 6)   # 1.8.6 adds Value, 1.8.7 drops Accounts
         self.assertIn("max-width: 1600px", src)
         self.assertNotRegex(src, r"<script[^>]+src=\"https?://")
         self.assertNotRegex(src, r"<link[^>]+href=\"https?://")
