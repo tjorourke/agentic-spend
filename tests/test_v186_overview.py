@@ -38,6 +38,9 @@ class LayoutTests(unittest.TestCase):
         src = html()
         self.assertIn("if (tab === 'overview' || tab === 'value') {", src)
 
+    def test_grok_bot_alone_still_gets_a_grok_tab(self):
+        self.assertIn("if (sourcePresent('grok-bot')) agents.add('grok');", html())
+
     def test_agent_picker_hidden_on_overview(self):
         self.assertIn("t === 'accounts' || t === 'overview' || noRange", html())
 

@@ -5853,6 +5853,9 @@ function update() {
   days.forEach(d => (d.metadata && d.metadata.agents || []).forEach(a => {
     if (sourcePresent(detectionIdForTool(a))) agents.add(a);
   }));
+  // Grok Bot has no ccusage rows, so a Grok Bot-only setup still gets a Grok
+  // filter and tab for its plan reading.
+  if (sourcePresent('grok-bot')) agents.add('grok');
   const claudeAccounts = sourcePresent('claude')
     ? (data.sources || []).filter(s => s.tool === 'claude')
     : [];
