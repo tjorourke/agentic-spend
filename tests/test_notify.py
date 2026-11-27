@@ -3,6 +3,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 os.environ.setdefault("AGENTIC_SPEND_DATA_DIR", tempfile.mkdtemp(prefix="agentic-spend-test-"))
@@ -128,6 +129,12 @@ class DigestDueTests(unittest.TestCase):
 
 
 class DeliveryTests(unittest.TestCase):
+    # These cover the macOS path (osascript); NotifySendTests covers Linux.
+    def setUp(self):
+        patcher = mock.patch("platform_info.system", return_value="macos")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_osascript_args_not_spliced(self):
         run = FakeRun()
         run_ok = notify.deliver_osascript('Plan "x"', "msg", runner=run)

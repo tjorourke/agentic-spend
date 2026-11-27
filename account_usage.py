@@ -182,7 +182,7 @@ LIVE_USAGE_DIR = os.path.expanduser("~/.claude/cc-usage-live")
 #     figure is 0% — usage can only rise again through Claude Code activity,
 #     which would have written a fresh live reading.
 #   - if the reading is older but the window has not reset, show the value
-#     with its age, and "no use since" when local session logs confirm there
+#     with its age, and "no use since <time of reading>" when local session logs confirm there
 #     has been no later activity for that account.
 
 LIVE_FRESH_AFTER = datetime.timedelta(hours=24)
@@ -321,8 +321,7 @@ def resolve_window(readings, now=None, last_activity=None, tz=None):
             # Reading belongs to a window that has already reset, and nothing
             # newer exists. Usage is 0 until Claude Code next writes a reading.
             reset_label = fmt_reset_short(resets, tz) or "the window"
-            return pack(0, resets, as_of, source, "reset",
-                        f"reset {reset_label}, no use since")
+            return pack(0, resets, as_of, source, "reset", f"reset {reset_label}")
         as_of_label = fmt_as_of(as_of, now, tz) or "unknown"
         quiet = False
         if last_activity is not None and as_of is not None:
@@ -330,7 +329,7 @@ def resolve_window(readings, now=None, last_activity=None, tz=None):
         elif last_activity is not None and as_of is None:
             quiet = False
         if quiet:
-            note = f"as of {as_of_label}, no use since"
+            note = f"no use since {as_of_label}"
         else:
             note = f"last reading {as_of_label}"
         return pack(chosen["percent"], resets, as_of, source, "current", note)
@@ -341,8 +340,7 @@ def resolve_window(readings, now=None, last_activity=None, tz=None):
         resets = chosen["resetsAt"]
         if resets <= now:
             reset_label = fmt_reset_short(resets, tz) or "the window"
-            return pack(0, resets, chosen["at"], chosen["source"], "reset",
-                        f"reset {reset_label}, no use since")
+            return pack(0, resets, chosen["at"], chosen["source"], "reset", f"reset {reset_label}")
     return pack(None, None, None, None, "unknown", None)
 
 

@@ -7,6 +7,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), os.pardir))
 os.environ.setdefault("AGENTIC_SPEND_DATA_DIR", tempfile.mkdtemp(prefix="agentic-spend-test-"))
 
+import platform_info  # noqa: E402
 import source_detection as sd  # noqa: E402
 
 
@@ -171,7 +172,7 @@ class IsolatedDetectTests(unittest.TestCase):
         self.assertFalse(row["hasData"])
 
     def test_grok_bot_cache_files_set_has_data(self):
-        support = os.path.join(self.home, "Library", "Application Support", "Grok Bot")
+        support = os.path.join(platform_info.app_data_dir(self.home, env={}), "Grok Bot")
         _touch(os.path.join(support, "sand-client-persistence", "ABCDE"), "{}")
         row = _by_id(self.detect())[sd.GROK_BOT]
         self.assertTrue(row["installed"])

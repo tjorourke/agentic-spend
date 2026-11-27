@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Read Grok Bot weekly usage from the desktop app's local cache.
 
-The macOS Grok Bot app stores a snapshot under
-``~/Library/Application Support/Grok Bot/sand-client-persistence/``.
+The Grok Bot desktop app stores a snapshot in its user data folder:
+``~/Library/Application Support/Grok Bot/sand-client-persistence/`` on macOS
+and ``~/.config/Grok Bot/sand-client-persistence/`` on Linux (Electron's
+appData folder, so $XDG_CONFIG_HOME when that is set).
 Filenames are RFC 4648 base32 encodings of slice keys. The file this
 module reads is:
 
@@ -25,6 +27,7 @@ import threading
 import urllib.parse
 
 import data_dir
+import platform_info
 
 HISTORY_PATH = data_dir.path("grokbot-usage.json")
 HISTORY_DAYS = 400
@@ -35,12 +38,14 @@ DEFAULT_NOTE = (
     "not tokens or dollars."
 )
 
-# Default macOS location. Tests and unusual installs set GROK_BOT_PERSISTENCE_DIR.
-_DEFAULT_PERSISTENCE = os.path.join(
-    os.path.expanduser("~/Library/Application Support"),
-    "Grok Bot",
-    "sand-client-persistence",
-)
+APP_FOLDER = "Grok Bot"
+PERSISTENCE_FOLDER = "sand-client-persistence"
+
+
+def default_persistence_dir(home=None, sys_name=None, env=None):
+    """Where the app keeps it on this OS. Tests and unusual installs set
+    GROK_BOT_PERSISTENCE_DIR instead."""
+    return os.path.join(platform_info.app_data_dir(home, sys_name, env), APP_FOLDER, PERSISTENCE_FOLDER)
 _store_lock = threading.Lock()
 
 ACCOUNT_SLOT_KEY = "sand.client.slice.client-meta.account-slot"
@@ -49,7 +54,7 @@ _ACCOUNT_ID_RE = re.compile(r"^[A-Za-z0-9_.:|%+\-@]{1,200}$")
 
 
 def persistence_dir():
-    return os.environ.get("GROK_BOT_PERSISTENCE_DIR") or _DEFAULT_PERSISTENCE
+    return os.environ.get("GROK_BOT_PERSISTENCE_DIR") or default_persistence_dir()
 
 
 def encode_slice_key(key):
@@ -696,7 +701,8 @@ def collect(directory=None, store_path=None, now=None, tz=None):
             for snap in discovered:
                 entry = (store.get("accounts") or {}).get(snap["accountId"]) or snap
                 accounts.append(_public_account(entry, tz=tz, now=now))
-            return {"found": True, "accounts": accounts, "source": "local-cache"}
+            return {"found": True, "accounts": accounts, "source": "local-cache",
+                    "cacheDir": platform_info.tilde(directory)}
         # No cache on disk: still return any previously stored accounts so a
         # push/import is not wiped the next time the dashboard loads.
         stored = []
@@ -709,7 +715,8 @@ def collect(directory=None, store_path=None, now=None, tz=None):
                 continue
             stored.append(_public_account(row, tz=tz, now=now))
         stored.sort(key=lambda a: (not a.get("current"), a.get("accountId") or ""))
-        return {"found": bool(stored), "accounts": stored, "source": "store" if stored else None}
+        return {"found": bool(stored), "accounts": stored, "source": "store" if stored else None,
+                "cacheDir": platform_info.tilde(directory)}
 
 
 def _public_account(entry, tz=None, now=None):

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Usage that desktop and chat apps leave on this Mac (1.8.4).
+"""Usage that desktop and chat apps leave on this computer (1.8.4; Linux in 1.8.6).
 
 Two things live here:
 
@@ -20,7 +20,12 @@ import datetime
 import json
 import os
 
+import platform_info
+
+# macOS path, relative to the home folder. On Linux the app (beta since June
+# 2026) uses Electron's appData, ~/.config/Claude; see claude_desktop_path().
 CLAUDE_DESKTOP_FILE = os.path.join("Library", "Application Support", "Claude", "plan-usage-history.json")
+CLAUDE_DESKTOP_NAME = os.path.join("Claude", "plan-usage-history.json")
 SUPPORTED_VERSIONS = (2,)
 
 
@@ -105,13 +110,22 @@ def _current_claude_identity(home):
         return None, None
 
 
-def claude_desktop_plan_usage(home=None, labels=None):
+def claude_desktop_path(home=None, sys_name=None):
+    """Where the Claude desktop app keeps plan-usage-history.json on this OS.
+    A home passed in (tests) ignores the host's XDG_CONFIG_HOME."""
+    explicit = home is not None
+    home = _home(home)
+    base = platform_info.app_data_dir(home, sys_name, env={} if explicit else None)
+    return os.path.join(base, CLAUDE_DESKTOP_NAME)
+
+
+def claude_desktop_plan_usage(home=None, labels=None, sys_name=None):
     """{"found", "path", "orgs", "lastUpdated", "version", "error"}.
     found is False when the file is missing; an empty or unreadable file is
     found with no orgs and an error, so the dashboard can hide the card."""
+    path = claude_desktop_path(home, sys_name)
     home = _home(home)
-    path = os.path.join(home, CLAUDE_DESKTOP_FILE)
-    base = {"found": False, "path": "~/" + CLAUDE_DESKTOP_FILE, "orgs": [], "lastUpdated": None,
+    base = {"found": False, "path": platform_info.tilde(path, home), "orgs": [], "lastUpdated": None,
             "version": None, "error": None,
             "note": "Percentages only. The Claude desktop app writes these readings now and then while it is open; there are no token or cost figures in this file."}
     if not os.path.isfile(path):
@@ -134,7 +148,9 @@ def claude_desktop_plan_usage(home=None, labels=None):
 
 
 # Chat apps with no local usage data we can read honestly. Links are each
-# vendor's own help or settings page for checking usage.
+# vendor's own help or settings page for checking usage. `apps` holds macOS
+# .app bundle names and, where the vendor ships a Linux app, its .desktop
+# entry name.
 CHAT_APPS = (
     {"id": "chatgpt", "label": "ChatGPT", "apps": ("ChatGPT.app",),
      "link": "https://help.openai.com/en/articles/20001625-understanding-chatgpt-and-codex-usage-limits",
@@ -151,7 +167,7 @@ CHAT_APPS = (
     {"id": "ms-copilot", "label": "Microsoft Copilot", "apps": ("Copilot.app", "Microsoft Copilot.app"),
      "link": "https://support.microsoft.com/en-us/microsoft-365-copilot/ai-credits-and-limits-for-microsoft-365-subscriptions",
      "where": "Microsoft account → Services & subscriptions"},
-    {"id": "cursor", "label": "Cursor (individual plan)", "apps": ("Cursor.app",),
+    {"id": "cursor", "label": "Cursor (individual plan)", "apps": ("Cursor.app", "cursor.desktop"),
      "link": "https://cursor.com/dashboard",
      "where": "Cursor → Settings → Usage, or cursor.com/dashboard"},
 )
@@ -162,17 +178,23 @@ def _app_roots(home, roots=None):
         return list(roots)
     if "AGENTIC_SPEND_APP_ROOTS" in os.environ:
         return [p for p in (os.environ.get("AGENTIC_SPEND_APP_ROOTS") or "").split(os.pathsep) if p]
-    return ["/Applications", os.path.join(home, "Applications")]
+    return platform_info.app_dirs(home)
+
+
+def _app_present(root, name):
+    path = os.path.join(root, name)
+    return os.path.isfile(path) if name.endswith(".desktop") else os.path.isdir(path)
 
 
 def chat_app_coverage(home=None, roots=None):
     """One row per CHAT_APPS entry: installed is True when its .app bundle
-    exists in an app folder (only the folder name is checked)."""
+    (macOS) or .desktop entry (Linux) exists in an app folder. Only the
+    name is checked; nothing is opened."""
     home = _home(home)
     folders = _app_roots(home, roots)
     rows = []
     for app in CHAT_APPS:
-        installed = any(os.path.isdir(os.path.join(r, name)) for r in folders for name in app["apps"])
+        installed = any(_app_present(r, name) for r in folders for name in app["apps"])
         rows.append({"id": app["id"], "label": app["label"], "installed": installed,
                      "link": app["link"], "where": app["where"], "class": "D"})
     return rows

@@ -1014,6 +1014,19 @@
 
 <script>
 let data = null;
+// 1.8.6: the server says which OS this is (macOS or Linux), so paths and
+// wording fit the machine. "this Mac" on macOS, "this computer" elsewhere.
+function platformInfo() {
+  const d = typeof data === 'undefined' ? null : data;
+  return (d && d.platform) || { os: 'unknown', osLabel: '', here: 'this computer', appDataDir: null, menuBarApp: false, notifier: null };
+}
+function here() {
+  return platformInfo().here || 'this computer';
+}
+function Here() {
+  const h = here();
+  return h.charAt(0).toUpperCase() + h.slice(1);
+}
 let tokenSourcesData = null;
 let tokenSourcesFetching = false;
 let tab = 'overview';
@@ -1281,7 +1294,9 @@ function grokBotWindowsInRange(cutoff, windowEnd, allWindows) {
 }
 
 function grokBotEmptyCopy() {
-  return 'No Grok Bot usage cache found on this Mac yet. The Grok Bot desktop app writes one under ~/Library/Application Support/Grok Bot/ when it has fetched your usage. Open the Grok Bot app once (its own Usage page is enough), then refresh this dashboard. This tool only reads that local file; it does not call Grok\'s servers.';
+  const base = platformInfo().appDataDir;
+  const where = base ? `under ${base}/Grok Bot/` : 'in its app data folder';
+  return `No Grok Bot usage cache found on ${here()} yet. The Grok Bot desktop app (macOS, Windows and Linux) writes one ${where} when it has fetched your usage. Open the Grok Bot app once (its own Usage page is enough), then refresh this dashboard. This tool only reads that local file; it does not call Grok's servers.`;
 }
 
 function fillGrokBotSettingsNote() {
@@ -1297,7 +1312,7 @@ function fillGrokBotSettingsNote() {
     const pct = a.weeklyPct != null ? formatPct(a.weeklyPct) + '% used' : 'no figure';
     return `${plan}: ${pct}, last read ${a.updatedAt ? new Date(a.updatedAt).toLocaleString() : 'unknown'}`;
   });
-  el.textContent = 'Read automatically from the Grok Bot app\'s local usage cache on this Mac. ' + bits.join(' · ') + '. The Accounts tab shows the weekly share, reset time, and any extra credits. A push script is included for machines that do not have the app.';
+  el.textContent = 'Read automatically from the Grok Bot app\'s local usage cache on ' + here() + '. ' + bits.join(' · ') + '. The Accounts tab shows the weekly share, reset time, and any extra credits. A push script is included for machines that do not have the app.';
 }
 
 function renderGrokBotCards() {
@@ -1351,7 +1366,7 @@ function renderGrokBotCards() {
       ${refuse}
       ${usageHistoryChartHtml(history, [{ key: 'weeklyPct', label: 'Weekly limit', color: 'var(--accent)' }], 'Weekly usage over time')}
       ${grokBotWeeklyChartHtml(a.windows || [])}
-      <p class="muted" style="margin-top:0.8rem;">${escHtml(a.note || 'Grok Bot reports usage as a share of a weekly limit shared with other apps, not tokens or dollars.')} Read from the Grok Bot app\'s local usage cache on this Mac. This dashboard does not call Grok\'s servers.</p>
+      <p class="muted" style="margin-top:0.8rem;">${escHtml(a.note || 'Grok Bot reports usage as a share of a weekly limit shared with other apps, not tokens or dollars.')} Read from the Grok Bot app\'s local usage cache on ${escHtml(here())}. This dashboard does not call Grok\'s servers.</p>
     </div>`;
   }).join('');
 }
@@ -1676,7 +1691,7 @@ function codexReadingInPeriod(live, history, from, to, hadUsage) {
   return { percent: s.percent, windowMins: s.windowMins, resetsAt: s.resetsAt, secondary: null, at: s.time, source: 'history', planType: (live && live.planType) || null };
 }
 // Rows for the What's covered panel. active: has usage or readings in the
-// period. idle: on this Mac but nothing in the period (collapsed). noLocal:
+// period. idle: on this computer but nothing in the period (collapsed). noLocal:
 // apps with no local usage data at all (class D), with the official page.
 function coverageRows(o) {
   const active = [], idle = [];
@@ -3271,7 +3286,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
     const amount = pct != null
       ? `${escHtml(formatPct(pct))}% of weekly limit`
       : (credits != null ? 'no weekly figure yet' : 'no cache yet');
-    const chipTitle = "Read from the Grok Bot app's local usage cache on this Mac. This is a share of a weekly limit shared with other Grok apps, not tokens or dollars.";
+    const chipTitle = `Read from the Grok Bot app's local usage cache on ${here()}. This is a share of a weekly limit shared with other Grok apps, not tokens or dollars.`;
     const chip = pct == null
       ? srcChip('ESTIMATE', '')
       : (fresh ? srcChip('LIVE', 'live', chipTitle) : srcChip('CACHED', 'cached', chipTitle));
@@ -3661,7 +3676,7 @@ function liveUsageSectionHtml(setup) {
     <div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem;">Live Claude usage (optional)</div>
     <div class="muted" style="margin-bottom:0.4rem;">
       Turn this on to refresh your Claude session and weekly limits every time you use Claude Code.
-      It adds a status line to Claude Code on this Mac (every session, not just this project).
+      It adds a status line to Claude Code on ${escHtml(here())} (every session, not just this project).
       If you already have a status line, this wraps it rather than replacing it.
       No credentials are read, and no network calls are made. You can turn it off at any time.
       Status: ${stateText}
@@ -3782,15 +3797,15 @@ function pricingRegionSectionHtml() {
   const pr = (data && data.pricingRegion) || { region: 'US', currency: 'USD', source: 'auto' };
   const detected = pr.detectedRegion;
   const autoNote = pr.source === 'auto'
-    ? (detected ? `Detected from this Mac: ${pr.label}.` : "This Mac's region could not be read, so United States (USD) is used until you choose.")
-    : (detected ? `This Mac's region is ${detected === 'UK' ? 'United Kingdom (GBP)' : 'United States (USD)'}.` : '');
+    ? (detected ? `Detected from ${here()}: ${pr.label}.` : `${Here()}'s region could not be read, so United States (USD) is used until you choose.`)
+    : (detected ? `${Here()}'s region is ${detected === 'UK' ? 'United Kingdom (GBP)' : 'United States (USD)'}.` : '');
   const picked = pr.source === 'user' ? pr.region : 'auto';
   const opt = (code, label) => `<label style="margin-right:1rem;"><input type="radio" class="settings-field" name="pricingRegion" value="${code}" ${picked === code ? 'checked' : ''}> ${label}</label>`;
   return `
     <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">
       Pricing region <span class="muted" title="Used when an account's billing currency is not known. If the provider publishes a price in that currency it is the default; otherwise the US dollar list price is shown, never a converted amount.">(?)</span>
     </div>
-    <div class="row">${opt('auto', "This Mac's region")}${opt('UK', 'United Kingdom (GBP)')}${opt('US', 'United States (USD)')}
+    <div class="row">${opt('auto', escHtml(Here() + "'s region"))}${opt('UK', 'United Kingdom (GBP)')}${opt('US', 'United States (USD)')}
       <span class="muted" id="pricingRegionStatus">${escHtml(autoNote)}</span>
     </div>`;
 }
@@ -3825,7 +3840,7 @@ function seatPriceSectionHtml() {
     </tr>`).join('');
   const plansBlock = !list.length ? '' : `
     <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">
-      Plans and seat prices <span class="muted" title="The plan is read from local files on this Mac. When it's known, the list price from the provider's own pricing page is used as the default. Enter your own price to override it (for example an annual or discounted rate).">(?)</span>
+      Plans and seat prices <span class="muted" title="The plan is read from local files on ${escAttr(here())}. When it's known, the list price from the provider's own pricing page is used as the default. Enter your own price to override it (for example an annual or discounted rate).">(?)</span>
     </div>
     <table style="margin-bottom:0.6rem;"><thead><tr><th>Account</th><th>Detected plan</th><th>List price (default)</th><th>Your price</th></tr></thead><tbody>${rows}</tbody></table>
     <details style="margin-top:0.5rem;"><summary class="muted">Shipped price table (${(table.rows || []).length} rows, fetched ${escHtml(table.fetched || '')})</summary>
@@ -3844,7 +3859,7 @@ function ccusageSourcesHtml() {
       <td class="muted">${x.hasData ? 'usage found' : 'installed, no usage yet'}</td>
       <td><a href="${escAttr(x.docs)}" target="_blank" rel="noopener" class="muted">ccusage docs</a></td>
     </tr>`).join('');
-  return `<div class="muted" style="font-weight:600; color:var(--text); margin:0.3rem 0;">Read through ccusage <span class="muted" title="ccusage 20.1.2 reads 20 tools. Only the ones on this Mac are listed. The badge is ccusage's own label for each source: Beta and Experimental mean its maintainers expect the tool's log format to change.">(?)</span></div>
+  return `<div class="muted" style="font-weight:600; color:var(--text); margin:0.3rem 0;">Read through ccusage <span class="muted" title="ccusage 20.1.2 reads 20 tools. Only the ones on ${escAttr(here())} are listed. The badge is ccusage's own label for each source: Beta and Experimental mean its maintainers expect the tool's log format to change.">(?)</span></div>
     <table style="margin-bottom:0.9rem;"><thead><tr><th>Source</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
@@ -3859,22 +3874,22 @@ function settingsSourcesHtml(sources) {
     if (rows.length) foundRows.push(...rows);
     else foundRows.push({ label: d.label, tool: d.id, kind: 'none', asOf: null });
   });
-  let html = '<div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem;">Detected on this Mac</div>';
+  let html = `<div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem;">Detected on ${escHtml(here())}</div>`;
   if (!det.length) {
     html = '<div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem;">Everything found, all-time</div>';
     html += sourcesSummaryTableHtml(catalog);
     return html;
   }
   if (!found.length) {
-    html += '<p class="muted">No supported agents found on this Mac.</p>';
+    html += `<p class="muted">No supported agents found on ${escHtml(here())}.</p>`;
   } else {
     html += sourcesSummaryTableHtml(foundRows);
   }
   html += ccusageSourcesHtml();
   if (missing.length) {
     html += `<details class="not-found-sources"${found.length ? '' : ' open'}>
-      <summary>Not found on this Mac</summary>
-      <ul>${missing.map(d => `<li>${escHtml(d.label)}: not found on this Mac</li>`).join('')}</ul>
+      <summary>Not found on ${escHtml(here())}</summary>
+      <ul>${missing.map(d => `<li>${escHtml(d.label)}: not found on ${escHtml(here())}</li>`).join('')}</ul>
     </details>`;
   }
   return html;
@@ -4207,14 +4222,22 @@ function renderSettingsApp(forceRender) {
   const planRows = plans.map(p => `<tr><td>${escHtml(p.label)}</td><td class="tnum">${escHtml(formatPct(p.pct))}% now</td>
     <td><span class="pct-field"><input type="text" class="settings-field threshold-input" inputmode="numeric" data-plan-key="${escAttr(p.key)}" value="${escAttr((per[p.key] || []).join(', '))}" placeholder="${escAttr(defaults.join(', '))} (default)" aria-label="Thresholds in per cent for ${escAttr(p.label)}, leave empty for the default of ${escAttr(defaults.join(' and '))}%"><span class="pct-suffix">%</span></span>
       <span class="field-error" role="alert"></span></td></tr>`).join('');
-  const loginLine = login.enabled
-    ? `On. ${login.loaded ? 'Loaded in launchd' : 'Not loaded yet, takes effect at next login'}.`
+  const loginLine = login.error ? login.error : login.enabled
+    ? (login.method === 'autostart' ? 'On. Starts with your desktop session.'
+      : `On. ${login.loaded ? (login.method === 'systemd' ? 'Running under systemd' : 'Loaded in launchd') : 'Not loaded yet, takes effect at next login'}.`)
     : 'Off.';
+  const loginHow = login.method === 'systemd' ? 'Uses a systemd user service, ~/.config/systemd/user/agentic-spend.service.'
+    : login.method === 'autostart' ? 'There is no systemd user session here, so it uses a desktop autostart entry, ~/.config/autostart/agentic-spend.desktop.'
+    : login.method === 'launchd' ? 'Uses a LaunchAgent in ~/Library/LaunchAgents.' : '';
+  const notifier = platformInfo().notifier;
+  const notifyHow = notifier === 'osascript' ? 'Shown as macOS notifications while the server is running'
+    : notifier === 'notify-send' ? 'Shown as desktop notifications (notify-send) while the server is running'
+    : 'Shown as desktop notifications while the server is running';
   box.innerHTML = `
     <div class="card-head"><h2>Background and notifications</h2></div>
     <div class="row"><label><input type="checkbox" class="settings-field" id="loginToggle" ${login.enabled ? 'checked' : ''}> Start Agentic Spend at login</label>
       <span class="muted" id="loginStatus" role="status">${escHtml(loginLine)}</span></div>
-    <div class="muted" style="margin-bottom:0.9rem;">Keeps the server running in the background, so plan readings and notifications carry on with the browser closed. Uses a LaunchAgent in ~/Library/LaunchAgents. Same as <code>agentic-spend login on</code>.</div>
+    <div class="muted" style="margin-bottom:0.9rem;">Keeps the server running in the background, so plan readings and notifications carry on with the browser closed. ${escHtml(loginHow)} Same as <code>agentic-spend login on</code>.</div>
     <div class="row"><label><input type="checkbox" class="settings-field" id="notifEnabled" ${ns.enabled ? 'checked' : ''}> Notify me when a plan passes a threshold</label></div>
     <div class="row"><label for="notifThresholds">Default thresholds</label>
       <span class="pct-field"><input type="text" class="settings-field threshold-input" inputmode="numeric" id="notifThresholds" value="${escAttr((ns.thresholds || []).join(', '))}" placeholder="${escAttr(NOTIFY_DEFAULT_THRESHOLDS.join(', '))}" aria-describedby="notifThresholdsHelp"><span class="pct-suffix">%</span></span>
@@ -4228,7 +4251,7 @@ function renderSettingsApp(forceRender) {
       <button type="button" id="notifTest" class="secondary">Send test notification</button>
       <span class="muted" id="notifStatus" role="status">${escHtml(appSettingsMsg)}</span>
     </div>
-    <div class="muted">Shown as macOS notifications while the server is running${appSettings.notifications.appActive ? '. The menu bar app is running, so it shows them' : ''}.</div>`;
+    <div class="muted">${escHtml(notifyHow)}${appSettings.notifications.appActive ? '. The menu bar app is running, so it shows them' : ''}.</div>`;
   appSettingsMsg = '';
   const status = document.getElementById('notifStatus');
   document.getElementById('notifTest').onclick = async () => {
@@ -4236,7 +4259,7 @@ function renderSettingsApp(forceRender) {
     try {
       const r = await postJson('/api/notifications/test', {});
       const via = (r.result || {}).via;
-      status.textContent = via === 'app' ? 'Sent to the menu bar app.' : via === 'osascript' ? 'Sent. Check the top right of your screen.' : 'macOS did not accept the notification.';
+      status.textContent = via === 'app' ? 'Sent to the menu bar app.' : via === 'osascript' ? 'Sent. Check the top right of your screen.' : via === 'notify-send' ? 'Sent. Check your desktop\'s notifications.' : (platformInfo().os === 'linux' ? 'The notification was not shown. Is notify-send installed (libnotify-bin on Debian and Ubuntu)?' : 'macOS did not accept the notification.');
     } catch (err) {
       status.textContent = 'Failed: ' + err.message;
     }
@@ -5096,7 +5119,7 @@ function claudeDesktopCardHtml(p) {
   return `<div class="card app-limit-card" id="claudeDesktopCard" data-app-card="claude-desktop">
     <div class="card-head"><h2>Claude desktop</h2><span class="pill" title="${escAttr(p.note)}">percentages only</span></div>
     ${rows}
-    <div class="muted app-limit-foot">Last updated ${escHtml(fmtReadingTime(p.lastUpdated))}. Read from the Claude desktop app's plan-usage-history.json on this Mac. It holds plan-limit percentages only, no tokens or cost, and the app writes it now and then while it is open.</div>
+    <div class="muted app-limit-foot">Last updated ${escHtml(fmtReadingTime(p.lastUpdated))}. Read from the Claude desktop app's plan-usage-history.json on ${escHtml(here())}. It holds plan-limit percentages only, no tokens or cost, and the app writes it now and then while it is open.</div>
   </div>`;
 }
 function codexPlanCardHtml(r) {
@@ -5139,7 +5162,7 @@ function archiveDaysIn(archive, from, to) {
 function archiveNoteText(days) {
   if (!days || !days.length) return '';
   const span = days.length === 1 ? days[0] : `${days[0]} to ${days[days.length - 1]}`;
-  return `${days.length} day${days.length === 1 ? '' : 's'} in this range (${span}) ${days.length === 1 ? 'comes' : 'come'} from the usage archive: the transcripts for ${days.length === 1 ? 'that day are' : 'those days are'} no longer on this Mac, so the totals saved earlier are used. Live data is used for every other day.`;
+  return `${days.length} day${days.length === 1 ? '' : 's'} in this range (${span}) ${days.length === 1 ? 'comes' : 'come'} from the usage archive: the transcripts for ${days.length === 1 ? 'that day are' : 'those days are'} no longer on ${here()}, so the totals saved earlier are used. Live data is used for every other day.`;
 }
 function renderArchiveNote(cutoff, windowEnd) {
   const box = document.getElementById('archiveNote');
@@ -5195,13 +5218,13 @@ function renderCoverage(cutoff, windowEnd) {
   const kindPill = k => k === 'A'
     ? '<span class="pill cov-a" title="Real token counts from local logs">tokens</span>'
     : k === 'B' ? '<span class="pill cov-b" title="Plan-limit percentages only">percentages</span>'
-    : '<span class="pill cov-d" title="No usage data on this Mac">no local data</span>';
+    : `<span class="pill cov-d" title="No usage data on ${escAttr(here())}">no local data</span>`;
   const line = r => `<li class="cov-row"><span class="cov-name">${escHtml(r.label)}</span>${kindPill(r.kind)}${r.tier ? tierBadgeHtml(r) : ''}<span class="muted cov-what">${escHtml(r.what)}</span></li>`;
   const activeHtml = rows.active.length
     ? `<ul class="cov-list">${rows.active.map(line).join('')}</ul>`
     : '<div class="muted">No supported app recorded usage in this period.</div>';
   const idleHtml = rows.idle.length
-    ? `<details class="cov-more"><summary class="muted">On this Mac, nothing in this period (${rows.idle.length}): ${escHtml(rows.idle.map(r => r.label).join(', '))}</summary><ul class="cov-list">${rows.idle.map(line).join('')}</ul></details>`
+    ? `<details class="cov-more"><summary class="muted">On ${escHtml(here())}, nothing in this period (${rows.idle.length}): ${escHtml(rows.idle.map(r => r.label).join(', '))}</summary><ul class="cov-list">${rows.idle.map(line).join('')}</ul></details>`
     : '';
   const installedD = rows.noLocal.filter(r => r.installed);
   const dLine = r => `<li class="cov-row"><span class="cov-name">${escHtml(r.label)}</span>${kindPill('D')}${r.installed ? '<span class="muted">installed</span>' : ''}<span class="muted cov-what">No local data, check the app's usage page: <a href="${escAttr(r.link)}" target="_blank" rel="noopener">${escHtml(r.where)}</a></span></li>`;
@@ -5211,7 +5234,7 @@ function renderCoverage(cutoff, windowEnd) {
   card.innerHTML = `<div class="card-head"><h2>What's covered</h2><span class="muted">${escHtml(cutoff)} to ${escHtml(windowEnd)}</span></div>
     <div class="muted" style="margin-bottom:0.5rem;">With usage or readings in this period:</div>
     ${activeHtml}${idleHtml}${dHtml}
-    <div class="muted cov-foot">Only files already on this Mac are read: no cookies, browser storage, keychains or websites. Browser chat (claude.ai, chatgpt.com, gemini.google.com) is not covered.</div>`;
+    <div class="muted cov-foot">Only files already on ${escHtml(here())} are read: no cookies, browser storage, keychains or websites. Browser chat (claude.ai, chatgpt.com, gemini.google.com) is not covered.</div>`;
 }
 
 function renderCacheEfficiency(windowed) {

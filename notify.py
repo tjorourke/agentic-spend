@@ -2,12 +2,13 @@
 """Plan-limit notifications, extra-credit alerts and the Monday weekly report nudge.
 
 The server's background sampler calls run_checks() every few minutes. The
-decision logic (evaluate) is pure so it can be tested; delivery goes through
-osascript's "display notification", which needs nothing beyond macOS itself.
+decision logic (evaluate) is pure so it can be tested. Delivery goes through
+osascript's "display notification" on macOS, and notify-send (libnotify,
+part of every mainstream Linux desktop) on Linux.
 
 When the Agentic Spend menu bar app is running it sends a heartbeat; while
 that heartbeat is fresh, notifications are queued for the app to show
-natively instead of being shown through osascript, so nothing appears twice.
+natively instead, so nothing appears twice. The app is macOS only.
 
 Files (both in the data directory, never in the repo):
 - notifications.json: the user's settings.
@@ -19,10 +20,12 @@ import datetime
 import json
 import os
 import re
+import shutil
 import subprocess
 import threading
 
 import data_dir
+import platform_info
 
 SETTINGS_PATH = data_dir.path("notifications.json")
 STATE_PATH = data_dir.path("notification-state.json")
@@ -333,15 +336,45 @@ def deliver_osascript(title, message, subtitle="Agentic Spend", runner=None):
         return False
 
 
+def deliver_notify_send(title, message, runner=None, which=shutil.which):
+    """Show a Linux desktop notification with notify-send. Text goes in as
+    arguments, never through a shell. False when notify-send is missing
+    (a server with no desktop) or fails."""
+    runner = runner or subprocess.run
+    prog = which("notify-send")
+    if not prog:
+        return False
+    try:
+        result = runner(
+            [prog, "--app-name=Agentic Spend", str(title)[:200], str(message)[:400]],
+            capture_output=True, text=True, timeout=10,
+        )
+        return getattr(result, "returncode", 1) == 0
+    except Exception:
+        return False
+
+
+def deliver(title, message, runner=None, sys_name=None, which=shutil.which):
+    """(ok, via) for this OS. via is "osascript", "notify-send", or
+    "unsupported" on any other OS."""
+    s = sys_name or platform_info.system()
+    if s == platform_info.MACOS:
+        return deliver_osascript(title, message, runner=runner), "osascript"
+    if s == platform_info.LINUX:
+        return deliver_notify_send(title, message, runner=runner, which=which), "notify-send"
+    return False, "unsupported"
+
+
 def app_is_active(state, now=None):
     now = now or datetime.datetime.now(tz=datetime.timezone.utc)
     beat = _parse((state or {}).get("appHeartbeat"))
     return beat is not None and (now - beat).total_seconds() <= APP_HEARTBEAT_SECONDS
 
 
-def dispatch(events, state, now=None, runner=None):
-    """Send events through the menu bar app (queued) or osascript. Returns
-    (state, delivered list of {"title", "via"})."""
+def dispatch(events, state, now=None, runner=None, sys_name=None, which=shutil.which):
+    """Send events through the menu bar app (queued) or this OS's notifier
+    (osascript, notify-send). Returns (state, delivered list of {"title", "via"});
+    via is "failed" when the notifier did not accept it."""
     delivered = []
     state = state if state is not None else {}
     use_app = app_is_active(state, now)
@@ -353,8 +386,8 @@ def dispatch(events, state, now=None, runner=None):
             del pending[:-MAX_PENDING]
             delivered.append({"title": ev["title"], "via": "app"})
         else:
-            ok = deliver_osascript(ev["title"], ev["message"], runner=runner)
-            delivered.append({"title": ev["title"], "via": "osascript" if ok else "failed"})
+            ok, via = deliver(ev["title"], ev["message"], runner=runner, sys_name=sys_name, which=which)
+            delivered.append({"title": ev["title"], "via": via if ok else "failed"})
     return state, delivered
 
 

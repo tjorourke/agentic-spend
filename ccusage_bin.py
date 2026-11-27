@@ -2,7 +2,7 @@
 """Where the ccusage binary comes from, and how to run it.
 
 ccusage 20 is a native (Rust) program. The Homebrew formula installs the right
-build for this Mac into libexec/vendor/ccusage, so a brew install needs no
+build for this Mac or Linux machine into libexec/vendor/ccusage, so a brew install needs no
 Node.js. Order of preference:
 
 1. AGENTIC_SPEND_CCUSAGE: an explicit path (or command name) you chose.

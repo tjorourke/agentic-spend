@@ -33,8 +33,24 @@ class ResolveWindowTests(unittest.TestCase):
         }])
         self.assertEqual(out["percent"], 0)
         self.assertEqual(out["state"], "reset")
-        self.assertEqual(out["note"], "reset Wed 22:00, no use since")
+        self.assertEqual(out["note"], "reset Wed 22:00")
         self.assertTrue(out["live"])
+
+    def test_no_note_ends_on_a_dangling_since(self):
+        # 1.8.6: the Accounts card read "0% reset Fri 15:00, no use since"
+        # straight after a reset, with nothing after "since".
+        cases = [
+            ([{"percent": 24, "resetsAt": "2026-11-25T22:00:00+00:00",
+               "at": "2026-11-25T09:36:21+00:00", "source": "live"}], None),
+            ([{"percent": None, "resetsAt": "2026-11-25T22:00:00+00:00",
+               "at": "2026-11-25T09:36:21+00:00", "source": "cached"}], None),
+            ([{"percent": 9, "resetsAt": "2026-11-27T15:00:00+00:00",
+               "at": "2026-11-26T17:23:26+00:00", "source": "live"}], "2026-11-26T17:23:30+00:00"),
+        ]
+        for readings, activity in cases:
+            note = self.resolve(readings, last_activity=activity)["note"]
+            self.assertTrue(note)
+            self.assertFalse(note.rstrip().endswith("since"), note)
 
     def test_in_window_with_no_later_activity_says_no_use_since(self):
         out = self.resolve([{
@@ -43,7 +59,7 @@ class ResolveWindowTests(unittest.TestCase):
         }], last_activity="2026-11-26T17:23:30+00:00")  # within 5-minute grace
         self.assertEqual(out["percent"], 9)
         self.assertEqual(out["state"], "current")
-        self.assertEqual(out["note"], "as of 17:23, no use since")
+        self.assertEqual(out["note"], "no use since 17:23")
 
     def test_in_window_without_activity_confirmation_says_last_reading(self):
         out = self.resolve([{
@@ -88,7 +104,7 @@ class ResolveWindowTests(unittest.TestCase):
         }])
         self.assertEqual(out["percent"], 0)
         self.assertEqual(out["state"], "reset")
-        self.assertEqual(out["note"], "reset Wed 14:00, no use since")
+        self.assertEqual(out["note"], "reset Wed 14:00")
         self.assertFalse(out["live"])
 
 
@@ -168,15 +184,15 @@ class InsightsResetTests(unittest.TestCase):
         mu = [{
             "accountUuid": "acct", "label": "Claude", "fetchedAt": "2026-11-25T09:36:21+00:00",
             "week": {"percent": 0, "resetsAt": "2026-11-25T22:00:00+00:00", "state": "reset",
-                     "note": "reset Wed 22:00, no use since", "asOf": "2026-11-25T09:36:21+00:00"},
-            "session": {"percent": 0, "state": "reset", "note": "reset Mon 23:30, no use since"},
+                     "note": "reset Wed 22:00", "asOf": "2026-11-25T09:36:21+00:00"},
+            "session": {"percent": 0, "state": "reset", "note": "reset Mon 23:30"},
             "usageCredits": {},
         }]
         out = insights._claude_insights(mu, [], NOW)
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]["pct"], 0)
         self.assertIsNone(out[0]["forecast"])
-        self.assertEqual(out[0]["note"], "reset Wed 22:00, no use since")
+        self.assertEqual(out[0]["note"], "reset Wed 22:00")
         self.assertEqual(out[0]["week"]["state"], "reset")
 
 

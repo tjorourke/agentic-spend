@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Work out which subscription plan each account is on, from local data only.
 
-Sources (all on this Mac; nothing is fetched and no token is ever returned,
+Sources (all on this computer; nothing is fetched and no token is ever returned,
 logged or stored):
   - Claude: ~/.claude.json's oauthAccount (organizationType, seatTier,
     rate-limit tiers) for the current login, plus Claude Code's own backups
@@ -23,6 +23,7 @@ import json
 import os
 
 import data_dir
+import platform_info
 
 CLAUDE_CONFIG = os.path.expanduser("~/.claude.json")
 CLAUDE_BACKUPS = [os.path.expanduser("~/.claude.json.backup"),
@@ -106,7 +107,7 @@ def scan_claude_profiles(config=CLAUDE_CONFIG, backups=None, profiles_path=None,
 def claude_plan(profile):
     """(planId or None, label, evidence list) from one oauthAccount profile."""
     if not profile:
-        return None, UNKNOWN, ["no oauthAccount record for this account on this Mac"]
+        return None, UNKNOWN, ["no oauthAccount record for this account on " + platform_info.here()]
     org = profile.get("organizationType")
     seat = profile.get("seatTier")
     rate = profile.get("userRateLimitTier") or profile.get("organizationRateLimitTier")
