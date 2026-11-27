@@ -93,8 +93,9 @@ def forecast(points, reset_at, window_seconds, now=None, low_confidence_hours=LO
       since the window started. Usage is 0% at a reset by definition, so this
       anchor is real even when this app was not running at the time.
 
-    Returns None when there is no reset time, no reading in the window, or the
-    window has already reset.
+    Returns None when there is no reset time, no reading in the window, the
+    window has already reset, or the projected 100% time is already in the past
+    while the latest reading is still under 100% (a stale projection).
     """
     reset = parse_time(reset_at)
     if reset is None or not window_seconds or window_seconds <= 0:
@@ -137,6 +138,10 @@ def forecast(points, reset_at, window_seconds, now=None, low_confidence_hours=LO
         hits_at = t1
     elif projected >= 100 and rate > 0:
         hits_at = t1 + datetime.timedelta(seconds=(100.0 - p1) / rate)
+    # The latest reading is so old that its own projection has already come
+    # and gone with the plan still under 100%: nothing useful to say.
+    if hits_at is not None and p1 < 100 and hits_at < now:
+        return None
 
     return {
         "currentPct": round(p1, 1),

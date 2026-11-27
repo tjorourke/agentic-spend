@@ -120,7 +120,7 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(out["codex"], ["codex:codex"])
 
     def test_last_14_days_stacks_by_agent(self):
-        out = run_js(["metricValue", "rowRealTokens", "last14Series"], """
+        out = run_js(["metricValue", "rowRealTokens", "rangeSeries"], """
           var chartMetric = 'cost';
           const addDays = (d, n) => { const t = new Date(d + 'T12:00:00Z'); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
           function sourcePresent() { return true; }
@@ -129,7 +129,7 @@ class HelperTests(unittest.TestCase):
             {period: '2026-11-27', agents: [{agent: 'claude', totalCost: 3}, {agent: 'codex', totalCost: 1}]},
             {period: '2026-11-20', agents: [{agent: 'claude', totalCost: 2}]},
             {period: '2026-11-01', agents: [{agent: 'grok', totalCost: 9}]}];
-          const r = last14Series(days, '2026-11-27', 'all');
+          const r = rangeSeries(days, '2026-11-14', '2026-11-27', 'all');
           out.len = r.periods.length; out.first = r.periods[0]; out.series = r.series;
           out.last = r.rows[13].parts; out.mid = r.rows.find(x => x.period === '2026-11-20').parts;
         """)
@@ -138,6 +138,32 @@ class HelperTests(unittest.TestCase):
         self.assertEqual(out["series"], ["claude", "codex"])   # grok is outside the 14 days
         self.assertEqual(out["last"], [3, 1])
         self.assertEqual(out["mid"], [2, 0])
+
+
+    def test_chart_title_follows_the_range(self):
+        out = run_js(["rangeChartTitle"], """
+          out.v = [rangeChartTitle(7, null, null, 'a', 'b'), rangeChartTitle(30, null, null, 'a', 'b'),
+                   rangeChartTitle(9999, null, null, 'a', 'b'), rangeChartTitle(1, null, null, 'a', 'b'),
+                   rangeChartTitle(7, '2026-11-01', '2026-11-05', '2026-11-01', '2026-11-05')];
+        """)
+        self.assertEqual(out["v"], ["Last 7 days", "Last 30 days", "All time", "Today", "2026-11-01 to 2026-11-05"])
+
+    def test_chart_uses_the_selected_range(self):
+        src = html()
+        self.assertIn("drawLast14(days, cutoff, windowEnd);", src)
+        self.assertIn("rangeSeries(days, cutoff, windowEnd, agent)", src)
+
+    def test_stale_forecast_is_not_a_warning(self):
+        out = run_js(["forecastSummary"], """
+          const now = Date.parse('2026-11-27T17:00:00Z');
+          const f = t => t;
+          out.stale = forecastSummary({currentPct: 3, hitsLimitAt: '2026-11-14T08:31:09Z', resetAt: '2026-12-10T15:40:46Z', ratePerDay: 27, basis: 'window', windowStart: 'x'}, f, now);
+          out.live = forecastSummary({currentPct: 60, hitsLimitAt: '2026-11-28T08:00:00Z', resetAt: '2026-11-29T00:00:00Z', ratePerDay: 27, basis: 'window', windowStart: 'x'}, f, now).warn;
+          out.atLimit = forecastSummary({currentPct: 100, hitsLimitAt: '2026-11-14T08:31:09Z', resetAt: '2026-12-10T15:40:46Z', ratePerDay: 27, basis: 'window', windowStart: 'x'}, f, now).text;
+        """)
+        self.assertIsNone(out["stale"])
+        self.assertTrue(out["live"])
+        self.assertEqual(out["atLimit"], "at the limit now")
 
 
 if __name__ == "__main__":

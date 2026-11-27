@@ -383,3 +383,19 @@ class FormulaTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StaleForecastTests(unittest.TestCase):
+    def test_projection_already_past_is_dropped(self):
+        import insights
+        # Codex, 30-day window: one reading of 3% a few hours in, read 17 days later.
+        fc = insights.forecast([("2026-11-10T18:20:40+00:00", 3.0)], "2026-12-10T15:40:46+00:00", 2592000,
+                               now="2026-11-27T17:00:00+00:00")
+        self.assertIsNone(fc)
+
+    def test_fresh_projection_kept(self):
+        import insights
+        fc = insights.forecast([("2026-11-27T12:00:00+00:00", 85.0)], "2026-11-29T00:00:00+00:00", 604800,
+                               now="2026-11-27T12:05:00+00:00")
+        self.assertIsNotNone(fc)
+        self.assertIsNotNone(fc["hitsLimitAt"])

@@ -279,7 +279,8 @@ brew update && brew upgrade agentic-spend
     on the other tabs.
   - A Today strip: today against yesterday, and the plan nearest its limit with its forecast
     ("would hit 100% around" and a time).
-  - Last 14 days as one bar chart, stacked by agent. Click a bar to open that day.
+  - One bar chart for the selected range (1d, 7d, 30d, All or Custom), stacked by agent. Click a
+    bar to open that day.
   - A By tool list on Overview, one row per tab with its plan %, forecast and range total. Click
     a row to open its tab.
   - Plans and real spend is one line per plan: a status dot (green, amber from 70% or a limit
@@ -287,6 +288,9 @@ brew update && brew upgrade agentic-spend
     "Show details" link, for the full row as before. Open rows stay open when the page refreshes.
   - Seat value, cache efficiency and "where tokens went" moved to a new Value tab. A tool tab
     still shows its own cache card.
+  - A forecast whose "would hit 100%" time has already passed, while the plan is still under
+    100%, is dropped. Codex showed "would hit 100% around Nov 14" on 27 November, from one
+    reading taken on 10 November, and an amber dot to match.
   - The Today tile now shows the right figure for a single Claude account. It said $0.00 before.
   - The Claude desktop card only shows on Overview and the Claude tabs, and the Codex plan card
     only on Overview and Codex.

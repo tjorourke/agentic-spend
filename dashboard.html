@@ -862,9 +862,9 @@
     <div class="tool-tabs" id="toolTabs" role="tablist" aria-label="Agents and accounts"></div>
     <div class="card today-strip" id="todayStrip"></div>
     <div class="card" id="last14Card" style="margin-bottom: 1rem;">
-      <div class="card-head"><h2 id="last14Title">Last 14 days by agent</h2><span class="muted" id="last14Note"></span></div>
+      <div class="card-head"><h2 id="last14Title">Last 7 days by agent</h2><span class="muted" id="last14Note"></span></div>
       <div class="stack-legend" id="last14Legend"></div>
-      <svg id="last14Chart" role="img" aria-label="Last 14 days, stacked by agent"></svg>
+      <svg id="last14Chart" role="img" aria-label="Selected range, stacked by agent"></svg>
     </div>
     <div class="card" id="toolSummaryCard" style="display:none; margin-bottom: 1rem;">
       <div class="card-head"><h2>By tool</h2><span class="muted">Selected range. Click a row to open its tab.</span></div>
@@ -1477,8 +1477,12 @@ function compareLabel(current, previous, noun) {
   return `${pct > 0 ? '+' : '-'}${Math.abs(pct)}% vs ${noun}`;
 }
 // fc is a server forecast (insights.forecast). fmtWhen formats an ISO time.
-function forecastSummary(fc, fmtWhen) {
+function forecastSummary(fc, fmtWhen, nowMs) {
   if (!fc) return null;
+  // A "would hit 100%" time that has already passed while the plan is still
+  // under 100% is a stale projection from old readings, not a warning.
+  const now = nowMs == null ? Date.now() : nowMs;
+  if (fc.hitsLimitAt && fc.currentPct < 100 && Date.parse(fc.hitsLimitAt) < now) return null;
   const early = fc.confidence === 'low';
   let text, warn = false;
   if (fc.currentPct >= 100) {
@@ -5688,12 +5692,11 @@ function renderTodayStrip(days, today) {
   box.innerHTML = todayHtml + planHtml;
 }
 
-// Last 14 calendar days ending today, stacked by agent (Overview) or a single
-// series for one tool or account.
-function last14Series(days, today, filterValue) {
-  const start = addDays(today, -13);
+// Every calendar day in the selected range, stacked by agent (Overview) or a
+// single series for one tool or account.
+function rangeSeries(days, start, end, filterValue) {
   const periods = [];
-  for (let d = start; d <= today; d = addDays(d, 1)) periods.push(d);
+  for (let d = start; d <= end; d = addDays(d, 1)) periods.push(d);
   const byPeriod = {};
   if (filterValue === 'all') {
     days.forEach(day => (day.agents || []).forEach(a => {
@@ -5710,14 +5713,22 @@ function last14Series(days, today, filterValue) {
   const series = [...keys].sort();
   return { periods, series, rows: periods.map(p => ({ period: p, parts: series.map(k => (byPeriod[p] || {})[k] || 0) })) };
 }
-function drawLast14(days, today) {
+function rangeChartTitle(rangeDays, from, to, cutoff, windowEnd) {
+  if (from || to) return `${cutoff} to ${windowEnd}`;
+  if (rangeDays >= 9999) return 'All time';
+  if (rangeDays === 1) return 'Today';
+  return `Last ${rangeDays} days`;
+}
+function drawLast14(days, cutoff, windowEnd) {
   const svg = document.getElementById('last14Chart');
   const legend = document.getElementById('last14Legend');
   if (!svg) return;
   const tabLabel = agent === 'all' ? null : ((toolTabsCache.find(t => t.value === agent) || {}).label || agent);
-  document.getElementById('last14Title').textContent = agent === 'all' ? 'Last 14 days by agent' : `Last 14 days, ${tabLabel}`;
+  const span = rangeChartTitle(range, customFrom, customTo, cutoff, windowEnd);
+  document.getElementById('last14Title').textContent = agent === 'all' ? `${span} by agent` : `${span}, ${tabLabel}`;
   document.getElementById('last14Note').textContent = chartMetric === 'tokens' ? 'Tokens (input + output)' : 'USD list price';
-  const { rows, series } = last14Series(days, today, agent);
+  const { rows, series } = rangeSeries(days, cutoff, windowEnd, agent);
+  const labelEvery = Math.max(1, Math.ceil(rows.length / 16));
   const colour = i => ACCOUNT_PALETTE[i % ACCOUNT_PALETTE.length];
   const nameOf = k => agent === 'all' ? agentName(k) : tabLabel;
   legend.innerHTML = series.map((k, i) => {
@@ -5746,10 +5757,10 @@ function drawLast14(days, today) {
       out += `<rect x="${x}" y="${y0}" width="${w}" height="${Math.max(h, 0.5)}" fill="${colour(j)}" rx="2"/>`;
     });
     out += `<rect x="${padL + i * bw}" y="${padT}" width="${bw}" height="${H - padB - padT}" fill="transparent"/></g>`;
-    out += `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--muted)">${r.period.slice(8)}</text>`;
+    if (i % labelEvery === 0) out += `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--muted)">${rows.length > 31 ? r.period.slice(5) : r.period.slice(8)}</text>`;
   });
   svg.innerHTML = out;
-  labelSvg(svg, `Last 14 days ${agent === 'all' ? 'stacked by agent' : 'for ' + tabLabel}`);
+  labelSvg(svg, `${span} ${agent === 'all' ? 'stacked by agent' : 'for ' + tabLabel}`);
   svg.querySelectorAll('.l14-bar').forEach(g => makePickable(g, `Show ${g.dataset.period}`, () => setSingleDay(g.dataset.period)));
 }
 
@@ -5798,7 +5809,8 @@ function collapsePlanRows(box) {
       const m = ((row.querySelector('.src-extra') || {}).textContent || '').match(/(\d+(?:\.\d+)?)%/);
       if (m) pct = Number(m[1]);
     }
-    const warn = row.classList.contains('src-pace-warn') || !!(ins && ins.forecast && ins.forecast.hitsLimitAt);
+    const fcs = ins ? forecastSummary(ins.forecast, fmtWhenShort) : null;
+    const warn = row.classList.contains('src-pace-warn') || !!(fcs && fcs.warn);
     let st = planStatus(pct, warn);
     if (row.classList.contains('src-bad')) st = 'st-bad';
     else if (!st && row.classList.contains('src-ok')) st = 'st-ok';
@@ -6010,7 +6022,7 @@ function update() {
   if (tab === 'overview') {
     renderToolTabs(toolTabsCache);
     renderTodayStrip(days, today);
-    drawLast14(days, today);
+    drawLast14(days, cutoff, windowEnd);
     renderToolSummary(days, cutoff, windowEnd, today);
   }
   if (tab === 'overview' || tab === 'value') {
