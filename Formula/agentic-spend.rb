@@ -6,18 +6,33 @@ class AgenticSpend < Formula
 
   license "Apache-2.0"
 
-  depends_on :macos
+  # macOS ships python3 (Command Line Tools); on Linux, Homebrew's python
+  # guarantees one even on a minimal install. The server is stdlib only.
+  uses_from_macos "python"
 
-  # ccusage 20 is a native binary. We bundle the build for this Mac from its
-  # npm packages (MIT, see THIRD_PARTY_NOTICES.md), so no Node.js is needed.
+  # ccusage 20 is a native binary. We bundle the build for this machine from
+  # its npm packages (MIT, see THIRD_PARTY_NOTICES.md), so no Node.js is
+  # needed. The Linux builds are static, so they run on any distribution.
   resource "ccusage" do
-    on_arm do
-      url "https://registry.npmjs.org/@ccusage/ccusage-darwin-arm64/-/ccusage-darwin-arm64-20.1.2.tgz"
-      sha256 "042f5da67678cc232bb45b4a5f81eb3370e8373d53f7d7bcf07759a0e5accac8"
+    on_macos do
+      on_arm do
+        url "https://registry.npmjs.org/@ccusage/ccusage-darwin-arm64/-/ccusage-darwin-arm64-20.1.2.tgz"
+        sha256 "042f5da67678cc232bb45b4a5f81eb3370e8373d53f7d7bcf07759a0e5accac8"
+      end
+      on_intel do
+        url "https://registry.npmjs.org/@ccusage/ccusage-darwin-x64/-/ccusage-darwin-x64-20.1.2.tgz"
+        sha256 "1bfa504ee2fc21eb2fcffc5b80915915af0c366a6109e4c37d7b770c9a4e4728"
+      end
     end
-    on_intel do
-      url "https://registry.npmjs.org/@ccusage/ccusage-darwin-x64/-/ccusage-darwin-x64-20.1.2.tgz"
-      sha256 "1bfa504ee2fc21eb2fcffc5b80915915af0c366a6109e4c37d7b770c9a4e4728"
+    on_linux do
+      on_arm do
+        url "https://registry.npmjs.org/@ccusage/ccusage-linux-arm64/-/ccusage-linux-arm64-20.1.2.tgz"
+        sha256 "daf02e2632fc15f216745d153b1c40f83e249635803da2f3877f37fde2b67903"
+      end
+      on_intel do
+        url "https://registry.npmjs.org/@ccusage/ccusage-linux-x64/-/ccusage-linux-x64-20.1.2.tgz"
+        sha256 "5499db393a805f8b47e9738bc47eea9b020ef93be2930731443606feb1fca003"
+      end
     end
   end
 
@@ -37,6 +52,17 @@ class AgenticSpend < Formula
       PIDFILE="$DATA_DIR/.server.pid"
       LIBEXEC="#{opt_libexec}"
       PY="$(command -v python3 || echo /usr/bin/python3)"
+      open_url() {
+        case "$(uname -s)" in
+          Darwin) open "$1" 2>/dev/null ;;
+          *)
+            if command -v xdg-open >/dev/null 2>&1; then xdg-open "$1" >/dev/null 2>&1
+            elif command -v gio >/dev/null 2>&1; then gio open "$1" >/dev/null 2>&1
+            else return 1
+            fi
+            ;;
+        esac
+      }
       is_running() { [[ -f "$PIDFILE" ]] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; }
       usage() {
         echo "usage: agentic-spend [start|--no-open|serve|stop|status|login on|off|status]"
@@ -45,7 +71,8 @@ class AgenticSpend < Formula
         echo "  serve      run the server in the foreground (used by the login item)"
         echo "  stop       stop the server started by this launcher"
         echo "  status     say whether the server is running"
-        echo "  login      on, off or status: start the server at login (LaunchAgent)"
+        echo "  login      on, off or status: start the server at login"
+        echo "             (a LaunchAgent on macOS, a systemd user service on Linux)"
       }
       cmd="${1:-start}"
       case "$cmd" in
@@ -86,7 +113,7 @@ class AgenticSpend < Formula
             sleep 0.6
           fi
           if [[ "$cmd" != "--no-open" && -z "${AGENTIC_SPEND_NO_OPEN:-}" ]]; then
-            open "$URL" 2>/dev/null || echo "Open $URL in your browser."
+            open_url "$URL" || echo "Open $URL in your browser."
           fi
           ;;
         -h|--help|help)
@@ -102,13 +129,17 @@ class AgenticSpend < Formula
   end
 
   def caveats
-    <<~EOS
+    s = <<~EOS
       Dashboard: http://127.0.0.1:8787
         agentic-spend            start the server and open the dashboard
         agentic-spend login on   start it at login (the first run opens the dashboard once;
                                  set AGENTIC_SPEND_NO_FIRST_RUN_OPEN=1 to skip that)
+    EOS
+    return s unless OS.mac?
 
-      Menu bar app (optional):
+    s + <<~EOS
+
+      Menu bar app (optional, macOS only):
         brew install --cask tjorourke/agentic-spend/agentic-spend-app
         open "/Applications/Agentic Spend.app"
 
@@ -128,7 +159,7 @@ class AgenticSpend < Formula
     modules = %w[server account_usage provider_usage statusline_setup data_dir token_sources grok_usage
                  grokbot_usage source_detection insights notify digest login_item ccusage_bin
                  ccusage_sources seat_prices pacing model_mix plan_prices plan_detection pricing_region
-                 opencode_backends desktop_sources allowance_history usage_archive]
+                 opencode_backends desktop_sources allowance_history usage_archive platform_info]
     system "python3", "-c",
            "import sys; sys.path.insert(0, '#{libexec}'); import #{modules.join(", ")}"
     assert_match "usage: agentic-spend", shell_output("#{bin}/agentic-spend --help")

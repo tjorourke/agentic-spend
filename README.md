@@ -15,9 +15,12 @@ brew tap tjorourke/agentic-spend https://github.com/tjorourke/agentic-spend
 brew trust tjorourke/agentic-spend         # newer Homebrew refuses untrusted taps (see below)
 brew install agentic-spend                 # server + dashboard
 agentic-spend                              # starts it and opens http://127.0.0.1:8787
-brew install --cask agentic-spend-app      # optional menu bar app
+brew install --cask agentic-spend-app      # optional menu bar app (macOS only)
 open "/Applications/Agentic Spend.app"
 ```
+
+On Linux it's the same first four lines, with [Homebrew on Linux](https://docs.brew.sh/Homebrew-on-Linux).
+There's no menu bar app on Linux; the dashboard and `agentic-spend` work the same.
 
 - **`brew trust`:** recent Homebrew versions refuse to install anything from a third-party tap
   until you trust it, and stop with an "untrusted tap" error. `brew trust tjorourke/agentic-spend`
@@ -58,9 +61,10 @@ open "/Applications/Agentic Spend.app"
 
 ## Prerequisites
 
-- **macOS** (the Homebrew formula and the `agentic-spend` launcher script are macOS-only).
+- **macOS or Linux** (x86_64 or arm64). On Linux, install [Homebrew on Linux](https://docs.brew.sh/Homebrew-on-Linux)
+  first. The menu bar app is macOS only.
 - **No Node.js needed.** Agentic Spend reads your usage with [`ccusage`](https://ccusage.com),
-  and the Homebrew install bundles ccusage's native macOS binary (version 20.1.2, MIT, see
+  and the Homebrew install bundles ccusage's native binary for your OS and chip (version 20.1.2, MIT, see
   `THIRD_PARTY_NOTICES.md`) in `libexec/vendor/ccusage`. From a git clone (`python3 server.py`)
   it looks for a ccusage in this order: the `AGENTIC_SPEND_CCUSAGE` environment variable (a path),
   the bundled binary, `ccusage` on your `PATH`, and only as a last resort `npx ccusage@20.1.2`
@@ -169,16 +173,20 @@ brew update && brew upgrade agentic-spend
   percentages from 1 to 100 (default 80% and 95%), an alert when paid extra credit starts being used, and a "Send test
   notification" button. The server checks every 10 minutes and shows each threshold once per
   plan window (state in `~/.agentic-spend/notification-state.json`). Delivered with
-  `osascript`, or by the menu bar app when it's running.
+  `osascript` on macOS (or by the menu bar app when it's running) and `notify-send` on Linux
+  (`libnotify-bin` on Debian and Ubuntu, `libnotify` on Fedora and Arch).
 - **Weekly report.** `/?tab=digest` (and `/api/digest?week=YYYY-MM-DD`): one complete
   Monday-to-Sunday week, usage value at API prices and real spend, tokens, each plan's highest
   reading, top projects and models, and the change on the week before. Previous and Next (or the
   week menu) step back through every week in your history; a week with no usage says so. A
   notification points to it on Mondays at 09:00 while the server is running.
-- **Start at login.** Settings toggle, or `agentic-spend login on|off|status`. Writes
+- **Start at login.** Settings toggle, or `agentic-spend login on|off|status`. On macOS it writes
   `~/Library/LaunchAgents/com.agenticspend.server.plist`, which runs
   `agentic-spend serve` once at login (RunAtLoad, no KeepAlive), so readings and
-  notifications carry on without the browser open.
+  notifications carry on without the browser open. On Linux it writes a systemd user service,
+  `~/.config/systemd/user/agentic-spend.service` (enabled, Restart=no). With no systemd user
+  session (some containers, WSL without systemd) it writes a desktop autostart entry,
+  `~/.config/autostart/agentic-spend.desktop`, instead.
 
 ## Team value, 5-hour pacing, model mix and sources (1.7.0)
 
@@ -189,7 +197,7 @@ brew update && brew upgrade agentic-spend
 - **5-hour pacing.** For the current Claude 5-hour window the server works out a pace from
   the status line's readings (or, with one Claude account, ccusage's active block burn rate)
   and projects when it reaches 100%. If that is before the reset, the row and the menu bar
-  turn amber and one macOS notification is sent for that window (switch off in
+  turn amber and one notification is sent for that window (switch off in
   Settings, "Background and notifications"). Thin data (under 20 minutes or under 5%) and no
   Claude activity for 30 minutes do not warn.
 - **Model mix** (Overview): spend by model for the selected range, and an estimated saving had
@@ -200,10 +208,10 @@ brew update && brew upgrade agentic-spend
 - **Sources.** ccusage 20.1.2 reads 20 tools (Claude Code, Codex, OpenCode, Amp, Droid,
   Codebuff, Hermes Agent, pi-agent, Goose, OpenClaw, Kilo, GitHub Copilot CLI, Gemini CLI,
   Antigravity, Kimi, Qwen, Grok Build CLI, ZCode, Cline, DeepSeek Harness). Each one with data
-  on this Mac gets a row and a small badge with ccusage's own tier, copied from the title of
+  on this computer gets a row and a small badge with ccusage's own tier, copied from the title of
   its page in ccusage's docs: no tag is shown as "first-class", "(Beta)" as beta and
   "(Experimental)" as experimental. ccusage marks a source experimental when the tool's local
-  log format is undocumented or still changing. Tools that aren't on this Mac aren't listed.
+  log format is undocumented or still changing. Tools that aren't on this computer aren't listed.
 - **ccusage telemetry.** Official ccusage builds send one anonymous ping a day (version, OS,
   architecture and command name, never usage data; see https://ccusage.com/guide/telemetry).
   The bundled binary is the official build. To turn it off: `ccusage telemetry disable`, or
@@ -235,8 +243,9 @@ brew update && brew upgrade agentic-spend
 
 ## Pricing region and UK list prices (1.7.2)
 
-- **Pricing region.** Settings has a UK (GBP) or US (USD) choice. It defaults from this
-  Mac's locale (`AppleLocale`, for example `en_GB` → UK) and can be changed. When choosing
+- **Pricing region.** Settings has a UK (GBP) or US (USD) choice. It defaults from the
+  system locale and can be changed: `AppleLocale` on macOS (for example `en_GB` → UK), and on
+  Linux `LC_ALL`, then `LC_MONETARY`, then `LANG` (for example `en_GB.UTF-8` → UK). When choosing
   a default price, the account's own billing currency wins if it's known (Claude's
   usage-credit currency); otherwise the region setting is used. A published GBP row is
   preferred when the provider has one; otherwise the USD row is shown and labelled
@@ -246,6 +255,49 @@ brew update && brew upgrade agentic-spend
   showed US dollars from a UK Mac, and neither ChatGPT's nor OpenCode's pricing pages could
   be read as a published UK pound list, so no GBP rows are shipped for those.
 
+## Version 1.8.6
+
+- **Linux.** Agentic Spend now runs on Linux as well as macOS, from the same Homebrew formula.
+  It bundles ccusage's static Linux build (x86_64 or arm64), so it runs on any distribution.
+  What's different on Linux:
+  - The Grok Bot app's cache is read from `~/.config/Grok Bot/` and the Claude desktop app's
+    plan file from `~/.config/Claude/` (both follow `XDG_CONFIG_HOME`). Both apps have official
+    Linux builds. If one isn't installed, it's listed as not found, not as an error.
+  - Apps are found from their `.desktop` entries (`~/.local/share/applications`,
+    `/usr/share/applications`, Flatpak and Snap) instead of `/Applications`.
+  - Start at login uses a systemd user service, or an autostart entry without systemd.
+  - Notifications use `notify-send`. Without it the test button says so and nothing else breaks.
+  - The pricing region comes from `LANG` and friends.
+  - The launcher opens the browser with `xdg-open`. On a machine with no desktop it prints the URL.
+  - The dashboard says "this computer" on Linux and "this Mac" on a Mac.
+- **Overview, reorganised.** Same figures, laid out so the first screen answers "how am I doing
+  today". Nothing was dropped.
+  - A tab per detected tool or account along the top: Overview, then one per named Claude account,
+    Codex, Grok (CLI and Grok Bot together) and OpenCode. Only the ones found on this machine
+    appear. A tab is the old agent filter, so its plan rows, daily chart, model mix, all-models
+    table and cache stats are that tool's own. The agent picker is gone from Overview, it's still
+    on the other tabs.
+  - A Today strip: today against yesterday, and the plan nearest its limit with its forecast
+    ("would hit 100% around" and a time).
+  - One bar chart for the selected range (1d, 7d, 30d, All or Custom), stacked by agent. Click a
+    bar to open that day.
+  - A By tool list on Overview, one row per tab with its plan %, forecast and range total. Click
+    a row to open its tab.
+  - Plans and real spend is one line per plan: a status dot (green, amber from 70% or a limit
+    forecast, red from 90% or real spend), the name, the % and the amount. Click a row, or the
+    "Show details" link, for the full row as before. Open rows stay open when the page refreshes.
+  - Seat value, cache efficiency and "where tokens went" moved to a new Value tab. A tool tab
+    still shows its own cache card.
+  - A forecast whose "would hit 100%" time has already passed, while the plan is still under
+    100%, is dropped. Codex showed "would hit 100% around Nov 14" on 27 November, from one
+    reading taken on 10 November, and an amber dot to match.
+  - The Today tile now shows the right figure for a single Claude account. It said $0.00 before.
+  - The Claude desktop card only shows on Overview and the Claude tabs, and the Codex plan card
+    only on Overview and Codex.
+- **Accounts card after a reset.** Straight after a session or weekly reset the card said
+  "reset Fri 15:00, no use since" with nothing after "since". It now says "reset Fri 15:00".
+  A window with no use since its last reading says "no use since 17:23".
+
 ## Version 1.8.5
 
 - **Allowance history.** Every time the server reads your plan limits (Claude session and weekly
@@ -254,7 +306,7 @@ brew update && brew upgrade agentic-spend
   is skipped, apart from one every three hours so a quiet week still draws a line. Each line holds
   the account key, a label, percentages, reset times and credit figures. No emails, tokens or
   transcript text. Readings are only taken while the server or the Claude status line is running,
-  so a week with the Mac asleep will have gaps.
+  so a week with the computer asleep will have gaps.
 - **Plan limit through the week.** The Weekly report now draws a line chart per account: the
   weekly limit (or the plan's own window, such as Codex's 30 days) and the 5-hour session, with
   the week's peaks and the usage credits used. Hover a dot for the time and figure. The table of
@@ -298,21 +350,21 @@ brew update && brew upgrade agentic-spend
   only when that app has usage or readings in the period on screen (day, week or custom range);
   otherwise they are left out, with no empty cards.
 - **What's covered** (bottom of Overview). Which apps had usage or readings in the period, which are
-  on this Mac with nothing in the period (collapsed), and the chat apps that keep no usage data on
+  on this computer with nothing in the period (collapsed), and the chat apps that keep no usage data on
   disk, with each vendor's own usage page. See Desktop and chat apps below.
 - **Install:** the Quick start now includes `brew trust tjorourke/agentic-spend`.
 
 ## Desktop and chat apps (1.8.4)
 
-Agentic Spend only reads files already on your Mac. It never opens cookies, browser storage,
+Agentic Spend only reads files already on your computer. It never opens cookies, browser storage,
 keychains or auth files, and it does not scrape websites.
 
 | App | What Agentic Spend shows | Where it comes from |
 | --- | --- | --- |
 | Claude Code, Codex, OpenCode, Gemini CLI, Copilot CLI, Grok CLI and the rest of ccusage's list | Tokens and usage value | Local logs, read by the bundled ccusage |
-| Claude desktop | 5-hour and weekly plan limits, percentages only | `~/Library/Application Support/Claude/plan-usage-history.json` |
+| Claude desktop | 5-hour and weekly plan limits, percentages only | `~/Library/Application Support/Claude/plan-usage-history.json` on macOS, `~/.config/Claude/plan-usage-history.json` on Linux |
 | Codex desktop or IDE | Tokens (via ccusage) and the plan limit percentage | `~/.codex/sessions` |
-| Grok Bot app | Share of the weekly Grok limit | The app's local usage cache |
+| Grok Bot app | Share of the weekly Grok limit | The app's local usage cache (`~/Library/Application Support/Grok Bot/` on macOS, `~/.config/Grok Bot/` on Linux) |
 | ChatGPT, Gemini app and web, Perplexity, Grok app, Microsoft Copilot, Cursor (individual plan) | Nothing: no usable usage data on disk | Check the app's own usage page (linked from What's covered) |
 
 Browser chat (claude.ai, chatgpt.com, gemini.google.com) is not covered. Chat in the browser and in
@@ -465,7 +517,7 @@ machine, not just this project — and Claude Code feeds it real, server-reporte
 accounts. The script prints a useful status line (cwd/model/5h%/7d%) AND, as a side effect,
 writes that data to `~/.claude/cc-usage-live/<accountUuid>.json` (mode 0600). `account_usage.py`'s
 `get_max_usage_snapshots()` reads that directory and prefers it over the cached
-`cachedUsageUtilization` snapshot whenever it's present — shown in the UI as a green "live 17:23" (or "live, 1 day old") pill. A window whose reset has passed, with no newer reading, shows 0% and "reset Fri 15:00, no use since" — never a stale percentage, and never the word "cached".
+`cachedUsageUtilization` snapshot whenever it's present — shown in the UI as a green "live 17:23" (or "live, 1 day old") pill. A window whose reset has passed, with no newer reading, shows 0% and "reset Fri 15:00" — never a stale percentage, and never the word "cached".
 
 **If you already have your own status line configured**, Enable wraps it rather than replacing
 it — your existing status line keeps showing exactly as before (via
@@ -512,7 +564,7 @@ match a manual plan note you've saved, the UI flags it rather than silently pref
   activity in the selected range is hidden, unless it is a plan-limit reading such as the Grok Bot
   weekly share or a Claude or Codex plan window. Claude-specific banners and plan tiles are
   hidden when Claude Code is not detected. Settings lists what was found, and tucks anything
-  missing into a collapsed "Not found on this Mac" section. `/api/usage` includes a `detection`
+  missing into a collapsed "Not found on this Mac" (or "this computer" on Linux) section. `/api/usage` includes a `detection`
   list with `installed` and `hasData` for each supported tool (`claude`, `codex`, `opencode`,
   `grok-cli`, `grok-bot`). The existing `sources` array is still the cost and plan catalog, with
   absent tools removed and the same flags copied onto each remaining row.
@@ -563,7 +615,8 @@ match a manual plan note you've saved, the UI flags it rather than silently pref
   `grok-account-map.json` in the data directory (see the example). The unofficial
   `_x.ai/billing` reading is unchanged and still opt-in.
 - **Grok Bot:** the weekly plan share is read automatically from the Grok Bot desktop app's
-  local cache on this Mac (`~/Library/Application Support/Grok Bot/sand-client-persistence/`).
+  local cache (`~/Library/Application Support/Grok Bot/sand-client-persistence/` on macOS,
+  `~/.config/Grok Bot/sand-client-persistence/` on Linux).
   The card shows the plan name, weekly percentage, reset time (local, with a countdown), extra
   credits, and a short history of the percentage. Overview also shows usage by day, derived
   from positive increases in that history within the same weekly window, and a today figure

@@ -40,6 +40,7 @@ import model_mix
 import seat_prices
 import plan_detection
 import plan_prices
+import platform_info
 import pricing_region
 import opencode_backends
 import token_sources
@@ -1132,7 +1133,7 @@ def apply_settings(body, cached=None):
                 login_item.turn_on() if login else login_item.turn_off()
             login_status = login_item.status()
             if login_status.get("enabled") != login:
-                warnings.append("Start at login did not stick. Check ~/Library/LaunchAgents.")
+                warnings.append("Start at login did not stick. Check the %s." % login_item.describe_location(login_status))
             elif current.get("enabled") != login:
                 saved.append("start at login")
         except Exception as e:
@@ -1164,7 +1165,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/api/usage":
             force = "force=1" in self.path
-            self._send_json(get_usage(force=force))
+            usage = get_usage(force=force)
+            if isinstance(usage, dict):
+                # Shallow copy: the cached payload is shared between requests.
+                usage = dict(usage)
+                usage["platform"] = platform_info.info()
+            self._send_json(usage)
+        elif path == "/api/platform":
+            self._send_json(platform_info.info())
         elif path == "/api/token-sources":
             query = self.path.split("?", 1)[1] if "?" in self.path else ""
             try:
@@ -1304,10 +1312,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not isinstance(enabled, bool):
             raise ValueError("enabled must be true or false")
         st = login_item.turn_on() if enabled else login_item.turn_off()
-        # Read back rather than trusting the launchctl exit code.
+        # Read back rather than trusting the launchctl/systemctl exit code.
         st = login_item.status()
         ok = st["enabled"] == enabled
-        return {"ok": ok, "status": st, "error": None if ok else "The setting did not stick. Check ~/Library/LaunchAgents."}
+        return {"ok": ok, "status": st,
+                "error": None if ok else (st.get("error") or "The setting did not stick. Check the %s." % login_item.describe_location(st))}
 
     def _handle_digest_get(self):
         try:
@@ -1561,7 +1570,10 @@ def first_run_open(url, opener=None, env=None):
         return False
     if opener is None:
         def opener(u):
-            subprocess.Popen(["open", u], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            argv = platform_info.open_url_command(u)
+            if not argv:
+                raise OSError("no browser opener on this computer")
+            subprocess.Popen(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         opener(url)
     except Exception:

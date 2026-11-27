@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Pricing region (UK/GBP or US/USD) used when an account has no billing currency.
 
-Detected from the Mac's locale (AppleLocale, e.g. en_GB → UK) and stored, if
-you change it, in pricing-region.json in the data directory. The setting is
+Detected from the system locale and stored, if you change it, in
+pricing-region.json in the data directory. On macOS that is AppleLocale
+(e.g. en_GB → UK); on Linux it is LC_ALL, then LC_MONETARY, then LANG
+(e.g. en_GB.UTF-8 → UK). The setting is
 only a preference for which published list-price row to use. Nothing is
 converted between currencies.
 """
@@ -12,6 +14,7 @@ import re
 import subprocess
 
 import data_dir
+import platform_info
 
 PATH = data_dir.path("pricing-region.json")
 
@@ -38,6 +41,24 @@ def region_from_locale(locale):
     if country == "US":
         return "US"
     return None
+
+
+def detect_posix_locale(env=None):
+    """The locale that decides money formatting on Linux: LC_ALL wins, then
+    LC_MONETARY, then LANG. 'C' and 'POSIX' say nothing about a country."""
+    env = os.environ if env is None else env
+    for key in ("LC_ALL", "LC_MONETARY", "LANG"):
+        value = (env.get(key) or "").strip()
+        if value and value.split(".")[0] not in ("C", "POSIX"):
+            return value
+    return None
+
+
+def detect_locale(sys_name=None, env=None):
+    """The system locale for this OS, or None when it can't be read."""
+    if (sys_name or platform_info.system()) == platform_info.MACOS:
+        return detect_mac_locale()
+    return detect_posix_locale(env)
 
 
 def detect_mac_locale():
@@ -91,8 +112,8 @@ def validate_body(body):
     return region
 
 
-def current(saved=None, locale=None, locale_fn=detect_mac_locale):
-    """Resolved region. A saved choice wins; otherwise the Mac locale;
+def current(saved=None, locale=None, locale_fn=detect_locale):
+    """Resolved region. A saved choice wins; otherwise the system locale;
     otherwise US (don't guess the UK)."""
     if saved is None:
         saved = load()

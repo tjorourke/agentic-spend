@@ -38,7 +38,7 @@ def write(path, text):
 class ClaudeDesktopTests(unittest.TestCase):
     def setUp(self):
         self.home = tempfile.mkdtemp()
-        self.path = os.path.join(self.home, desktop_sources.CLAUDE_DESKTOP_FILE)
+        self.path = desktop_sources.claude_desktop_path(self.home)
 
     def test_missing_file_is_not_found(self):
         r = desktop_sources.claude_desktop_plan_usage(home=self.home)

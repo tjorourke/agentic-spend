@@ -127,7 +127,7 @@ enum Fmt {
     }
 
     /// Same wording as the dashboard's forecast line. A reset window uses
-    /// the server's note ("reset Fri 15:00, no use since") instead of a
+    /// the server's note ("reset Fri 15:00") instead of a
     /// forecast, because there is nothing to project from.
     static func forecastLine(_ plan: Plan) -> String {
         if plan.week?.state == "reset" || (plan.forecast == nil && !(plan.note ?? "").isEmpty) {

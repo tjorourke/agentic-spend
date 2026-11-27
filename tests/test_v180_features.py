@@ -365,7 +365,7 @@ class StaticMarkupTests(unittest.TestCase):
         src = html()
         self.assertIn('class="topbar"', src)
         self.assertIn('class="refresh-button"', src)
-        self.assertEqual(src.count('class="nav-icon"'), 6)
+        self.assertEqual(src.count('class="nav-icon"'), 7)   # 1.8.6 adds Value
         self.assertIn("max-width: 1600px", src)
         self.assertNotRegex(src, r"<script[^>]+src=\"https?://")
         self.assertNotRegex(src, r"<link[^>]+href=\"https?://")

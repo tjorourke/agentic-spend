@@ -368,7 +368,7 @@ class UsageArchiveTests(unittest.TestCase):
         self.assertIn("_archive_if_due()", src)
 
     def test_archive_note(self):
-        out = run_js(["archiveDaysIn", "archiveNoteText"], """
+        out = run_js(["platformInfo", "here", "archiveDaysIn", "archiveNoteText"], """
           const a = {filledDays: ['2026-10-01', '2026-10-02', '2026-10-20']};
           out.days = archiveDaysIn(a, '2026-10-01', '2026-10-07');
           out.text = archiveNoteText(out.days);

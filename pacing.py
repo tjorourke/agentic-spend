@@ -18,7 +18,7 @@ Pace, in order of preference:
 - "blocks": ccusage's burn rate scaled to percent (current % x cost per hour
   / block cost so far). Only used when this is the only Claude account with
   a reading in its window, because ccusage's blocks add up every account
-  on this Mac, and only when the block lines up with the window;
+  on this computer, and only when the block lines up with the window;
 - "window": the current % over the time since the window started (usage is
   0% at the start by definition).
 
@@ -141,7 +141,7 @@ def session_pace(uuid, session, history, now=None, active_block=None, only_claud
     last_activity = block["last"] if block and block["last"] else None
     # active_block None: ccusage was not asked or failed (unknown).
     # active_block {}: ccusage says there is no active block (no Claude use
-    # in the last 5 hours on this Mac).
+    # in the last 5 hours on this computer).
     idle = bool(last_activity and (now - last_activity).total_seconds() > IDLE_SECONDS) or \
         bool(active_block == {} and (now - t_last).total_seconds() > IDLE_SECONDS)
 

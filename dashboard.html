@@ -721,6 +721,52 @@
     .brand-text, .nav-item span, #updatedAt { display: none; }
     .topbar { height: auto; min-height: 56px; flex-wrap: wrap; padding-block: 0.5rem; }
   }
+  /* 1.8.6 Overview: tool tabs, Today strip, 14-day chart, collapsible plan rows */
+  .tool-tabs { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-bottom: 1rem; border-bottom: 1px solid var(--border); }
+  .tool-tab {
+    background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    padding: 0.45rem 0.8rem; font: inherit; font-size: 0.85rem; color: var(--muted); cursor: pointer;
+    display: inline-flex; align-items: center; gap: 0.4rem;
+  }
+  .tool-tab:hover { color: var(--text); background: var(--neutral-bg); border-radius: 6px 6px 0 0; }
+  .tool-tab[aria-selected="true"] { color: var(--text); font-weight: 600; border-bottom-color: var(--accent); }
+  .tool-tab:focus-visible, .plan-row-toggle:focus-visible, .tool-sum-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .status-dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; flex-shrink: 0; display: inline-block; background: var(--neutral-border); }
+  .status-dot.st-ok { background: var(--ok-text); }
+  .status-dot.st-warn { background: #d97706; }
+  .status-dot.st-bad { background: var(--bad-text); }
+  .today-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+  .today-item .label { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .today-item .value { font-size: 1.5rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; margin: 0.2rem 0; }
+  .today-item .value .plan-name { font-size: 0.95rem; font-weight: 600; }
+  .today-item .sub { font-size: 0.8rem; color: var(--muted); }
+  .today-item .sub.warn { color: var(--heavy-pill-text); font-weight: 600; }
+  .stack-legend { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; font-size: 0.78rem; margin-bottom: 0.4rem; }
+  .stack-legend .swatch { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; margin-right: 0.3rem; vertical-align: -1px; }
+  .tool-sum-row {
+    display: flex; align-items: center; gap: 0.7rem; width: 100%; text-align: left; font: inherit; font-size: 0.85rem;
+    padding: 0.5rem 0.7rem; margin-bottom: 0.3rem; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); color: var(--text); cursor: pointer;
+  }
+  .tool-sum-row:hover { background: var(--neutral-bg); border-color: var(--accent); }
+  .tool-sum-row .name { font-weight: 600; min-width: 9rem; }
+  .tool-sum-row .pct { min-width: 4.5rem; }
+  .tool-sum-row .amt { margin-left: auto; }
+  .tool-sum-row .open { color: var(--accent); font-size: 0.78rem; white-space: nowrap; }
+  .src-row.plan-row { flex-direction: column; align-items: stretch; gap: 0; padding: 0; }
+  .plan-row-toggle {
+    display: flex; align-items: center; gap: 0.6rem; width: 100%; padding: 0.45rem 0.7rem;
+    background: none; border: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 8px;
+  }
+  .plan-row-toggle:hover { background: rgba(127, 127, 127, 0.08); }
+  .plan-row-toggle .plan-row-name { font-weight: 600; }
+  .plan-row-toggle .plan-row-pct { font-weight: 600; min-width: 3.5rem; }
+  .plan-row-toggle .plan-row-amt { margin-left: auto; }
+  .plan-row-toggle .plan-row-more { color: var(--accent); font-size: 0.75rem; white-space: nowrap; }
+  .plan-row-toggle .plan-chev { display: inline-block; transition: transform 0.15s; color: var(--muted); }
+  .plan-row-toggle[aria-expanded="true"] .plan-chev { transform: rotate(90deg); }
+  .plan-row-detail { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem 0.6rem; padding: 0.2rem 0.7rem 0.55rem 2rem; }
+  .plan-row-detail[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -732,6 +778,7 @@
   </a>
   <nav class="nav" id="nav">
     <button class="nav-item active" data-tab="overview" aria-current="page"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg><span>Overview</span></button>
+    <button class="nav-item" data-tab="value"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg><span>Value</span></button>
     <button class="nav-item" data-tab="days"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg><span>Days</span></button>
     <button class="nav-item" data-tab="accounts"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="4"/><path d="M2 21v-1a6 6 0 0 1 12 0v1"/><path d="M16 4.5a4 4 0 0 1 0 7M22 21v-1a6 6 0 0 0-4-5.6"/></svg><span>Accounts</span></button>
     <button class="nav-item" data-tab="projects"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg><span>Projects</span></button>
@@ -812,10 +859,20 @@
   </div>
 
   <section id="view-overview" class="view active">
+    <div class="tool-tabs" id="toolTabs" role="tablist" aria-label="Agents and accounts"></div>
+    <div class="card today-strip" id="todayStrip"></div>
+    <div class="card" id="last14Card" style="margin-bottom: 1rem;">
+      <div class="card-head"><h2 id="last14Title">Last 7 days by agent</h2><span class="muted" id="last14Note"></span></div>
+      <div class="stack-legend" id="last14Legend"></div>
+      <svg id="last14Chart" role="img" aria-label="Selected range, stacked by agent"></svg>
+    </div>
+    <div class="card" id="toolSummaryCard" style="display:none; margin-bottom: 1rem;">
+      <div class="card-head"><h2>By tool</h2><span class="muted">Selected range. Click a row to open its tab.</span></div>
+      <div id="toolSummaryRows"></div>
+    </div>
     <div class="card" id="realCostOverview" style="display:none; margin-bottom: 1rem;"></div>
     <div class="card" id="grokBotTodayCard" style="display:none; margin-bottom: 1rem;"></div>
     <div id="appLimitCards" class="app-limit-cards" style="display:none;"></div>
-    <div id="seatValueCard" class="card" style="display:none; margin-bottom:1rem;"></div>
     <div id="archiveNote" class="archive-note muted" style="display:none;"></div>
     <div class="cards">
       <div class="card kpi" id="kpiSpend" title="ccusage list price for this range: token counts times published prices, in USD. Real and covered underneath reuse the split on the card below.">
@@ -829,20 +886,7 @@
       <div class="card kpi" id="kpiToday"><div class="label" id="todayLabel">Today</div><div class="value" id="totalToday">–</div><div class="sub" id="todaySub"></div></div>
       <div class="card kpi" id="kpiTokens"><div class="label">Tokens</div><div class="value" id="realTokensWin">–</div><div class="sub" id="tokensCaption">input + output, excluding cache</div><div class="sub" id="realTokensToday"></div><div class="cmp" id="tokensCmp"></div></div>
     </div>
-    <div class="overview-pair">
-      <div class="card" id="cacheCard">
-        <div class="card-head"><h2>Cache efficiency</h2><span class="muted" id="cacheScopeNote">Selected range</span></div>
-        <div class="cache-bar" id="cacheBar"></div>
-        <div class="cache-legend" id="cacheLegend"></div>
-        <div class="muted" id="cacheHitRate" style="margin-top:0.5rem;"></div>
-        <div class="muted" id="cacheSavings" style="margin-top:0.35rem;"></div>
-      </div>
-      <div class="card" id="tokenSourcesCard" style="display:none;">
-        <div class="card-head"><h2 id="tokenSourcesTitle">Where tokens went</h2></div>
-        <div class="muted" id="tokenSourcesScope" style="margin-bottom:0.5rem;" title="Claude Code and Codex only. The other tools do not record enough detail locally to split this out. Tokens, not dollars: there is no per-bucket pricing to attach here.">Follows the selected range, same window as cache efficiency. Claude and Codex, tokens not dollars.</div>
-        <div id="tokenSourcesBody"></div>
-      </div>
-    </div>
+    <div id="toolCacheSlot" style="margin-bottom: 1rem;"></div>
     <div id="model-mix"></div>
     <div class="card" id="modelMixCard" style="display:none; margin-top: 1rem;"></div>
     <div class="card" id="allModelsCard" style="margin-top: 1rem;">
@@ -932,6 +976,25 @@
     <div class="card" id="coverageCard" style="margin-top: 1rem;"></div>
   </section>
 
+  <section id="view-value" class="view">
+    <p class="tab-intro">What your plans are worth and where the tokens went, for the selected range and agent.</p>
+    <div id="seatValueCard" class="card" style="display:none; margin-bottom:1rem;"></div>
+    <div class="overview-pair" id="valuePair">
+      <div class="card" id="cacheCard">
+        <div class="card-head"><h2>Cache efficiency</h2><span class="muted" id="cacheScopeNote">Selected range</span></div>
+        <div class="cache-bar" id="cacheBar"></div>
+        <div class="cache-legend" id="cacheLegend"></div>
+        <div class="muted" id="cacheHitRate" style="margin-top:0.5rem;"></div>
+        <div class="muted" id="cacheSavings" style="margin-top:0.35rem;"></div>
+      </div>
+      <div class="card" id="tokenSourcesCard" style="display:none;">
+        <div class="card-head"><h2 id="tokenSourcesTitle">Where tokens went</h2></div>
+        <div class="muted" id="tokenSourcesScope" style="margin-bottom:0.5rem;" title="Claude Code and Codex only. The other tools do not record enough detail locally to split this out. Tokens, not dollars: there is no per-bucket pricing to attach here.">Follows the selected range, same window as cache efficiency. Claude and Codex, tokens not dollars.</div>
+        <div id="tokenSourcesBody"></div>
+      </div>
+    </div>
+  </section>
+
 
   <section id="view-days" class="view">
     <div class="card">
@@ -1014,6 +1077,19 @@
 
 <script>
 let data = null;
+// 1.8.6: the server says which OS this is (macOS or Linux), so paths and
+// wording fit the machine. "this Mac" on macOS, "this computer" elsewhere.
+function platformInfo() {
+  const d = typeof data === 'undefined' ? null : data;
+  return (d && d.platform) || { os: 'unknown', osLabel: '', here: 'this computer', appDataDir: null, menuBarApp: false, notifier: null };
+}
+function here() {
+  return platformInfo().here || 'this computer';
+}
+function Here() {
+  const h = here();
+  return h.charAt(0).toUpperCase() + h.slice(1);
+}
 let tokenSourcesData = null;
 let tokenSourcesFetching = false;
 let tab = 'overview';
@@ -1281,7 +1357,9 @@ function grokBotWindowsInRange(cutoff, windowEnd, allWindows) {
 }
 
 function grokBotEmptyCopy() {
-  return 'No Grok Bot usage cache found on this Mac yet. The Grok Bot desktop app writes one under ~/Library/Application Support/Grok Bot/ when it has fetched your usage. Open the Grok Bot app once (its own Usage page is enough), then refresh this dashboard. This tool only reads that local file; it does not call Grok\'s servers.';
+  const base = platformInfo().appDataDir;
+  const where = base ? `under ${base}/Grok Bot/` : 'in its app data folder';
+  return `No Grok Bot usage cache found on ${here()} yet. The Grok Bot desktop app (macOS, Windows and Linux) writes one ${where} when it has fetched your usage. Open the Grok Bot app once (its own Usage page is enough), then refresh this dashboard. This tool only reads that local file; it does not call Grok's servers.`;
 }
 
 function fillGrokBotSettingsNote() {
@@ -1297,7 +1375,7 @@ function fillGrokBotSettingsNote() {
     const pct = a.weeklyPct != null ? formatPct(a.weeklyPct) + '% used' : 'no figure';
     return `${plan}: ${pct}, last read ${a.updatedAt ? new Date(a.updatedAt).toLocaleString() : 'unknown'}`;
   });
-  el.textContent = 'Read automatically from the Grok Bot app\'s local usage cache on this Mac. ' + bits.join(' · ') + '. The Accounts tab shows the weekly share, reset time, and any extra credits. A push script is included for machines that do not have the app.';
+  el.textContent = 'Read automatically from the Grok Bot app\'s local usage cache on ' + here() + '. ' + bits.join(' · ') + '. The Accounts tab shows the weekly share, reset time, and any extra credits. A push script is included for machines that do not have the app.';
 }
 
 function renderGrokBotCards() {
@@ -1351,7 +1429,7 @@ function renderGrokBotCards() {
       ${refuse}
       ${usageHistoryChartHtml(history, [{ key: 'weeklyPct', label: 'Weekly limit', color: 'var(--accent)' }], 'Weekly usage over time')}
       ${grokBotWeeklyChartHtml(a.windows || [])}
-      <p class="muted" style="margin-top:0.8rem;">${escHtml(a.note || 'Grok Bot reports usage as a share of a weekly limit shared with other apps, not tokens or dollars.')} Read from the Grok Bot app\'s local usage cache on this Mac. This dashboard does not call Grok\'s servers.</p>
+      <p class="muted" style="margin-top:0.8rem;">${escHtml(a.note || 'Grok Bot reports usage as a share of a weekly limit shared with other apps, not tokens or dollars.')} Read from the Grok Bot app\'s local usage cache on ${escHtml(here())}. This dashboard does not call Grok\'s servers.</p>
     </div>`;
   }).join('');
 }
@@ -1399,8 +1477,12 @@ function compareLabel(current, previous, noun) {
   return `${pct > 0 ? '+' : '-'}${Math.abs(pct)}% vs ${noun}`;
 }
 // fc is a server forecast (insights.forecast). fmtWhen formats an ISO time.
-function forecastSummary(fc, fmtWhen) {
+function forecastSummary(fc, fmtWhen, nowMs) {
   if (!fc) return null;
+  // A "would hit 100%" time that has already passed while the plan is still
+  // under 100% is a stale projection from old readings, not a warning.
+  const now = nowMs == null ? Date.now() : nowMs;
+  if (fc.hitsLimitAt && fc.currentPct < 100 && Date.parse(fc.hitsLimitAt) < now) return null;
   const early = fc.confidence === 'low';
   let text, warn = false;
   if (fc.currentPct >= 100) {
@@ -1676,7 +1758,7 @@ function codexReadingInPeriod(live, history, from, to, hadUsage) {
   return { percent: s.percent, windowMins: s.windowMins, resetsAt: s.resetsAt, secondary: null, at: s.time, source: 'history', planType: (live && live.planType) || null };
 }
 // Rows for the What's covered panel. active: has usage or readings in the
-// period. idle: on this Mac but nothing in the period (collapsed). noLocal:
+// period. idle: on this computer but nothing in the period (collapsed). noLocal:
 // apps with no local usage data at all (class D), with the official page.
 function coverageRows(o) {
   const active = [], idle = [];
@@ -1997,7 +2079,7 @@ function paintTab(t) {
     else b.removeAttribute('aria-current');
   });
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + t));
-  document.getElementById('pageTitle').textContent = { overview: 'Overview', models: 'Usage value by model (API prices)', days: 'Usage value by day (API prices)', accounts: 'Usage value by account (API prices)', projects: 'Usage value by project (API prices)', digest: 'Weekly report', settings: 'Settings' }[t];
+  document.getElementById('pageTitle').textContent = { overview: 'Overview', value: 'Value', models: 'Usage value by model (API prices)', days: 'Usage value by day (API prices)', accounts: 'Usage value by account (API prices)', projects: 'Usage value by project (API prices)', digest: 'Weekly report', settings: 'Settings' }[t];
   const noRange = t === 'settings' || t === 'digest';
   const vt = document.getElementById('viewToggle');
   if (vt) vt.style.display = (t === 'overview' || t === 'projects' || t === 'digest') ? '' : 'none';
@@ -2005,7 +2087,8 @@ function paintTab(t) {
   if (mt) mt.style.display = (t === 'overview' || t === 'projects' || t === 'digest') ? '' : 'none';
   const ph = document.querySelector('.page-header');
   if (ph) ph.style.display = (t === 'settings' || t === 'digest') ? 'none' : '';
-  document.getElementById('agentSel').style.display = (t === 'accounts' || noRange) ? 'none' : '';
+  // On the Overview the tool tabs replace the agent picker.
+  document.getElementById('agentSel').style.display = (t === 'accounts' || t === 'overview' || noRange) ? 'none' : '';
   document.getElementById('rangeSeg').style.display = noRange ? 'none' : '';
   const customBtn = document.getElementById('customToggle');
   if (customBtn) customBtn.style.display = noRange ? 'none' : '';
@@ -3271,7 +3354,7 @@ function sourceRow(s, estimate, modelDetail, openaiCost) {
     const amount = pct != null
       ? `${escHtml(formatPct(pct))}% of weekly limit`
       : (credits != null ? 'no weekly figure yet' : 'no cache yet');
-    const chipTitle = "Read from the Grok Bot app's local usage cache on this Mac. This is a share of a weekly limit shared with other Grok apps, not tokens or dollars.";
+    const chipTitle = `Read from the Grok Bot app's local usage cache on ${here()}. This is a share of a weekly limit shared with other Grok apps, not tokens or dollars.`;
     const chip = pct == null
       ? srcChip('ESTIMATE', '')
       : (fresh ? srcChip('LIVE', 'live', chipTitle) : srcChip('CACHED', 'cached', chipTitle));
@@ -3540,7 +3623,9 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
     .filter(r => sourceRowVisibleInRange(r.s, r.estimate))
     // A Grok CLI local-live row already shows the same spend as the older
     // manual "grok (Super plan)" note, so drop the duplicate.
-    .filter(r => !(hasGrokCli && r.s.tool === 'grok' && (r.s.kind === 'manual' || r.s.kind === 'none')));
+    .filter(r => !(hasGrokCli && r.s.tool === 'grok' && (r.s.kind === 'manual' || r.s.kind === 'none')))
+    // A tool or account tab shows only its own plans.
+    .filter(r => sourceMatchesFilter(r.s, agent));
 
   lastPlansCtx = { sources, plans, providerStatus, liveUsageSetup, unofficialToggles };
   if (!rows.length) {
@@ -3591,14 +3676,16 @@ function renderRealCostOverview(sources, accountSessions, days, cutoff, today, p
   const rendered = rows
     .map(({ s, estimate, modelDetail }) => withTierBadge(
       s.kind === 'backends' ? opencodeBackendRow(s, estimate, opencodeSplit(s, days, cutoff, today)) : sourceRow(s, estimate, modelDetail, openaiCost), s))
+    .map((r, i) => ({ ...r, key: planRowKey(rows[i].s) }))
     .sort((a, b) => SRC_ROW_WEIGHT[a.cls.split(' ')[0]] - SRC_ROW_WEIGHT[b.cls.split(' ')[0]]);
-  const bannersHtml = rendered.map(({ cls, html, title }) => `<div class="src-row ${cls}" title="${escAttr(title)}">${html}</div>`).join('');
+  const bannersHtml = rendered.map(({ cls, html, title, key }) => `<div class="src-row ${cls}" data-plan-key="${escAttr(key)}" title="${escAttr(title)}">${html}</div>`).join('');
 
   box.innerHTML = `
     <div class="card-head"><h2>Plans and real spend</h2></div>
     ${bannersHtml}
     ${costSplitHtml(estimateTotal, coveredTotal, realTotal)}
   `;
+  collapsePlanRows(box);
   box.querySelectorAll('[data-goto-settings]').forEach(b => { b.onclick = () => setTab('settings'); });
   return { visible: true, realTotal, estimateTotal, coveredTotal };
 }
@@ -3661,7 +3748,7 @@ function liveUsageSectionHtml(setup) {
     <div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem;">Live Claude usage (optional)</div>
     <div class="muted" style="margin-bottom:0.4rem;">
       Turn this on to refresh your Claude session and weekly limits every time you use Claude Code.
-      It adds a status line to Claude Code on this Mac (every session, not just this project).
+      It adds a status line to Claude Code on ${escHtml(here())} (every session, not just this project).
       If you already have a status line, this wraps it rather than replacing it.
       No credentials are read, and no network calls are made. You can turn it off at any time.
       Status: ${stateText}
@@ -3782,15 +3869,15 @@ function pricingRegionSectionHtml() {
   const pr = (data && data.pricingRegion) || { region: 'US', currency: 'USD', source: 'auto' };
   const detected = pr.detectedRegion;
   const autoNote = pr.source === 'auto'
-    ? (detected ? `Detected from this Mac: ${pr.label}.` : "This Mac's region could not be read, so United States (USD) is used until you choose.")
-    : (detected ? `This Mac's region is ${detected === 'UK' ? 'United Kingdom (GBP)' : 'United States (USD)'}.` : '');
+    ? (detected ? `Detected from ${here()}: ${pr.label}.` : `${Here()}'s region could not be read, so United States (USD) is used until you choose.`)
+    : (detected ? `${Here()}'s region is ${detected === 'UK' ? 'United Kingdom (GBP)' : 'United States (USD)'}.` : '');
   const picked = pr.source === 'user' ? pr.region : 'auto';
   const opt = (code, label) => `<label style="margin-right:1rem;"><input type="radio" class="settings-field" name="pricingRegion" value="${code}" ${picked === code ? 'checked' : ''}> ${label}</label>`;
   return `
     <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">
       Pricing region <span class="muted" title="Used when an account's billing currency is not known. If the provider publishes a price in that currency it is the default; otherwise the US dollar list price is shown, never a converted amount.">(?)</span>
     </div>
-    <div class="row">${opt('auto', "This Mac's region")}${opt('UK', 'United Kingdom (GBP)')}${opt('US', 'United States (USD)')}
+    <div class="row">${opt('auto', escHtml(Here() + "'s region"))}${opt('UK', 'United Kingdom (GBP)')}${opt('US', 'United States (USD)')}
       <span class="muted" id="pricingRegionStatus">${escHtml(autoNote)}</span>
     </div>`;
 }
@@ -3825,7 +3912,7 @@ function seatPriceSectionHtml() {
     </tr>`).join('');
   const plansBlock = !list.length ? '' : `
     <div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.7rem;">
-      Plans and seat prices <span class="muted" title="The plan is read from local files on this Mac. When it's known, the list price from the provider's own pricing page is used as the default. Enter your own price to override it (for example an annual or discounted rate).">(?)</span>
+      Plans and seat prices <span class="muted" title="The plan is read from local files on ${escAttr(here())}. When it's known, the list price from the provider's own pricing page is used as the default. Enter your own price to override it (for example an annual or discounted rate).">(?)</span>
     </div>
     <table style="margin-bottom:0.6rem;"><thead><tr><th>Account</th><th>Detected plan</th><th>List price (default)</th><th>Your price</th></tr></thead><tbody>${rows}</tbody></table>
     <details style="margin-top:0.5rem;"><summary class="muted">Shipped price table (${(table.rows || []).length} rows, fetched ${escHtml(table.fetched || '')})</summary>
@@ -3844,7 +3931,7 @@ function ccusageSourcesHtml() {
       <td class="muted">${x.hasData ? 'usage found' : 'installed, no usage yet'}</td>
       <td><a href="${escAttr(x.docs)}" target="_blank" rel="noopener" class="muted">ccusage docs</a></td>
     </tr>`).join('');
-  return `<div class="muted" style="font-weight:600; color:var(--text); margin:0.3rem 0;">Read through ccusage <span class="muted" title="ccusage 20.1.2 reads 20 tools. Only the ones on this Mac are listed. The badge is ccusage's own label for each source: Beta and Experimental mean its maintainers expect the tool's log format to change.">(?)</span></div>
+  return `<div class="muted" style="font-weight:600; color:var(--text); margin:0.3rem 0;">Read through ccusage <span class="muted" title="ccusage 20.1.2 reads 20 tools. Only the ones on ${escAttr(here())} are listed. The badge is ccusage's own label for each source: Beta and Experimental mean its maintainers expect the tool's log format to change.">(?)</span></div>
     <table style="margin-bottom:0.9rem;"><thead><tr><th>Source</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
@@ -3859,22 +3946,22 @@ function settingsSourcesHtml(sources) {
     if (rows.length) foundRows.push(...rows);
     else foundRows.push({ label: d.label, tool: d.id, kind: 'none', asOf: null });
   });
-  let html = '<div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem;">Detected on this Mac</div>';
+  let html = `<div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem;">Detected on ${escHtml(here())}</div>`;
   if (!det.length) {
     html = '<div class="muted" style="font-weight:600; color:var(--text); margin-bottom:0.3rem;">Everything found, all-time</div>';
     html += sourcesSummaryTableHtml(catalog);
     return html;
   }
   if (!found.length) {
-    html += '<p class="muted">No supported agents found on this Mac.</p>';
+    html += `<p class="muted">No supported agents found on ${escHtml(here())}.</p>`;
   } else {
     html += sourcesSummaryTableHtml(foundRows);
   }
   html += ccusageSourcesHtml();
   if (missing.length) {
     html += `<details class="not-found-sources"${found.length ? '' : ' open'}>
-      <summary>Not found on this Mac</summary>
-      <ul>${missing.map(d => `<li>${escHtml(d.label)}: not found on this Mac</li>`).join('')}</ul>
+      <summary>Not found on ${escHtml(here())}</summary>
+      <ul>${missing.map(d => `<li>${escHtml(d.label)}: not found on ${escHtml(here())}</li>`).join('')}</ul>
     </details>`;
   }
   return html;
@@ -4207,14 +4294,22 @@ function renderSettingsApp(forceRender) {
   const planRows = plans.map(p => `<tr><td>${escHtml(p.label)}</td><td class="tnum">${escHtml(formatPct(p.pct))}% now</td>
     <td><span class="pct-field"><input type="text" class="settings-field threshold-input" inputmode="numeric" data-plan-key="${escAttr(p.key)}" value="${escAttr((per[p.key] || []).join(', '))}" placeholder="${escAttr(defaults.join(', '))} (default)" aria-label="Thresholds in per cent for ${escAttr(p.label)}, leave empty for the default of ${escAttr(defaults.join(' and '))}%"><span class="pct-suffix">%</span></span>
       <span class="field-error" role="alert"></span></td></tr>`).join('');
-  const loginLine = login.enabled
-    ? `On. ${login.loaded ? 'Loaded in launchd' : 'Not loaded yet, takes effect at next login'}.`
+  const loginLine = login.error ? login.error : login.enabled
+    ? (login.method === 'autostart' ? 'On. Starts with your desktop session.'
+      : `On. ${login.loaded ? (login.method === 'systemd' ? 'Running under systemd' : 'Loaded in launchd') : 'Not loaded yet, takes effect at next login'}.`)
     : 'Off.';
+  const loginHow = login.method === 'systemd' ? 'Uses a systemd user service, ~/.config/systemd/user/agentic-spend.service.'
+    : login.method === 'autostart' ? 'There is no systemd user session here, so it uses a desktop autostart entry, ~/.config/autostart/agentic-spend.desktop.'
+    : login.method === 'launchd' ? 'Uses a LaunchAgent in ~/Library/LaunchAgents.' : '';
+  const notifier = platformInfo().notifier;
+  const notifyHow = notifier === 'osascript' ? 'Shown as macOS notifications while the server is running'
+    : notifier === 'notify-send' ? 'Shown as desktop notifications (notify-send) while the server is running'
+    : 'Shown as desktop notifications while the server is running';
   box.innerHTML = `
     <div class="card-head"><h2>Background and notifications</h2></div>
     <div class="row"><label><input type="checkbox" class="settings-field" id="loginToggle" ${login.enabled ? 'checked' : ''}> Start Agentic Spend at login</label>
       <span class="muted" id="loginStatus" role="status">${escHtml(loginLine)}</span></div>
-    <div class="muted" style="margin-bottom:0.9rem;">Keeps the server running in the background, so plan readings and notifications carry on with the browser closed. Uses a LaunchAgent in ~/Library/LaunchAgents. Same as <code>agentic-spend login on</code>.</div>
+    <div class="muted" style="margin-bottom:0.9rem;">Keeps the server running in the background, so plan readings and notifications carry on with the browser closed. ${escHtml(loginHow)} Same as <code>agentic-spend login on</code>.</div>
     <div class="row"><label><input type="checkbox" class="settings-field" id="notifEnabled" ${ns.enabled ? 'checked' : ''}> Notify me when a plan passes a threshold</label></div>
     <div class="row"><label for="notifThresholds">Default thresholds</label>
       <span class="pct-field"><input type="text" class="settings-field threshold-input" inputmode="numeric" id="notifThresholds" value="${escAttr((ns.thresholds || []).join(', '))}" placeholder="${escAttr(NOTIFY_DEFAULT_THRESHOLDS.join(', '))}" aria-describedby="notifThresholdsHelp"><span class="pct-suffix">%</span></span>
@@ -4228,7 +4323,7 @@ function renderSettingsApp(forceRender) {
       <button type="button" id="notifTest" class="secondary">Send test notification</button>
       <span class="muted" id="notifStatus" role="status">${escHtml(appSettingsMsg)}</span>
     </div>
-    <div class="muted">Shown as macOS notifications while the server is running${appSettings.notifications.appActive ? '. The menu bar app is running, so it shows them' : ''}.</div>`;
+    <div class="muted">${escHtml(notifyHow)}${appSettings.notifications.appActive ? '. The menu bar app is running, so it shows them' : ''}.</div>`;
   appSettingsMsg = '';
   const status = document.getElementById('notifStatus');
   document.getElementById('notifTest').onclick = async () => {
@@ -4236,7 +4331,7 @@ function renderSettingsApp(forceRender) {
     try {
       const r = await postJson('/api/notifications/test', {});
       const via = (r.result || {}).via;
-      status.textContent = via === 'app' ? 'Sent to the menu bar app.' : via === 'osascript' ? 'Sent. Check the top right of your screen.' : 'macOS did not accept the notification.';
+      status.textContent = via === 'app' ? 'Sent to the menu bar app.' : via === 'osascript' ? 'Sent. Check the top right of your screen.' : via === 'notify-send' ? 'Sent. Check your desktop\'s notifications.' : (platformInfo().os === 'linux' ? 'The notification was not shown. Is notify-send installed (libnotify-bin on Debian and Ubuntu)?' : 'macOS did not accept the notification.');
     } catch (err) {
       status.textContent = 'Failed: ' + err.message;
     }
@@ -5096,7 +5191,7 @@ function claudeDesktopCardHtml(p) {
   return `<div class="card app-limit-card" id="claudeDesktopCard" data-app-card="claude-desktop">
     <div class="card-head"><h2>Claude desktop</h2><span class="pill" title="${escAttr(p.note)}">percentages only</span></div>
     ${rows}
-    <div class="muted app-limit-foot">Last updated ${escHtml(fmtReadingTime(p.lastUpdated))}. Read from the Claude desktop app's plan-usage-history.json on this Mac. It holds plan-limit percentages only, no tokens or cost, and the app writes it now and then while it is open.</div>
+    <div class="muted app-limit-foot">Last updated ${escHtml(fmtReadingTime(p.lastUpdated))}. Read from the Claude desktop app's plan-usage-history.json on ${escHtml(here())}. It holds plan-limit percentages only, no tokens or cost, and the app writes it now and then while it is open.</div>
   </div>`;
 }
 function codexPlanCardHtml(r) {
@@ -5139,7 +5234,7 @@ function archiveDaysIn(archive, from, to) {
 function archiveNoteText(days) {
   if (!days || !days.length) return '';
   const span = days.length === 1 ? days[0] : `${days[0]} to ${days[days.length - 1]}`;
-  return `${days.length} day${days.length === 1 ? '' : 's'} in this range (${span}) ${days.length === 1 ? 'comes' : 'come'} from the usage archive: the transcripts for ${days.length === 1 ? 'that day are' : 'those days are'} no longer on this Mac, so the totals saved earlier are used. Live data is used for every other day.`;
+  return `${days.length} day${days.length === 1 ? '' : 's'} in this range (${span}) ${days.length === 1 ? 'comes' : 'come'} from the usage archive: the transcripts for ${days.length === 1 ? 'that day are' : 'those days are'} no longer on ${here()}, so the totals saved earlier are used. Live data is used for every other day.`;
 }
 function renderArchiveNote(cutoff, windowEnd) {
   const box = document.getElementById('archiveNote');
@@ -5158,8 +5253,17 @@ function allowanceSparkHtml(key, label) {
 function renderAppLimitCards(cutoff, windowEnd) {
   const box = document.getElementById('appLimitCards');
   if (!box) return;
-  const cd = claudeDesktopInPeriod(data && data.claudeDesktop, cutoff, windowEnd);
-  const cx = sourcePresent('codex') ? codexReadingInPeriod(data && data.codexLive, (data && data.usageHistory && data.usageHistory.codex) || [], cutoff, windowEnd, periodAgentIds(cutoff, windowEnd).includes('codex')) : null;
+  // On a tool or account tab, show only that tool's (or account's) card.
+  const showClaude = agent === 'all' || agent === 'claude' || String(agent).startsWith('account:');
+  let desk = showClaude ? (data && data.claudeDesktop) : null;
+  if (desk && String(agent).startsWith('account:')) {
+    const src = (data.sources || []).find(x => x.tool === 'claude' && 'account:' + x.id === agent);
+    const want = src && src.label;
+    desk = Object.assign({}, desk, { orgs: (desk.orgs || []).filter(o => want && o.label === want) });
+    if (!desk.orgs.length) desk = null;
+  }
+  const cd = desk ? claudeDesktopInPeriod(desk, cutoff, windowEnd) : null;
+  const cx = (agent === 'all' || agent === 'codex') && sourcePresent('codex') ? codexReadingInPeriod(data && data.codexLive, (data && data.usageHistory && data.usageHistory.codex) || [], cutoff, windowEnd, periodAgentIds(cutoff, windowEnd).includes('codex')) : null;
   const cards = [cd ? claudeDesktopCardHtml(cd) : '', cx ? codexPlanCardHtml(cx) : ''].filter(Boolean);
   box.innerHTML = cards.join('');
   box.style.display = cards.length ? '' : 'none';
@@ -5195,13 +5299,13 @@ function renderCoverage(cutoff, windowEnd) {
   const kindPill = k => k === 'A'
     ? '<span class="pill cov-a" title="Real token counts from local logs">tokens</span>'
     : k === 'B' ? '<span class="pill cov-b" title="Plan-limit percentages only">percentages</span>'
-    : '<span class="pill cov-d" title="No usage data on this Mac">no local data</span>';
+    : `<span class="pill cov-d" title="No usage data on ${escAttr(here())}">no local data</span>`;
   const line = r => `<li class="cov-row"><span class="cov-name">${escHtml(r.label)}</span>${kindPill(r.kind)}${r.tier ? tierBadgeHtml(r) : ''}<span class="muted cov-what">${escHtml(r.what)}</span></li>`;
   const activeHtml = rows.active.length
     ? `<ul class="cov-list">${rows.active.map(line).join('')}</ul>`
     : '<div class="muted">No supported app recorded usage in this period.</div>';
   const idleHtml = rows.idle.length
-    ? `<details class="cov-more"><summary class="muted">On this Mac, nothing in this period (${rows.idle.length}): ${escHtml(rows.idle.map(r => r.label).join(', '))}</summary><ul class="cov-list">${rows.idle.map(line).join('')}</ul></details>`
+    ? `<details class="cov-more"><summary class="muted">On ${escHtml(here())}, nothing in this period (${rows.idle.length}): ${escHtml(rows.idle.map(r => r.label).join(', '))}</summary><ul class="cov-list">${rows.idle.map(line).join('')}</ul></details>`
     : '';
   const installedD = rows.noLocal.filter(r => r.installed);
   const dLine = r => `<li class="cov-row"><span class="cov-name">${escHtml(r.label)}</span>${kindPill('D')}${r.installed ? '<span class="muted">installed</span>' : ''}<span class="muted cov-what">No local data, check the app's usage page: <a href="${escAttr(r.link)}" target="_blank" rel="noopener">${escHtml(r.where)}</a></span></li>`;
@@ -5211,7 +5315,7 @@ function renderCoverage(cutoff, windowEnd) {
   card.innerHTML = `<div class="card-head"><h2>What's covered</h2><span class="muted">${escHtml(cutoff)} to ${escHtml(windowEnd)}</span></div>
     <div class="muted" style="margin-bottom:0.5rem;">With usage or readings in this period:</div>
     ${activeHtml}${idleHtml}${dHtml}
-    <div class="muted cov-foot">Only files already on this Mac are read: no cookies, browser storage, keychains or websites. Browser chat (claude.ai, chatgpt.com, gemini.google.com) is not covered.</div>`;
+    <div class="muted cov-foot">Only files already on ${escHtml(here())} are read: no cookies, browser storage, keychains or websites. Browser chat (claude.ai, chatgpt.com, gemini.google.com) is not covered.</div>`;
 }
 
 function renderCacheEfficiency(windowed) {
@@ -5475,6 +5579,282 @@ function renderGrokBotHourlyChart(today) {
   drawPctBarChart(svg, rows, '%', 'Grok Bot usage by hour today, percent of weekly limit');
 }
 
+// ---- 1.8.6 Overview: tool tabs, Today strip, 14-day chart, plan rows ----
+// The tool tabs are a front end for the existing agent filter, so every card
+// below them already follows the selected tab.
+const AGENT_NAMES = { claude: 'Claude', codex: 'Codex', grok: 'Grok', opencode: 'OpenCode' };
+function agentName(a) { return AGENT_NAMES[a] || a; }
+function toolTabsFrom(agents, claudeAccounts) {
+  const tabs = [{ value: 'all', label: 'Overview' }];
+  const named = (claudeAccounts || []).filter(a => a.id && a.id !== 'unknown-session');
+  [...agents].sort().forEach(a => {
+    if (a === 'claude' && named.length) {
+      named.forEach(acc => tabs.push({ value: 'account:' + acc.id, label: acc.label || 'Claude', tool: 'claude' }));
+    } else {
+      tabs.push({ value: a, label: agentName(a), tool: a });
+    }
+  });
+  return tabs;
+}
+// Which tools a filter value covers. Grok includes Grok CLI and Grok Bot.
+function toolsForFilter(value) {
+  if (value === 'grok') return ['grok', 'grok-cli', 'grok-bot'];
+  return [value];
+}
+function sourceMatchesFilter(s, value) {
+  if (!value || value === 'all') return true;
+  if (String(value).startsWith('account:')) {
+    const id = String(value).slice('account:'.length);
+    if (s.tool === 'claude') return s.id === id;
+    if (s.grokBot) return grokBotAccounts().some(a => a.accountId === id);
+    return false;
+  }
+  return toolsForFilter(value).includes(s.tool);
+}
+function planInsightsForFilter(insights, value) {
+  return (insights || []).filter(p => {
+    if (!value || value === 'all') return true;
+    if (String(value).startsWith('account:')) {
+      const id = String(value).slice('account:'.length);
+      return p.key === 'claude:' + id || p.key === 'grok-bot:' + id;
+    }
+    return toolsForFilter(value).includes(p.tool);
+  });
+}
+// The plan closest to its limit: highest percent, ties broken by a forecast warning.
+function nearestPlan(insights) {
+  const withPct = (insights || []).filter(p => p.pct != null);
+  if (!withPct.length) return null;
+  return withPct.slice().sort((a, b) => (b.pct - a.pct) || ((b.forecast && b.forecast.hitsLimitAt ? 1 : 0) - (a.forecast && a.forecast.hitsLimitAt ? 1 : 0)))[0];
+}
+function planStatus(pct, warn) {
+  if (pct == null) return '';
+  if (pct >= 90) return 'st-bad';
+  if (pct >= 70 || warn) return 'st-warn';
+  return 'st-ok';
+}
+function rowRealTokens(v) {
+  return ((v && v.modelBreakdowns) || []).reduce((n, mb) => n + (mb.inputTokens || 0) + (mb.outputTokens || 0), 0);
+}
+function metricValue(v) { return chartMetric === 'tokens' ? rowRealTokens(v) : ((v && v.totalCost) || 0); }
+function fmtMetric(n) { return chartMetric === 'tokens' ? fmtTok(n) : fmt(n); }
+
+function renderToolTabs(tabs) {
+  const box = document.getElementById('toolTabs');
+  if (!box) return;
+  const list = tabs.slice();
+  if (!list.some(t => t.value === agent)) {
+    const opt = [...document.getElementById('agentSel').options].find(o => o.value === agent);
+    list.push({ value: agent, label: opt ? opt.textContent : agent });
+  }
+  box.innerHTML = list.map(t => {
+    const on = t.value === agent;
+    const p = t.value === 'all' ? null : nearestPlan(planInsightsForFilter(data.planInsights, t.value));
+    const dot = p ? `<span class="status-dot ${planStatus(p.pct)}" aria-hidden="true"></span>` : '';
+    return `<button type="button" class="tool-tab" role="tab" aria-selected="${on}" data-filter="${escAttr(t.value)}">${dot}${escHtml(t.label)}</button>`;
+  }).join('');
+  box.querySelectorAll('[data-filter]').forEach(b => { b.onclick = () => setAgentFilter(b.dataset.filter); });
+}
+
+function renderTodayStrip(days, today) {
+  const box = document.getElementById('todayStrip');
+  if (!box) return;
+  const rows = rowsForFilter(days, data.accountSessions, agent);
+  const yday = addDays(today, -1);
+  const t = rows.find(r => r.period === today), y = rows.find(r => r.period === yday);
+  const tCost = t ? t.value.totalCost || 0 : 0, yCost = y ? y.value.totalCost || 0 : 0;
+  const tTok = t ? rowRealTokens(t.value) : 0, yTok = y ? rowRealTokens(y.value) : 0;
+  const main = chartMetric === 'tokens' ? fmtTok(tTok) : fmt(tCost);
+  const cmp = chartMetric === 'tokens' ? compareLabel(tTok, yTok, 'yesterday') : compareLabel(tCost, yCost, 'yesterday');
+  const second = chartMetric === 'tokens' ? `${fmt(tCost)} list price` : `${fmtTok(tTok)} tokens`;
+  const yText = chartMetric === 'tokens' ? fmtTok(yTok) : fmt(yCost);
+  let gb = '';
+  if (showGrokBotUsage(agent)) {
+    const pct = grokBotUsedPctSum(today, today);
+    if (pct > 0) gb = ` · Grok Bot ${signedPct(pct)}% of weekly limit`;
+  }
+  const todayHtml = `<div class="today-item"><div class="label">Today</div>
+    <div class="value tnum">${main}</div>
+    <div class="sub">${second}${gb} · yesterday ${yText}${cmp ? ` (${escHtml(cmp)})` : ''}</div></div>`;
+  const p = nearestPlan(planInsightsForFilter(data.planInsights, agent));
+  let planHtml = '';
+  if (p) {
+    const fc = forecastSummary(p.forecast, fmtWhenShort);
+    const pace = p.sessionPace && p.sessionPace.warn ? paceText(p.sessionPace, iso => fmtWhenShort(iso)) : '';
+    const warn = (fc && fc.warn) || !!pace;
+    const subBits = [fc && fc.text, pace, p.resetAt && `resets ${fmtWhenShort(p.resetAt)}`].filter(Boolean);
+    planHtml = `<div class="today-item"><div class="label">Nearest its limit</div>
+      <div class="value tnum"><span class="status-dot ${planStatus(p.pct, warn)}" aria-hidden="true"></span>${Math.round(p.pct)}% <span class="plan-name">${escHtml(p.label)}</span></div>
+      <div class="sub${warn ? ' warn' : ''}"${fc ? ` title="${escAttr(fc.title)}"` : ''}>${escHtml(subBits.join(' · '))}</div></div>`;
+  } else {
+    planHtml = `<div class="today-item"><div class="label">Nearest its limit</div><div class="value">–</div><div class="sub">No plan limit readings for this view yet.</div></div>`;
+  }
+  box.innerHTML = todayHtml + planHtml;
+}
+
+// Every calendar day in the selected range, stacked by agent (Overview) or a
+// single series for one tool or account.
+function rangeSeries(days, start, end, filterValue) {
+  const periods = [];
+  for (let d = start; d <= end; d = addDays(d, 1)) periods.push(d);
+  const byPeriod = {};
+  if (filterValue === 'all') {
+    days.forEach(day => (day.agents || []).forEach(a => {
+      if (!sourcePresent(detectionIdForTool(a.agent))) return;
+      (byPeriod[day.period] || (byPeriod[day.period] = {}))[a.agent] = metricValue(a);
+    }));
+  } else {
+    rowsForFilter(days, data.accountSessions, filterValue).forEach(r => {
+      (byPeriod[r.period] || (byPeriod[r.period] = {}))[filterValue] = metricValue(r.value);
+    });
+  }
+  const keys = new Set();
+  periods.forEach(p => Object.keys(byPeriod[p] || {}).forEach(k => { if (byPeriod[p][k] > 0) keys.add(k); }));
+  const series = [...keys].sort();
+  return { periods, series, rows: periods.map(p => ({ period: p, parts: series.map(k => (byPeriod[p] || {})[k] || 0) })) };
+}
+function rangeChartTitle(rangeDays, from, to, cutoff, windowEnd) {
+  if (from || to) return `${cutoff} to ${windowEnd}`;
+  if (rangeDays >= 9999) return 'All time';
+  if (rangeDays === 1) return 'Today';
+  return `Last ${rangeDays} days`;
+}
+function drawLast14(days, cutoff, windowEnd) {
+  const svg = document.getElementById('last14Chart');
+  const legend = document.getElementById('last14Legend');
+  if (!svg) return;
+  const tabLabel = agent === 'all' ? null : ((toolTabsCache.find(t => t.value === agent) || {}).label || agent);
+  const span = rangeChartTitle(range, customFrom, customTo, cutoff, windowEnd);
+  document.getElementById('last14Title').textContent = agent === 'all' ? `${span} by agent` : `${span}, ${tabLabel}`;
+  document.getElementById('last14Note').textContent = chartMetric === 'tokens' ? 'Tokens (input + output)' : 'USD list price';
+  const { rows, series } = rangeSeries(days, cutoff, windowEnd, agent);
+  const labelEvery = Math.max(1, Math.ceil(rows.length / 16));
+  const colour = i => ACCOUNT_PALETTE[i % ACCOUNT_PALETTE.length];
+  const nameOf = k => agent === 'all' ? agentName(k) : tabLabel;
+  legend.innerHTML = series.map((k, i) => {
+    const total = rows.reduce((n, r) => n + r.parts[i], 0);
+    return `<span><span class="swatch" style="background:${colour(i)}"></span>${escHtml(nameOf(k))} <span class="tnum muted">${fmtMetric(total)}</span></span>`;
+  }).join('');
+  const W = (svg.parentElement && svg.parentElement.clientWidth - 40) || 900, H = 180, padL = 52, padB = 22, padT = 8;
+  sizeSvg(svg, W, H);
+  const max = Math.max(...rows.map(r => r.parts.reduce((a, b) => a + b, 0)), 0) || 1;
+  const bw = (W - padL - 8) / rows.length;
+  let out = '';
+  for (let g = 0; g <= 2; g++) {
+    const v = max * g / 2, yy = H - padB - (H - padB - padT) * g / 2;
+    out += `<line x1="${padL}" x2="${W - 4}" y1="${yy}" y2="${yy}" stroke="var(--border)"/><text x="${padL - 6}" y="${yy + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${escHtml(fmtMetric(v))}</text>`;
+  }
+  rows.forEach((r, i) => {
+    let y0 = H - padB;
+    const x = padL + i * bw + bw * 0.15, w = bw * 0.7;
+    const total = r.parts.reduce((a, b) => a + b, 0);
+    const tip = `${r.period}: ${fmtMetric(total)}` + series.map((k, j) => r.parts[j] > 0 ? `\n${nameOf(k)} ${fmtMetric(r.parts[j])}` : '').join('');
+    out += `<g class="l14-bar" data-period="${r.period}"><title>${escHtml(tip)}</title>`;
+    r.parts.forEach((v, j) => {
+      if (!(v > 0)) return;
+      const h = (H - padB - padT) * v / max;
+      y0 -= h;
+      out += `<rect x="${x}" y="${y0}" width="${w}" height="${Math.max(h, 0.5)}" fill="${colour(j)}" rx="2"/>`;
+    });
+    out += `<rect x="${padL + i * bw}" y="${padT}" width="${bw}" height="${H - padB - padT}" fill="transparent"/></g>`;
+    if (i % labelEvery === 0) out += `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--muted)">${rows.length > 31 ? r.period.slice(5) : r.period.slice(8)}</text>`;
+  });
+  svg.innerHTML = out;
+  labelSvg(svg, `${span} ${agent === 'all' ? 'stacked by agent' : 'for ' + tabLabel}`);
+  svg.querySelectorAll('.l14-bar').forEach(g => makePickable(g, `Show ${g.dataset.period}`, () => setSingleDay(g.dataset.period)));
+}
+
+function renderToolSummary(days, cutoff, windowEnd, today) {
+  const card = document.getElementById('toolSummaryCard');
+  const box = document.getElementById('toolSummaryRows');
+  if (!card || !box) return;
+  const tabs = toolTabsCache.filter(t => t.value !== 'all');
+  if (agent !== 'all' || !tabs.length) { card.style.display = 'none'; box.innerHTML = ''; return; }
+  card.style.display = '';
+  box.innerHTML = tabs.map(t => {
+    const rows = rowsForFilter(days, data.accountSessions, t.value);
+    const inRange = rows.filter(r => r.period >= cutoff && r.period <= windowEnd).reduce((n, r) => n + metricValue(r.value), 0);
+    const tr = rows.find(r => r.period === today);
+    const p = nearestPlan(planInsightsForFilter(data.planInsights, t.value));
+    const fc = p && forecastSummary(p.forecast, fmtWhenShort);
+    const pct = p ? `${Math.round(p.pct)}%` : '–';
+    return `<button type="button" class="tool-sum-row" data-filter="${escAttr(t.value)}" aria-label="Open ${escAttr(t.label)} tab">
+      <span class="status-dot ${p ? planStatus(p.pct, fc && fc.warn) : ''}" aria-hidden="true"></span>
+      <span class="name">${escHtml(t.label)}</span>
+      <span class="pct tnum" title="${p ? escAttr(p.label + ' plan used') : 'No plan reading'}">${pct}</span>
+      <span class="muted">${fc ? escHtml(fc.text) : ''}</span>
+      <span class="amt tnum" title="Today ${escAttr(fmtMetric(tr ? metricValue(tr.value) : 0))}">${fmtMetric(inRange)}</span>
+      <span class="open">Open tab ›</span></button>`;
+  }).join('');
+  box.querySelectorAll('[data-filter]').forEach(b => { b.onclick = () => setAgentFilter(b.dataset.filter); });
+}
+
+// Plan rows: one line (status colour, name, percent, amount) with the full
+// row behind a "Show details" toggle. Open rows stay open across refreshes.
+const expandedPlanRows = new Set();
+function planRowKey(s) {
+  if (s.tool === 'claude') return 'claude:' + s.id;
+  if (s.tool === 'codex') return 'codex:primary';
+  if (s.grokBot) { const p = (data.planInsights || []).find(q => q.tool === 'grok-bot'); return p ? p.key : 'grok-bot'; }
+  return s.tool + ':' + (s.id || '');
+}
+function collapsePlanRows(box) {
+  box.querySelectorAll(':scope > .src-row[data-plan-key]').forEach((row, i) => {
+    const key = row.dataset.planKey;
+    const ins = planInsight(key);
+    const label = ((row.querySelector('.src-label') || {}).textContent || '').trim();
+    const amount = ((row.querySelector('.src-amount') || {}).textContent || '').trim();
+    let pct = ins && ins.pct != null ? ins.pct : null;
+    if (pct == null) {
+      const m = ((row.querySelector('.src-extra') || {}).textContent || '').match(/(\d+(?:\.\d+)?)%/);
+      if (m) pct = Number(m[1]);
+    }
+    const fcs = ins ? forecastSummary(ins.forecast, fmtWhenShort) : null;
+    const warn = row.classList.contains('src-pace-warn') || !!(fcs && fcs.warn);
+    let st = planStatus(pct, warn);
+    if (row.classList.contains('src-bad')) st = 'st-bad';
+    else if (!st && row.classList.contains('src-ok')) st = 'st-ok';
+    const detail = document.createElement('div');
+    detail.className = 'plan-row-detail';
+    detail.id = 'planRowDetail' + i;
+    while (row.firstChild) detail.appendChild(row.firstChild);
+    const open = expandedPlanRows.has(key);
+    detail.hidden = !open;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'plan-row-toggle';
+    btn.setAttribute('aria-expanded', String(open));
+    btn.setAttribute('aria-controls', detail.id);
+    btn.innerHTML = `<span class="plan-chev" aria-hidden="true">▸</span><span class="status-dot ${st}" aria-hidden="true"></span>`
+      + `<span class="plan-row-name">${escHtml(label)}</span><span class="plan-row-pct tnum">${pct != null ? Math.round(pct) + '%' : ''}</span>`
+      + `<span class="plan-row-amt tnum">${escHtml(amount)}</span><span class="plan-row-more">${open ? 'Hide details' : 'Show details'}</span>`;
+    btn.onclick = () => {
+      const now = btn.getAttribute('aria-expanded') !== 'true';
+      btn.setAttribute('aria-expanded', String(now));
+      detail.hidden = !now;
+      btn.querySelector('.plan-row-more').textContent = now ? 'Hide details' : 'Show details';
+      if (now) expandedPlanRows.add(key); else expandedPlanRows.delete(key);
+    };
+    row.classList.add('plan-row');
+    row.appendChild(btn);
+    row.appendChild(detail);
+  });
+}
+
+// Cache efficiency sits on the Value tab, and on a tool tab, so each tool
+// shows its own cache stats.
+function placeCacheCard() {
+  const card = document.getElementById('cacheCard');
+  const pair = document.getElementById('valuePair');
+  const slot = document.getElementById('toolCacheSlot');
+  if (!card || !pair || !slot) return;
+  const inTool = tab === 'overview' && agent !== 'all';
+  const target = inTool ? slot : pair;
+  if (card.parentNode !== target) target.insertBefore(card, inTool ? null : target.firstChild);
+  slot.style.display = inTool ? '' : 'none';
+}
+let toolTabsCache = [{ value: 'all', label: 'Overview' }];
+
 function update() {
   if (!data) return;
   if (pendingScrollId) setTimeout(scrollToPending, 0);
@@ -5485,6 +5865,9 @@ function update() {
   days.forEach(d => (d.metadata && d.metadata.agents || []).forEach(a => {
     if (sourcePresent(detectionIdForTool(a))) agents.add(a);
   }));
+  // Grok Bot has no ccusage rows, so a Grok Bot-only setup still gets a Grok
+  // filter and tab for its plan reading.
+  if (sourcePresent('grok-bot')) agents.add('grok');
   const claudeAccounts = sourcePresent('claude')
     ? (data.sources || []).filter(s => s.tool === 'claude')
     : [];
@@ -5515,6 +5898,7 @@ function update() {
     agent = sel.value;
   }
   sel.value = agent;
+  toolTabsCache = toolTabsFrom(agents, claudeAccounts);
 
   // windowEnd is the end of the SELECTED range (custom `to`, or today for every
   // preset); `today` itself stays the real calendar date, for the "Today" KPI
@@ -5567,7 +5951,11 @@ function update() {
   }
 
   const todayRow = days.find(d => d.period === today);
-  const todayValue = todayRow ? dayForAgent(todayRow, agent) : null;
+  // An account filter has no per-day agent entry, so read it from the same
+  // account rows the charts use (this showed $0.00 for an account before 1.8.6).
+  const todayValue = String(agent).startsWith('account:')
+    ? ((rowsForFilter(days, data.accountSessions, agent).find(r => r.period === today) || {}).value || null)
+    : (todayRow ? dayForAgent(todayRow, agent) : null);
   const selectedSingle = (customFrom && customFrom === customTo) ? customFrom : (!customFrom && !customTo && range === 1 ? today : null);
   const showingPastDay = !!(selectedSingle && selectedSingle !== today);
   const kpiToday = document.getElementById('kpiToday');
@@ -5630,7 +6018,14 @@ function update() {
   document.getElementById('chartTokensNote').style.display = chartMetric === 'tokens' ? '' : 'none';
 
   renderLiveNudge();
+  placeCacheCard();
   if (tab === 'overview') {
+    renderToolTabs(toolTabsCache);
+    renderTodayStrip(days, today);
+    drawLast14(days, cutoff, windowEnd);
+    renderToolSummary(days, cutoff, windowEnd, today);
+  }
+  if (tab === 'overview' || tab === 'value') {
     document.getElementById('cacheScopeNote').textContent = `Selected range, ${cutoff} to ${windowEnd}`;
     renderCacheEfficiency(windowed);
     renderModelMix(windowed, cutoff, windowEnd);

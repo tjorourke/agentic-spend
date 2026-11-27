@@ -12,6 +12,8 @@ import os
 import stat
 import sys
 
+import platform_info
+
 try:
     import data_dir as _data_dir
 except Exception:  # pragma: no cover - used before data_dir in some tests
@@ -36,11 +38,15 @@ TOOL_TO_ID = {
 }
 
 SUPPORTED = (
-    {"id": CLAUDE, "label": "Claude Code", "binaries": ("claude",), "apps": ("Claude.app",)},
+    # apps: macOS .app bundles and Linux .desktop entries (the names the
+    # official Linux packages install; checked in the packages, Nov 2026).
+    {"id": CLAUDE, "label": "Claude Code", "binaries": ("claude",),
+     "apps": ("Claude.app", "com.anthropic.Claude.desktop")},
     {"id": CODEX, "label": "Codex", "binaries": ("codex",), "apps": ()},
     {"id": OPENCODE, "label": "OpenCode", "binaries": ("opencode",), "apps": ()},
     {"id": GROK_CLI, "label": "Grok CLI", "binaries": ("grok",), "apps": ()},
-    {"id": GROK_BOT, "label": "Grok Bot", "binaries": (), "apps": ("Grok Bot.app",)},
+    {"id": GROK_BOT, "label": "Grok Bot", "binaries": (),
+     "apps": ("Grok Bot.app", "grok-bot.desktop")},
 )
 
 # Walk a session tree only far enough to know that *something* is there.
@@ -62,7 +68,8 @@ def _split_path(value):
 
 
 def app_roots(home, explicit=None):
-    """Directories that may contain .app bundles.
+    """Directories that may contain installed apps: .app bundles on macOS,
+    .desktop entries on Linux (see platform_info.app_dirs).
 
     Honours AGENTIC_SPEND_APP_ROOTS when `explicit` is not passed (colon or
     semicolon separated, same as PATH). An empty value means "scan no app
@@ -74,7 +81,7 @@ def app_roots(home, explicit=None):
         return list(explicit)
     if "AGENTIC_SPEND_APP_ROOTS" in os.environ:
         return _split_path(os.environ.get("AGENTIC_SPEND_APP_ROOTS") or "")
-    return ["/Applications", os.path.join(home, "Applications")]
+    return platform_info.app_dirs(home)
 
 
 def _exists(path):
@@ -130,10 +137,15 @@ def _is_executable(path):
 
 
 def _app_bundle_present(app_name, roots):
+    """A .app bundle (a folder) or a .desktop entry (a file) in any root."""
     if not app_name:
         return False
     for root in roots:
-        if _is_dir(os.path.join(root, app_name)):
+        candidate = os.path.join(root, app_name)
+        if app_name.endswith(".desktop"):
+            if _is_file(candidate):
+                return True
+        elif _is_dir(candidate):
             return True
     return False
 
@@ -189,13 +201,19 @@ def _grok_home(home, explicit=None):
     return os.path.join(home, ".grok")
 
 
-def _grokbot_dir(home, explicit=None):
+def _grokbot_dir(home, explicit=None, honor_env=True):
     if explicit is not None:
         return explicit
     env = os.environ.get("GROK_BOT_PERSISTENCE_DIR")
     if env:
         return env
-    return os.path.join(home, "Library", "Application Support", "Grok Bot")
+    return _grokbot_support(home, honor_env)
+
+
+def _grokbot_support(home, honor_env=True):
+    """The Grok Bot app's user data folder on this OS (Electron appData).
+    A fake home passed by a test ignores the host's XDG_CONFIG_HOME."""
+    return os.path.join(platform_info.app_data_dir(home, env=None if honor_env else {}), "Grok Bot")
 
 
 def _default_data_dir():
@@ -282,12 +300,12 @@ def _grok_cli_has_data(grok_home):
     return False
 
 
-def _grokbot_installed(home, grokbot_dir, roots):
+def _grokbot_installed(home, grokbot_dir, roots, honor_env=True):
     if _is_dir(grokbot_dir):
         return True
     # The Application Support folder is enough even when the caller overrode
     # the persistence path and the default folder still exists.
-    default_support = os.path.join(home, "Library", "Application Support", "Grok Bot")
+    default_support = _grokbot_support(home, honor_env)
     if grokbot_dir != default_support and _is_dir(default_support):
         return True
     return False
@@ -330,7 +348,7 @@ def detect(
     xdg_data = _xdg(home, "data", xdg_data_home, honor_xdg)
     xdg_config = _xdg(home, "config", xdg_config_home, honor_xdg)
     grok_home = _grok_home(home, grok_home)
-    grokbot_dir = _grokbot_dir(home, grokbot_dir)
+    grokbot_dir = _grokbot_dir(home, grokbot_dir, honor_env=not explicit_home)
     data_dir_path = data_dir_path if data_dir_path is not None else _default_data_dir()
 
     results = []
@@ -353,7 +371,7 @@ def detect(
             installed = installed or _grok_cli_installed(home, grok_home)
             has_data = has_data or _grok_cli_has_data(grok_home)
         elif source_id == GROK_BOT:
-            installed = installed or _grokbot_installed(home, grokbot_dir, roots)
+            installed = installed or _grokbot_installed(home, grokbot_dir, roots, honor_env=not explicit_home)
             has_data = has_data or _grokbot_has_data(grokbot_dir, data_dir_path)
 
         # Data implies the tool was present at some point; keep installed

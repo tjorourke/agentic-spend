@@ -83,27 +83,27 @@ class OnOffTests(unittest.TestCase):
     def test_on_status_off_reads_back(self):
         with tempfile.TemporaryDirectory() as home:
             fake = FakeLaunchctl()
-            st = login_item.turn_on(home=home, runner=fake)
+            st = login_item.turn_on(home=home, runner=fake, sys_name="macos")
             self.assertTrue(st["enabled"])
             self.assertTrue(st["loaded"])
             self.assertTrue(os.path.exists(login_item.plist_path(home)))
             self.assertIn(["bootstrap", "gui/%d" % os.getuid(), login_item.plist_path(home)], fake.calls)
-            st = login_item.turn_off(home=home, runner=fake)
+            st = login_item.turn_off(home=home, runner=fake, sys_name="macos")
             self.assertFalse(st["enabled"])
             self.assertFalse(os.path.exists(login_item.plist_path(home)))
 
     def test_off_leaves_running_server_alone(self):
         with tempfile.TemporaryDirectory() as home:
             fake = FakeLaunchctl()
-            login_item.turn_on(home=home, runner=fake)
+            login_item.turn_on(home=home, runner=fake, sys_name="macos")
             fake.pid = 4242
-            st = login_item.turn_off(home=home, runner=fake)
+            st = login_item.turn_off(home=home, runner=fake, sys_name="macos")
             self.assertFalse(st["enabled"])
             self.assertNotIn("bootout", [c[0] for c in fake.calls])
 
     def test_status_when_absent(self):
         with tempfile.TemporaryDirectory() as home:
-            st = login_item.status(home=home, runner=FakeLaunchctl())
+            st = login_item.status(home=home, runner=FakeLaunchctl(), sys_name="macos")
             self.assertFalse(st["enabled"])
             self.assertFalse(st["loaded"])
 
