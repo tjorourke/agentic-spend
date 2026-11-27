@@ -64,7 +64,7 @@ def resolve_launcher(here=HERE, which=shutil.which, exists=os.path.exists, env=N
     return [python, os.path.join(here, "server.py")], "server.py from this folder"
 
 
-def build_plist(program_arguments, home=None, path_env=None):
+def build_plist(program_arguments, home=None, path_env=None, claude_config_dir=None):
     """The LaunchAgent as a dict (plistlib-ready). launchd starts jobs with a
     minimal PATH, so the folder holding the launcher is put first (the bundled
     ccusage is found by path, so no Node.js is needed)."""
@@ -76,13 +76,20 @@ def build_plist(program_arguments, home=None, path_env=None):
     for d in (path_env.split(":") if path_env else []) + dirs:
         if d and d not in seen:
             seen.append(d)
+    env_vars = {"PATH": ":".join(seen), "AGENTIC_SPEND_NO_OPEN": "1"}
+    # launchd does not pass the shell's environment on. If Claude Code's
+    # config directories were named when this was switched on, a server
+    # started at login has to read the same ones.
+    config_dirs = os.environ.get("CLAUDE_CONFIG_DIR") if claude_config_dir is None else claude_config_dir
+    if config_dirs:
+        env_vars["CLAUDE_CONFIG_DIR"] = config_dirs
     return {
         "Label": LABEL,
         "ProgramArguments": list(program_arguments),
         "RunAtLoad": True,
         "KeepAlive": False,
         "ProcessType": "Background",
-        "EnvironmentVariables": {"PATH": ":".join(seen), "AGENTIC_SPEND_NO_OPEN": "1"},
+        "EnvironmentVariables": env_vars,
         "StandardOutPath": os.path.join(log_dir, ".login.log"),
         "StandardErrorPath": os.path.join(log_dir, ".login.log"),
     }

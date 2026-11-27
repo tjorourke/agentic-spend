@@ -20,6 +20,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 
 import data_dir
@@ -312,6 +313,9 @@ def digest_due(settings, state, now_local):
 
 # ---- delivery ---------------------------------------------------------------
 
+IS_LINUX = sys.platform.startswith("linux")
+ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "favicon.png")
+
 _OSASCRIPT = (
     "on run argv\n"
     "display notification (item 2 of argv) with title (item 1 of argv) subtitle (item 3 of argv)\n"
@@ -331,6 +335,29 @@ def deliver_osascript(title, message, subtitle="Agentic Spend", runner=None):
         return getattr(result, "returncode", 1) == 0
     except Exception:
         return False
+
+
+def deliver_notify_send(title, message, subtitle="Agentic Spend", runner=None):
+    """Show a Linux desktop notification with notify-send (libnotify). Text is
+    passed as arguments after "--", so it is never read as an option."""
+    runner = runner or subprocess.run
+    try:
+        result = runner(
+            ["notify-send", "--app-name", str(subtitle)[:100], "--icon", ICON_PATH, "--",
+             str(title)[:200], str(message)[:400]],
+            capture_output=True, text=True, timeout=10,
+        )
+        return getattr(result, "returncode", 1) == 0
+    except Exception:
+        return False
+
+
+def deliver(title, message, runner=None):
+    """Deliver with this platform's own mechanism. Returns the name used
+    ("osascript" or "notify-send"), or "failed"."""
+    if IS_LINUX:
+        return "notify-send" if deliver_notify_send(title, message, runner=runner) else "failed"
+    return "osascript" if deliver_osascript(title, message, runner=runner) else "failed"
 
 
 def app_is_active(state, now=None):
@@ -353,8 +380,7 @@ def dispatch(events, state, now=None, runner=None):
             del pending[:-MAX_PENDING]
             delivered.append({"title": ev["title"], "via": "app"})
         else:
-            ok = deliver_osascript(ev["title"], ev["message"], runner=runner)
-            delivered.append({"title": ev["title"], "via": "osascript" if ok else "failed"})
+            delivered.append({"title": ev["title"], "via": deliver(ev["title"], ev["message"], runner=runner)})
     return state, delivered
 
 

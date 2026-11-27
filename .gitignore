@@ -20,3 +20,4 @@ macos/out/
 notifications.json
 notification-state.json
 .screens/
+vendor/

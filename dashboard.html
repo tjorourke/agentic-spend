@@ -4079,13 +4079,13 @@ function renderSettingsApp(forceRender) {
     <td><span class="pct-field"><input type="text" class="settings-field threshold-input" inputmode="numeric" data-plan-key="${escAttr(p.key)}" value="${escAttr((per[p.key] || []).join(', '))}" placeholder="${escAttr(defaults.join(', '))} (default)" aria-label="Thresholds in per cent for ${escAttr(p.label)}, leave empty for the default of ${escAttr(defaults.join(' and '))}%"><span class="pct-suffix">%</span></span>
       <span class="field-error" role="alert"></span></td></tr>`).join('');
   const loginLine = login.enabled
-    ? `On. ${login.loaded ? 'Loaded in launchd' : 'Not loaded yet, takes effect at next login'}.`
+    ? `On. ${login.loaded ? (login.manager === 'systemd' ? 'Running under systemd' : 'Loaded in launchd') : (login.manager === 'systemd' ? 'Starts at next login' : 'Not loaded yet, takes effect at next login')}.`
     : 'Off.';
   box.innerHTML = `
     <div class="card-head"><h2>Background and notifications</h2></div>
     <div class="row"><label><input type="checkbox" class="settings-field" id="loginToggle" ${login.enabled ? 'checked' : ''}> Start Agentic Spend at login</label>
       <span class="muted" id="loginStatus" role="status">${escHtml(loginLine)}</span></div>
-    <div class="muted" style="margin-bottom:0.9rem;">Keeps the server running in the background, so plan readings and notifications carry on with the browser closed. Uses a LaunchAgent in ~/Library/LaunchAgents. Same as <code>agentic-spend login on</code>.</div>
+    <div class="muted" style="margin-bottom:0.9rem;">Keeps the server running in the background, so plan readings and notifications carry on with the browser closed. ${login.manager === 'systemd' ? 'Uses a systemd user unit (' + escHtml(login.plistPath || '') + ')' : 'Uses a LaunchAgent in ~/Library/LaunchAgents'}. Same as <code>agentic-spend login on</code>.</div>
     <div class="row"><label><input type="checkbox" class="settings-field" id="notifEnabled" ${ns.enabled ? 'checked' : ''}> Notify me when a plan passes a threshold</label></div>
     <div class="row"><label for="notifThresholds">Default thresholds</label>
       <span class="pct-field"><input type="text" class="settings-field threshold-input" inputmode="numeric" id="notifThresholds" value="${escAttr((ns.thresholds || []).join(', '))}" placeholder="${escAttr(NOTIFY_DEFAULT_THRESHOLDS.join(', '))}" aria-describedby="notifThresholdsHelp"><span class="pct-suffix">%</span></span>
@@ -4099,7 +4099,7 @@ function renderSettingsApp(forceRender) {
       <button type="button" id="notifTest" class="secondary">Send test notification</button>
       <span class="muted" id="notifStatus" role="status">${escHtml(appSettingsMsg)}</span>
     </div>
-    <div class="muted">Shown as macOS notifications while the server is running${appSettings.notifications.appActive ? '. The menu bar app is running, so it shows them' : ''}.</div>`;
+    <div class="muted">Shown as ${login.manager === 'systemd' ? 'desktop' : 'macOS'} notifications while the server is running${appSettings.notifications.appActive ? '. The menu bar app is running, so it shows them' : ''}.</div>`;
   appSettingsMsg = '';
   const status = document.getElementById('notifStatus');
   document.getElementById('notifTest').onclick = async () => {
@@ -4107,7 +4107,7 @@ function renderSettingsApp(forceRender) {
     try {
       const r = await postJson('/api/notifications/test', {});
       const via = (r.result || {}).via;
-      status.textContent = via === 'app' ? 'Sent to the menu bar app.' : via === 'osascript' ? 'Sent. Check the top right of your screen.' : 'macOS did not accept the notification.';
+      status.textContent = via === 'app' ? 'Sent to the menu bar app.' : via === 'osascript' ? 'Sent. Check the top right of your screen.' : via === 'notify-send' ? 'Sent. Check your notifications.' : (login.manager === 'systemd' ? 'The notification was not accepted (is notify-send installed?).' : 'macOS did not accept the notification.');
     } catch (err) {
       status.textContent = 'Failed: ' + err.message;
     }

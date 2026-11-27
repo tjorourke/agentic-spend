@@ -216,13 +216,27 @@ def _hints_flag(hints, source_id):
     return bool(value)
 
 
+def _extra_claude_dirs(home):
+    """Claude config directories named by CLAUDE_CONFIG_DIR, for the real home
+    only (an isolated test home must not see this machine's)."""
+    if os.path.abspath(home) != os.path.expanduser("~"):
+        return []
+    import claude_dirs
+    return claude_dirs.config_dirs()
+
+
 def _claude_installed(home):
-    return _is_dir(os.path.join(home, ".claude")) or _exists(os.path.join(home, ".claude.json"))
+    if _is_dir(os.path.join(home, ".claude")) or _exists(os.path.join(home, ".claude.json")):
+        return True
+    return any(_is_dir(d) for d in _extra_claude_dirs(home))
 
 
 def _claude_has_data(home):
     if _has_matching_file(os.path.join(home, ".claude", "projects"), suffixes=(".jsonl",)):
         return True
+    for d in _extra_claude_dirs(home):
+        if _has_matching_file(os.path.join(d, "projects"), suffixes=(".jsonl",)):
+            return True
     live = os.path.join(home, ".claude", "cc-usage-live")
     if _dir_nonempty(live):
         return True
