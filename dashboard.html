@@ -215,6 +215,9 @@
   .day-pill .swatch { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .share-track { width: 110px; min-width: 110px; }
+  .report-empty-row { padding: 0.6rem 1.1rem; font-size: 0.85rem; }
+  .report-notes summary { cursor: pointer; }
+  .report-notes summary::marker { color: var(--muted); }
   .h2-unit { font-size: 0.74rem; font-weight: 400; color: var(--muted); margin-left: 0.35rem; }
   /* one look for every real action button: filled purple primary, outlined secondary */
   .btn, .btn-primary {
@@ -4165,11 +4168,27 @@ function renderDigest() {
   const modelTable = table(['Model', ...kindHead, tokHeadLabel, 'Usage value'], models.map(m => `<tr><td><button type="button" class="model-name model-name-cell text-btn" data-digest-model="${escAttr(m.model)}">${escHtml(m.model)}</button></td>${kindCells(m)}${stackOn ? tokCell(m) : `<td class="right tnum">${fmtTok(m.tokens)}</td>`}<td class="right tnum">${fmt(m.cost)}</td></tr>`), 'No model data that week.');
   const modelGraph = reportBarsHtml(models.map(m => ({ label: m.model, labelHtml: `<button type="button" class="model-name text-btn" data-digest-model="${escAttr(m.model)}">${escHtml(m.model)}</button>`, value: mv(m), display: mshow(m), extra: mother(m), ...tokRow(m, m.model) })), 'No model data that week.', stackOn ? stackOpts : undefined);
   const agents = byTok(d.agents || []);
-  const agentTable = table(['Agent', ...kindHead, tokHeadLabel, 'Usage value'], agents.map(a => `<tr><td>${escHtml(a.agent)}</td>${kindCells(a)}${tokCell(a)}<td class="right tnum">${fmt(a.cost)}</td></tr>`), 'No usage that week.');
-  const agentGraph = reportBarsHtml(agents.map(a => ({ label: a.agent, value: mv(a), display: mshow(a), extra: mother(a), ...tokRow(a, a.agent) })), 'No usage that week.', stackOn ? stackOpts : undefined);
+  const agentLabel = a => a.account ? `Claude Code: ${a.account}` : (a.agent === 'claude' ? 'Claude Code' : (AGENT_BUCKET_NAMES[a.agent] || a.agent));
+  const agentSwatch = a => a.account ? `<span class="swatch" style="background:${seriesColour(a.account)};"></span> ` : '';
+  const agentTable = table(['Agent', ...kindHead, tokHeadLabel, 'Usage value'], agents.map(a => `<tr><td>${agentSwatch(a)}${escHtml(agentLabel(a))}</td>${kindCells(a)}${tokCell(a)}<td class="right tnum">${fmt(a.cost)}</td></tr>`), 'No usage that week.');
+  const agentGraph = reportBarsHtml(agents.map(a => ({ label: agentLabel(a), labelHtml: agentSwatch(a) + escHtml(agentLabel(a)), value: mv(a), display: mshow(a), extra: mother(a), ...tokRow(a, agentLabel(a)) })), 'No usage that week.', stackOn ? stackOpts : undefined);
   const days = d.days || [];
   const dayTable = table(['Day', ...kindHead, tokHeadLabel, 'Usage value'], days.map(x => `<tr class="day-row" role="button" tabindex="0" data-digest-day="${escAttr(x.date)}" title="Open ${escAttr(x.date)}"><td class="tnum">${escHtml(x.date)}</td>${kindCells(x)}${tokCell(x)}<td class="right tnum">${fmt(x.cost)}</td></tr>`), 'No usage that week.');
   const dayGraph = reportBarsHtml(days.map(x => ({ label: x.date, value: mv(x), display: mshow(x), extra: mother(x), ...tokRow(x, x.date), attrs: ` role="button" tabindex="0" data-digest-day="${escAttr(x.date)}" title="Open ${escAttr(x.date)}"` })), 'No usage that week.', stackOn ? stackOpts : undefined);
+  // 1.8.7: how each source's share of the week was counted. Only readings
+  // taken during the week decide covered or not; today's status never does.
+  const NOTE_TEXT = {
+    covered: n => `covered: the plan stayed under its limit${n.peakPct != null ? ` (highest reading ${formatPct(n.peakPct)}%)` : ''}`,
+    'hit-limit': n => `not known: the plan reached ${formatPct(n.peakPct)}% of its limit, so extra usage may have been billed`,
+    'no-readings': () => 'not known: no plan readings were taken that week',
+    real: () => 'real: no plan covers it',
+    split: () => 'split by how each backend is billed (Settings, OpenCode backends)',
+  };
+  const notes = (sp.notes || []).filter(n => n.cost > 0);
+  const spendNotesHtml = notes.length ? `<details class="card report-notes" style="margin-bottom:1rem;" data-report-card="spend-notes">
+      <summary><b>How the week's spend was counted</b> <span class="muted">real ${fmt(sp.real)} · covered ${fmt(sp.covered)} · not known ${fmt(sp.unknown || 0)}</span></summary>
+      <table class="mini-table" style="margin-top:0.5rem;"><tbody>${notes.map(n => `<tr><td>${escHtml(n.label)}</td><td class="right tnum">${fmt(n.cost)}</td><td class="muted">${escHtml((NOTE_TEXT[n.status] || (() => n.status))(n))}</td></tr>`).join('')}</tbody></table>
+    </details>` : '';
   const noData = d.hasData === false
     ? `<div class="card report-empty" style="margin-bottom:1rem;">No usage was recorded for ${escHtml(range)}. Pick another week above.</div>` : '';
   body.innerHTML = `
@@ -4178,14 +4197,17 @@ function renderDigest() {
     ${noData}
     <div class="digest-cards">
       <div class="card kpi"><div class="label">Usage value (API prices)</div><div class="value">${fmt(sp.list)}</div>${digestChangeHtml(sp.changePct, 'the week before')}</div>
-      <div class="card kpi"><div class="label">Real / unverified spend</div><div class="value">${fmt(sp.real)}</div><div class="sub">covered by plans ${fmt(sp.covered)}</div><div class="sub">uses each plan's status today</div></div>
+      <div class="card kpi"><div class="label">Real / unverified spend</div><div class="value">${fmt(sp.real)}</div><div class="sub">covered by plans ${fmt(sp.covered)}</div>${sp.unknown != null ? `<div class="sub">not known ${fmt(sp.unknown)}</div><div class="sub">from plan readings taken that week</div>` : `<div class="sub">uses each plan's status today</div>`}</div>
       <div class="card kpi"><div class="label">Tokens</div><div class="value">${fmtTok(tk.total)}</div>${digestChangeHtml(tk.changePct, 'the week before')}</div>
     </div>
-    <div class="card" style="margin-bottom:1rem;" data-report-card="plans">
+    ${spendNotesHtml}
+    ${!allowanceHtml && !plans.length
+      ? `<div class="card report-empty-row" style="margin-bottom:1rem;" data-report-card="plans"><b>Plan limits</b> <span class="muted">No plan readings were recorded that week.</span></div>`
+      : `<div class="card" style="margin-bottom:1rem;" data-report-card="plans">
       <div class="card-head"><h2>${allowanceHtml ? 'Plan limit through the week' : 'Plan limits, highest reading in the week'}</h2></div>
       ${allowanceHtml ? allowanceLegend + allowanceHtml : ''}
       ${allowanceHtml && !plans.length ? '' : pick(planTable, planGraph)}
-    </div>
+    </div>`}
     ${seatWeekHtml ? `<div class="card" style="margin-bottom:1rem;" data-report-card="seat-value" id="seatValueWeek">${seatWeekHtml}</div>` : ''}
     <div class="digest-two${stackOn && view !== 'graph' ? ' digest-one' : ''}">
       <div class="card" data-report-card="projects"><div class="card-head"><h2>Top projects</h2></div>${pick(projTable, projGraph)}</div>
