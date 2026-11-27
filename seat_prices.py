@@ -123,10 +123,11 @@ def _list_price(default_row, plan_id, table):
 
 
 def _value_entry(key, label, provider, api, sessions, month_start, today_s, billing_currency,
-                 user_price, detection, table, region_currency=None):
+                 user_price, detection, table, region_currency=None, fraction=1.0, credits=None):
     plan_id = (detection or {}).get("planId")
     preferred = billing_currency or region_currency
     default_row = plan_prices.default_for(plan_id, preferred, table)
+    usd_row = plan_prices.default_for(plan_id, "USD", table)
     seat = _effective_seat(user_price, default_row)
     entry = {
         "accountUuid": key,
@@ -143,23 +144,57 @@ def _value_entry(key, label, provider, api, sessions, month_start, today_s, bill
         "userSeat": user_price,
         "seat": seat,
         "multiple": None,
+        "periodFraction": round(fraction, 4),
+        "seatForPeriod": round(seat["amount"] * fraction, 2) if seat and seat.get("amount") else None,
+        "credits": credits,
+        "usdList": None,
+        "multipleUsdList": None,
     }
     if seat and seat.get("currency") == "USD" and seat.get("amount"):
-        entry["multiple"] = round(api / seat["amount"], 1)
+        entry["multiple"] = round(api / (seat["amount"] * fraction), 1)
+    # The seat may be billed in pounds while usage value is in US dollars. We
+    # never convert; when the provider publishes a US dollar list price for
+    # the same plan, the ratio against that is given separately and labelled.
+    if usd_row and usd_row.get("perMonth"):
+        entry["usdList"] = {"amount": float(usd_row["perMonth"]), "currency": "USD"}
+        entry["multipleUsdList"] = round(api / (float(usd_row["perMonth"]) * fraction), 1)
     entry["currency"] = billing_currency or (seat or {}).get("currency")
     return entry
 
 
+def _credits_used(mu):
+    c = (mu or {}).get("usageCredits") or {}
+    if c.get("usedMinor") is None:
+        return None
+    scale = 10 ** int(c.get("exponent") or 2)
+    return {"used": round(float(c["usedMinor"]) / scale, 2),
+            "limit": round(float(c["limitMinor"]) / scale, 2) if c.get("limitMinor") is not None else None,
+            "currency": c.get("currency"), "kind": "current reading"}
+
+
+def period_fraction(start, end):
+    """Share of a monthly seat that a period covers: 1.0 for a calendar
+    month to date, otherwise days / days in the start date's month."""
+    import calendar
+    if start.day == 1 and end.month == start.month and end.year == start.year:
+        return 1.0
+    days = (end - start).days + 1
+    return days / calendar.monthrange(start.year, start.month)[1]
+
+
 def team_value(max_usage, account_sessions, prices, today=None, detections=None,
-               daily=None, table=None, region_currency=None):
+               daily=None, table=None, region_currency=None, start=None, end=None):
     """One entry per subscription account: each Claude account with a plan
     reading, plus every other tool plan detection knows about (Codex, Grok,
     OpenCode, other ccusage sources). Month to date. Claude accounts are
     attributed by session last-active day; other tools use ccusage's daily
     per-agent cost (one account each)."""
     today = today or datetime.date.today()
-    month_start = today.replace(day=1).isoformat()
-    today_s = today.isoformat()
+    start = start or today.replace(day=1)
+    end = end or today
+    fraction = period_fraction(start, end)
+    month_start = start.isoformat()
+    today_s = end.isoformat()
     currencies = billing_currencies(max_usage)
     table = table if table is not None else plan_prices.load()
     det = {d.get("key"): d for d in (detections or [])}
@@ -179,7 +214,8 @@ def team_value(max_usage, account_sessions, prices, today=None, detections=None,
                 sessions += 1
         out.append(_value_entry(uuid, mu.get("label"), "claude", api, sessions, month_start, today_s,
                                 currencies.get(uuid), (prices or {}).get(uuid), det.get(uuid), table,
-                                region_currency=region_currency))
+                                region_currency=region_currency, fraction=fraction,
+                                credits=_credits_used(mu)))
     for d in detections or []:
         if d.get("provider") == "claude":
             continue
@@ -196,7 +232,7 @@ def team_value(max_usage, account_sessions, prices, today=None, detections=None,
                     days += 1
         entry = _value_entry(key, d.get("label"), d.get("provider"), api, None, month_start, today_s,
                              d.get("billingCurrency"), (prices or {}).get(key), d, table,
-                             region_currency=region_currency)
+                             region_currency=region_currency, fraction=fraction)
         entry["activeDays"] = days
         out.append(entry)
     return out

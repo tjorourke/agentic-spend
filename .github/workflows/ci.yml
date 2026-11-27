@@ -18,7 +18,7 @@ jobs:
 
       - name: Import check (catches syntax/import errors in every module)
         run: |
-          python3 -c "import server, account_usage, provider_usage, statusline_setup, data_dir, desktop_sources, digest"
+          python3 -c "import server, account_usage, provider_usage, statusline_setup, data_dir, desktop_sources, digest, allowance_history, usage_archive, seat_prices"
 
       - name: statusline.py smoke test under -I (how Claude Code actually invokes it)
         run: |

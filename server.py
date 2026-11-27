@@ -21,6 +21,8 @@ import time
 import urllib.parse
 
 import account_usage
+import allowance_history
+import usage_archive
 import data_dir
 import digest
 import grok_usage
@@ -524,6 +526,8 @@ def refresh_usage(force=False):
                     row["label"] = custom["label"]
             account_sessions = list(account_sessions) + grok_report["sessions"]
 
+        daily_rows, account_sessions, archive_info = _archive_and_merge(daily_rows, account_sessions, labels)
+
         max_usage = account_usage.get_max_usage_snapshots()
         plans = account_usage.load_plans()
         try:
@@ -576,6 +580,7 @@ def refresh_usage(force=False):
                 opencode=opencode_info,
             ), grok_report, plans, grokbot),
             "opencodeBackends": opencode_info,
+            "archive": archive_info,
         }
         # `detection` is the per-tool installed/hasData catalog. The existing
         # `sources` key stays the cost/plan rows, with absent tools removed.
@@ -608,6 +613,7 @@ def refresh_usage(force=False):
         payload["pricingRegion"] = pricing_region.current()
         payload["teamValue"] = _team_value(payload)
         payload["planInsights"] = _plan_insights_from(payload)
+        _record_allowance(payload)
         payload["sources"] = source_detection.annotate_sources(
             source_detection.filter_absent_sources(payload["sources"], detection),
             detection,
@@ -623,6 +629,40 @@ def refresh_usage(force=False):
         return {"error": str(e)}
     except Exception as e:
         return {"error": str(e)}
+
+
+ALLOWANCE_PAYLOAD_DAYS = 35
+
+
+def _archive_and_merge(daily_rows, account_sessions, labels):
+    """Write the daily usage archive when it is due (once a day, or when there
+    is none), then fill days the transcripts no longer cover. Live rows always
+    win; see usage_archive.merge."""
+    info = {"filledDays": [], "written": None, "error": None, "path": usage_archive.root()}
+    try:
+        if usage_archive.due():
+            info["written"] = usage_archive.write(daily_rows, account_sessions)
+        merged_daily, merged_sessions, filled = usage_archive.merge(
+            daily_rows, account_sessions, usage_archive.load(), labels)
+        info["filledDays"] = filled
+        return merged_daily, merged_sessions, info
+    except Exception as e:  # the archive must never break the dashboard
+        info["error"] = str(e)
+        return daily_rows, account_sessions, info
+
+
+def _record_allowance(payload):
+    """Append this read's plan-limit readings to allowance-history.jsonl and
+    attach the last few weeks of it to the payload."""
+    try:
+        allowance_history.record(payload.get("planInsights"), payload.get("maxUsage"))
+    except Exception:
+        pass
+    try:
+        since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=ALLOWANCE_PAYLOAD_DAYS)
+        payload["allowanceHistory"] = allowance_history.load(since=since.isoformat())
+    except Exception:
+        payload["allowanceHistory"] = []
 
 
 def sample_grokbot_usage():
@@ -660,6 +700,7 @@ def _attach_fresh_grokbot(payload):
     if report is not None:
         payload["grokBot"] = report
         payload["planInsights"] = _plan_insights_from(payload)
+        _record_allowance(payload)
 
 
 def digest_url():
@@ -695,6 +736,10 @@ def current_plan_insights(grokbot=None):
 def run_notification_checks(grokbot=None):
     try:
         plans = current_plan_insights(grokbot)
+        try:
+            allowance_history.record(plans, account_usage.get_max_usage_snapshots())
+        except Exception:
+            pass
         return notify.run_checks(plans, digest_url=digest_url())
     except Exception:
         return []
@@ -703,6 +748,17 @@ def run_notification_checks(grokbot=None):
 def _sampler_pass():
     report = sample_grokbot_usage()
     run_notification_checks(report)
+    _archive_if_due()
+
+
+def _archive_if_due():
+    """Once a day, and on the first start with no archive, refresh the usage
+    payload so the archive gets written even while the dashboard is closed."""
+    try:
+        if usage_archive.due():
+            get_usage(force=True)
+    except Exception:
+        pass
 
 
 def _grokbot_sampler_loop():
@@ -750,7 +806,13 @@ def get_digest(week):
     hit = _digest_cache.get(key)
     if hit is not None:
         return hit
-    result = digest.build_digest(usage, week=week)
+    start = week or digest.last_complete_week(datetime.date.today())[0]
+    try:
+        allowance = allowance_history.load(since=(start - datetime.timedelta(days=8)).isoformat(),
+                                           until=(start + datetime.timedelta(days=8)).isoformat())
+    except Exception:
+        allowance = []
+    result = digest.build_digest(usage, week=week, allowance=allowance)
     _digest_cache.clear()
     _digest_cache[key] = result
     return result
