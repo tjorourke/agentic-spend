@@ -291,6 +291,7 @@
 
   #chart, #acctChart, #modelDetailChart, #hourlyChart, #grokBotDailyChart, #grokBotHourlyChart, #grokBotWeeklyChart { width: 100%; height: 220px; overflow: visible; display: block; }
   #acctChart { height: 140px; }
+  #cacheReadChart { width: 100%; height: 110px; overflow: visible; display: block; }
   #hourlyChart { height: 180px; }
   #grokBotDailyChart, #grokBotHourlyChart, #grokBotWeeklyChart { height: 140px; }
   .tab-intro { margin: 0 0 0.9rem; font-size: 0.85rem; color: var(--muted); }
@@ -1383,6 +1384,18 @@ function emptyAxisLabelIndexes(n, maxLabels) {
 // Axes for a chart with nothing to plot: a zero baseline plus a zero value
 // (for example $0.00 or 0) over every column, instead of a blank box.
 // svg needs ownerDocument/createElementNS/appendChild/setAttribute (node tests fake them).
+// Every drawn chart goes through this: the viewBox is the element's real
+// pixel size (W from clientWidth, H fixed), so 1 SVG unit = 1 CSS pixel and
+// axis labels stay at their CSS font size at any card width. Without the
+// explicit height the browser sizes the SVG from the viewBox's aspect ratio
+// and scales the text with the card (1.8.3: Cache read labels were ~40px).
+function sizeSvg(svg, W, H) {
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+  if (!svg.style) return;   // test fakes
+  svg.style.width = '100%';
+  svg.style.height = H + 'px';
+}
 function drawEmptyAxes(svg, labels, zeroText, opts) {
   const o = opts || {};
   const ns = 'http://www.w3.org/2000/svg';
@@ -1390,7 +1403,7 @@ function drawEmptyAxes(svg, labels, zeroText, opts) {
   const W = o.width || 900, H = o.height || 170;
   const padL = 46, padR = 10, padT = 12, padB = 24;
   const base = H - padB, plotW = W - padL - padR;
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  sizeSvg(svg, W, H);
   const add = (tag, attrs, text) => {
     const el = doc.createElementNS(ns, tag);
     Object.keys(attrs).forEach(k => el.setAttribute(k, attrs[k]));
@@ -2062,7 +2075,7 @@ function drawChart(rows) {
     const total = models.reduce((s, m) => s + m[1], 0) || 1;
     const ns = 'http://www.w3.org/2000/svg';
     const W = svg.clientWidth || 900, rowH = 28, pad = 10;
-    svg.setAttribute('viewBox', `0 0 ${W} ${models.length * rowH + pad * 2}`);
+    sizeSvg(svg, W, models.length * rowH + pad * 2);
     models.forEach(([name, cost], i) => {
       const y = pad + i * rowH;
       const w = Math.max((cost / total) * (W - 260), 2);
@@ -2094,7 +2107,7 @@ function drawChart(rows) {
   labelSvg(svg, `Daily usage value from ${rows[0].period} to ${rows[rows.length - 1].period}, USD list price. Choose a bar to show that day.`);
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900, H = 220, padL = 46, padB = 22, padT = 10;
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  sizeSvg(svg, W, H);
 
   // top models across the window, rest bucketed as "Other"
   const modelTotals = {};
@@ -2191,7 +2204,7 @@ function drawHourlyChart(rows, extraNote) {
 
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900, H = 180, padL = 46, padB = 22, padT = 10;
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  sizeSvg(svg, W, H);
 
   const max = Math.max(...rows.map(r => r.cost), 0.01);
   const niceMax = max * 1.15;
@@ -2256,7 +2269,7 @@ function drawHourlyTokensChart(rows, extraNote) {
 
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900, H = 180, padL = 46, padB = 22, padT = 10;
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  sizeSvg(svg, W, H);
 
   const max = Math.max(...rows.map(r => (r.input || 0) + (r.output || 0)), 1);
   const niceMax = max * 1.15;
@@ -2352,7 +2365,7 @@ function drawTokensChart(rows) {
     const ns = 'http://www.w3.org/2000/svg';
     const W = svg.clientWidth || 900, rowH = 28, pad = 10;
     const segments = TOKEN_MAIN_KEYS.map(k => [k, t[k]]).filter(([, tok]) => tok > 0);
-    svg.setAttribute('viewBox', `0 0 ${W} ${segments.length * rowH + pad * 2}`);
+    sizeSvg(svg, W, segments.length * rowH + pad * 2);
     segments.forEach(([key, tok], i) => {
       const name = TOKEN_LABELS[key], color = TOKEN_COLORS[key];
       const y = pad + i * rowH;
@@ -2385,7 +2398,7 @@ function drawTokensChart(rows) {
   labelSvg(svg, `Daily tokens from ${rows[0].period} to ${rows[rows.length - 1].period}. Choose a bar to show that day.`);
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900, H = 220, padL = 46, padB = 22, padT = 10;
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  sizeSvg(svg, W, H);
 
   const dayTokens = rows.map(r => ({ period: r.period, ...tokensOfDay(r.value) }));
   const max = Math.max(...dayTokens.map(d => TOKEN_MAIN_KEYS.reduce((s, k) => s + d[k], 0)), 1);
@@ -2464,7 +2477,7 @@ function drawCacheReadChart(rows) {
   if (rows.length === 1) {
     note.textContent = rows[0].period;
     const H = 40, pad = 10;
-    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    sizeSvg(svg, W, H);
     const w = W - 10;
     const rect = document.createElementNS(ns, 'rect');
     rect.setAttribute('x', 5); rect.setAttribute('y', pad);
@@ -2482,7 +2495,7 @@ function drawCacheReadChart(rows) {
 
   note.textContent = `${rows[0].period} → ${rows[rows.length - 1].period}`;
   const H = 110, padL = 46, padB = 22, padT = 10;
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  sizeSvg(svg, W, H);
   const max = Math.max(...dayCacheRead.map(d => d.cacheRead), 1);
   const niceMax = max * 1.15;
   const plotW = W - padL - 10, plotH = H - padT - padB;
@@ -2648,7 +2661,7 @@ function drawAccountChart(rows) {
 
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900, H = 140, padL = 46, padB = 20, padT = 6;
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  sizeSvg(svg, W, H);
   const max = Math.max(...rows.map(r => buckets.reduce((s, b) => s + (r[b] || 0), 0)), 0.01);
   const niceMax = max * 1.15;
   const plotW = W - padL - 10, plotH = H - padT - padB;
@@ -4479,7 +4492,7 @@ function drawModelDetailChart(rows, heavySet) {
 
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900, H = 180, padL = 46, padB = 20, padT = 8;
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  sizeSvg(svg, W, H);
   const max = Math.max(...rows.map(r => r.cost), 0.01);
   const niceMax = max * 1.15;
   const plotW = W - padL - 10, plotH = H - padT - padB;
@@ -4814,7 +4827,7 @@ function drawPctBarChart(svg, rows, axisSuffix, ariaLabel, onPick) {
   labelSvg(svg, ariaLabel || '');
   const ns = 'http://www.w3.org/2000/svg';
   const W = svg.clientWidth || 900, H = 140, padL = 46, padB = 20, padT = 6;
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  sizeSvg(svg, W, H);
   if (!rows.length) return;
   const max = Math.max(...rows.map(r => r.value || 0), 0.01);
   const niceMax = max * 1.15;

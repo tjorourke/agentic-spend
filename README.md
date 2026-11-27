@@ -27,6 +27,9 @@ open "/Applications/Agentic Spend.app"
   hoc, not notarised: **System Settings > Privacy & Security > Open Anyway**. If the icon still
   doesn't show, **System Settings > Menu Bar > Allow in the Menu Bar > Agentic Spend**. The app
   stays open and shows these steps if macOS hides it.
+- **Icon still missing although Allow in the Menu Bar shows on?** macOS can keep a stale entry for
+  the app. Quit it, `brew uninstall --cask agentic-spend-app`, open **System Settings > Menu Bar**
+  once (macOS then drops the entry), `brew install --cask agentic-spend-app`, and approve it again.
 
 ## Screenshots
 
@@ -236,6 +239,18 @@ brew update && brew upgrade agentic-spend
   (excluding tax). On 26 Nov 2026, [claude.com/pricing](https://claude.com/pricing) still
   showed US dollars from a UK Mac, and neither ChatGPT's nor OpenCode's pricing pages could
   be read as a published UK pound list, so no GBP rows are shipped for those.
+
+## Version 1.8.3
+
+- **Menu bar icon, root cause found:** macOS (Control Center) keeps an Allow in the Menu Bar entry per
+  bundle id (`com.agenticspend.menubar`), not per signature: ad hoc rebuilds and upgrades keep it. If
+  the app is switched off there, its entry can stay blocked even after switching it back on. A fresh
+  install shows the icon after the usual Open Anyway approval. The help window and caveats now give
+  the reset (uninstall, open Menu Bar settings once, reinstall).
+- **Charts:** the Cache read chart (and every other drawn chart) now has a fixed pixel height, so its
+  axis labels stay the same size as the chart above at any window width.
+- **Dev builds:** `macos/build.sh` signs with a self-signed "Agentic Spend Local" certificate (or
+  `AGENTIC_SPEND_SIGN_IDENTITY`) when you have one; otherwise ad hoc, as releases are.
 
 ## Version 1.8.2
 
