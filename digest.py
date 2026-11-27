@@ -81,39 +81,64 @@ def _source_estimate(source, payload, start, end):
     return total
 
 
-def real_spend(payload, start, end):
-    """Same covered-versus-real rules as the Overview's cost card, applied to
-    one date range. Coverage reflects each plan's status now."""
+def week_spend(payload, start, end, peaks):
+    """Real, covered and not-known spend for a finished week, from what was
+    recorded during that week, never from a plan's status today.
+
+    ``peaks`` is {plan key: highest weekly % read during the week} (from
+    plan_peaks). A Claude account or Codex counts as covered when readings
+    that week stayed under 100%; at 100% extra usage may have been billed, and
+    with no readings we can't tell, so both are "not known" rather than a
+    guess. Grok CLI with a known plan, OpenCode backends you've marked as
+    included, and manual entries marked covered keep their own rules, because
+    those are settings rather than readings. Anything else is real spend."""
     sources = payload.get("sources") or []
     has_grok_cli = any(s.get("kind") == "local-live" for s in sources)
     plan_known = _grok_plan_known(payload)
-    real = 0.0
+    real = covered = unknown = 0.0
+    notes = []
+
+    def note(label, status, cost, peak=None):
+        if cost > 0.005:
+            notes.append({"label": label, "status": status, "cost": round(cost, 2),
+                          "peakPct": round(peak, 1) if peak is not None else None})
+
     for s in sources:
         if s.get("grokBot"):
             continue
-        if has_grok_cli and s.get("tool") == "grok" and s.get("kind") in ("manual", "none"):
-            continue
-        if has_grok_cli and s.get("tool") == "grok" and s.get("kind") == "unofficial-live":
+        if has_grok_cli and s.get("tool") == "grok" and s.get("kind") in ("manual", "none", "unofficial-live"):
             continue
         if s.get("kind") == "backends":
-            r, _covered, unknown = opencode_backends.real_and_covered(
+            r, c, u = opencode_backends.real_and_covered(
                 payload.get("daily"), s.get("opencodeBackends"), lambda p: _in(p, start, end))
-            real += r + unknown
+            real, covered, unknown = real + r, covered + c, unknown + u
+            note("OpenCode", "split", r + c + u)
             continue
         estimate = _source_estimate(s, payload, start, end)
-        mu = s.get("maxUsage") or {}
-        covered = (
-            (s.get("tool") == "claude" and (mu.get("usageCredits") or {}).get("usedMinor") == 0)
-            or (s.get("tool") == "codex" and s.get("kind") == "official-live"
-                and (s.get("codexLive") or {}).get("ordinaryUsageAllowed") is not False)
-            or (s.get("tool") == "grok" and s.get("kind") == "unofficial-live"
-                and ((s.get("grokBilling") or {}).get("onDemandUsedUsd") or 0) == 0)
-            or (s.get("kind") == "local-live" and plan_known and s.get("costKnown") is not False)
-            or (s.get("kind") == "manual" and s.get("coveredByPlan"))
-        )
-        if not covered:
+        tool = s.get("tool")
+        label = s.get("label") or tool
+        on_plan = (tool == "claude" and s.get("maxUsage")) or (tool == "codex" and s.get("kind") == "official-live")
+        if on_plan:
+            key = "claude:" + str(s.get("id")) if tool == "claude" else "codex:primary"
+            peak = peaks.get(key)
+            if peak is None:
+                unknown += estimate
+                note(label, "no-readings", estimate)
+            elif peak >= 100:
+                unknown += estimate
+                note(label, "hit-limit", estimate, peak)
+            else:
+                covered += estimate
+                note(label, "covered", estimate, peak)
+            continue
+        if (s.get("kind") == "local-live" and plan_known and s.get("costKnown") is not False) \
+                or (s.get("kind") == "manual" and s.get("coveredByPlan")):
+            covered += estimate
+            note(label, "covered", estimate)
+        else:
             real += estimate
-    return real
+            note(label, "real", estimate)
+    return {"real": real, "covered": covered, "unknown": unknown, "notes": notes}
 
 
 def _week_totals(payload, start, end):
@@ -145,7 +170,46 @@ def _week_totals(payload, start, end):
             m["cost"] += mb.get("cost") or 0.0
             m["tokens"] += (mb.get("inputTokens") or 0) + (mb.get("outputTokens") or 0)
             _add_split(m["tok"], _split([mb]))
+    have = {d["date"] for d in days}
+    day = start
+    while day <= end:
+        if day.isoformat() not in have:
+            days.append({"date": day.isoformat(), "cost": 0.0, "tokens": 0, "tok": dict.fromkeys(TOKEN_KINDS, 0)})
+        day += datetime.timedelta(days=1)
     return list_total, tokens, sorted(days, key=lambda x: x["date"]), agents, models, agent_tokens, agent_split, week_split
+
+
+def _agent_rows(payload, start, end, agents, agent_tokens, agent_split):
+    """By-agent rows for the report, with Claude Code split by account (the
+    same split the Projects and account tabs use). The account rows are scaled
+    to the Claude total so the table still adds up to the week's figure."""
+    rows = []
+    for k, v in sorted(agents.items(), key=lambda kv: -kv[1]):
+        if not (v > 0 or agent_tokens.get(k, 0) > 0):
+            continue
+        base = {"agent": k, "cost": round(v, 2), "tokens": agent_tokens.get(k, 0),
+                "tok": agent_split.get(k, dict.fromkeys(TOKEN_KINDS, 0))}
+        if k != "claude":
+            rows.append(base)
+            continue
+        per = {}
+        for s in payload.get("accountSessions") or []:
+            if (s.get("agent") or "claude") != "claude" or not _in(s.get("period"), start, end):
+                continue
+            label = s.get("label") or "Unassigned"
+            b = per.setdefault(label, {"cost": 0.0})
+            b["cost"] += s.get("totalCost") or 0.0
+        total = sum(b["cost"] for b in per.values())
+        if len(per) < 2 or total <= 0:
+            rows.append(base)
+            continue
+        scale = v / total
+        for label, b in sorted(per.items(), key=lambda kv: -kv[1]["cost"]):
+            share = b["cost"] / total
+            tok = {t: round(base["tok"].get(t, 0) * share) for t in TOKEN_KINDS}
+            rows.append({"agent": "claude", "account": label, "cost": round(b["cost"] * scale, 2),
+                         "tokens": round(base["tokens"] * share), "tok": tok})
+    return rows
 
 
 def _top_projects(payload, start, end, limit=5):
@@ -158,7 +222,7 @@ def _top_projects(payload, start, end, limit=5):
         b["cost"] += s.get("totalCost") or 0.0
         b["tokens"] += _real_tokens(s.get("modelBreakdowns"))
         _add_split(b["tok"], _split(s.get("modelBreakdowns")))
-        b["sessions"] += s.get("sessions") or 1
+        b["sessions"] += 1 if s.get("sessions") is None else s["sessions"]
     rows = sorted(agg.values(), key=lambda r: -r["cost"])[:limit]
     for r in rows:
         r["cost"] = round(r["cost"], 2)
@@ -352,13 +416,18 @@ def build_digest(payload, today=None, tz=None, now=None, week=None, allowance=No
     prev_list, prev_tokens = _week_totals(payload, pstart, pend)[:2]
     earliest = min((d.get("period", "")[:10] for d in payload.get("daily") or [] if d.get("period")), default=None)
     has_prev = bool(earliest) and earliest <= pend.isoformat()
-    real = real_spend(payload, start, end)
+    plans = plan_peaks(payload, start, end, tz, allowance)
+    split = week_spend(payload, start, end, {r["key"]: r["peakPct"] for r in plans})
+    real, covered = split["real"], split["covered"]
+    # Whatever no source accounts for (rounding, or usage no source claims)
+    # is shown as not known rather than quietly counted as covered.
+    unknown = max(0.0, list_total - real - covered)
 
     earliest_start = None
     if earliest:
         e = datetime.date.fromisoformat(earliest)
         earliest_start = e - datetime.timedelta(days=e.weekday())
-    has_data = bool(days) or bool(list_total)
+    has_data = any(d["cost"] or d["tokens"] for d in days) or bool(list_total)
     return {
         "hasData": has_data,
         "latestWeekStart": latest_start.isoformat(),
@@ -371,7 +440,10 @@ def build_digest(payload, today=None, tz=None, now=None, week=None, allowance=No
         "spend": {
             "list": round(list_total, 2),
             "real": round(real, 2),
-            "covered": round(max(0.0, list_total - real), 2),
+            "covered": round(covered, 2),
+            "unknown": round(unknown, 2),
+            "notes": split["notes"],
+            "basis": "readings-that-week",
             "previousList": round(prev_list, 2) if has_prev else None,
             "changePct": insights.pct_change(list_total, prev_list) if has_prev else None,
         },
@@ -382,13 +454,11 @@ def build_digest(payload, today=None, tz=None, now=None, week=None, allowance=No
             "changePct": insights.pct_change(tokens, prev_tokens) if has_prev else None,
         },
         "days": days,
-        "agents": [{"agent": k, "cost": round(v, 2), "tokens": agent_tokens.get(k, 0),
-                    "tok": agent_split.get(k, dict.fromkeys(TOKEN_KINDS, 0))}
-                   for k, v in sorted(agents.items(), key=lambda kv: -kv[1]) if v > 0 or agent_tokens.get(k, 0) > 0],
+        "agents": _agent_rows(payload, start, end, agents, agent_tokens, agent_split),
         "topModels": [{"model": k, "cost": round(v["cost"], 2), "tokens": v["tokens"], "tok": v["tok"]}
                       for k, v in sorted(models.items(), key=lambda kv: -kv[1]["cost"])[:5]],
         "topProjects": _top_projects(payload, start, end),
-        "plans": plan_peaks(payload, start, end, tz, allowance),
+        "plans": plans,
         "allowance": plan_series(payload, start, end, tz, allowance),
         "seatValue": seat_value_week(payload, start, end),
     }

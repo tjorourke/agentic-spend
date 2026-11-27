@@ -42,7 +42,7 @@ class LayoutTests(unittest.TestCase):
         self.assertIn("if (sourcePresent('grok-bot')) agents.add('grok');", html())
 
     def test_agent_picker_hidden_on_overview(self):
-        self.assertIn("t === 'accounts' || t === 'overview' || noRange", html())
+        self.assertIn("(t === 'overview' || noRange)", html())
 
     def test_plan_rows_have_an_obvious_toggle(self):
         src = html()
@@ -150,7 +150,7 @@ class HelperTests(unittest.TestCase):
 
     def test_chart_uses_the_selected_range(self):
         src = html()
-        self.assertIn("drawLast14(days, cutoff, windowEnd);", src)
+        self.assertIn("drawLast14(days, cutoff, windowEnd, mode);", src)
         self.assertIn("rangeSeries(days, cutoff, windowEnd, agent)", src)
 
     def test_stale_forecast_is_not_a_warning(self):

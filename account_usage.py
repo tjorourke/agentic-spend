@@ -662,14 +662,24 @@ def run_ccusage_sessions(since=None):
     return json.loads(result.stdout)["session"]
 
 
-def compute_accounts(session_rows, session_account_map=None, labels=None, session_project_map=None):
+def compute_accounts(session_rows, session_account_map=None, labels=None, session_project_map=None,
+                     day_weights=None, claude_daily=None):
     """Pure aggregation: session rows (from `ccusage session --json`) -> per-account totals.
 
     Does not call ccusage or re-scan disk itself — pass in session_account_map
     and session_project_map (both from build_session_account_map()) and
     labels (from load_labels()) so callers that already have them (e.g. the
     dashboard server) don't repeat that work on every request.
+
+    day_weights (from session_days.collect()) spreads each session's cost over
+    the days it ran, one account_sessions row per day, so per-day and per-range
+    account totals match ccusage's daily figures. The day with the session's
+    last activity carries "sessions": 1 and the others 0, so session counts
+    stay the same. Without weights a session sits on its last-activity day.
+    claude_daily ({day: cost} from ccusage daily) lets the split match those
+    daily figures to the cent (see session_days.reconcile).
     """
+    import session_days
     if session_account_map is None:
         session_account_map, session_project_map = build_session_account_map()
     if session_project_map is None:
@@ -683,6 +693,7 @@ def compute_accounts(session_rows, session_account_map=None, labels=None, sessio
     account_sessions = []  # flat per-session rows, so the UI can re-aggregate per-account over any date range
 
     grok_email = detect_grok_email()
+    split_rows = []
 
     def add_daily(date, bucket_label, cost):
         if not date:
@@ -713,18 +724,8 @@ def compute_accounts(session_rows, session_account_map=None, labels=None, sessio
         else:
             meta = labels.get(acct, {"label": f"Unlabeled account ({acct[:8]}…)", "note": None})
         bucket_label = meta["label"]  # real email whenever we've ever seen this account log in locally
-        add_daily(last_activity, bucket_label, row.get("totalCost", 0.0))
-
-        account_sessions.append({
-            "period": last_activity,
-            "accountUuid": acct,
-            "label": bucket_label,
-            "note": meta.get("note"),
-            "project": session_project_map.get(session_id) or "Unattributed (no cwd recorded)",
-            "totalCost": row.get("totalCost", 0.0),
-            "totalTokens": row.get("totalTokens", 0),
-            "modelBreakdowns": row.get("modelBreakdowns", []),
-        })
+        pieces = session_days.split_session(row, last_activity, (day_weights or {}).get(session_id))
+        split_rows.append((pieces, last_activity, acct, bucket_label, meta, session_id))
 
         bucket = accounts.setdefault(acct, {
             "cost": 0.0, "sessions": 0, "tokens": 0,
@@ -740,6 +741,25 @@ def compute_accounts(session_rows, session_account_map=None, labels=None, sessio
                 bucket["last"] = last_activity
         for mb in row.get("modelBreakdowns", []):
             bucket["models"][mb["modelName"]] = bucket["models"].get(mb["modelName"], 0.0) + mb["cost"]
+
+    if claude_daily:
+        fitted = session_days.reconcile([r[0] for r in split_rows], claude_daily)
+        split_rows = [(f,) + r[1:] for f, r in zip(fitted, split_rows)]
+    for pieces, last_activity, acct, bucket_label, meta, session_id in split_rows:
+        count_day = last_activity if any(p[0] == last_activity for p in pieces) else pieces[-1][0]
+        for day, cost, tokens, breakdowns in pieces:
+            add_daily(day, bucket_label, cost)
+            account_sessions.append({
+                "period": day,
+                "accountUuid": acct,
+                "label": bucket_label,
+                "note": meta.get("note"),
+                "project": session_project_map.get(session_id) or "Unattributed (no cwd recorded)",
+                "totalCost": cost,
+                "totalTokens": tokens,
+                "modelBreakdowns": breakdowns,
+                "sessions": 1 if day == count_day else 0,
+            })
 
     account_list = []
     for acct, bucket in accounts.items():

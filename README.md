@@ -51,10 +51,6 @@ There's no menu bar app on Linux; the dashboard and `agentic-spend` work the sam
 
 ![Days](screenshots/days.png?v=3)
 
-**Accounts** — real plan-limit usage per Claude account, live from the status line:
-
-![Accounts](screenshots/accounts.png?v=3)
-
 **Settings** — every source Agentic Spend found, theme toggle, live-usage setup:
 
 ![Settings](screenshots/settings.png?v=3)
@@ -254,6 +250,45 @@ brew update && brew upgrade agentic-spend
   (excluding tax). On 26 Nov 2026, [claude.com/pricing](https://claude.com/pricing) still
   showed US dollars from a UK Mac, and neither ChatGPT's nor OpenCode's pricing pages could
   be read as a published UK pound list, so no GBP rows are shipped for those.
+
+## Version 1.8.7
+
+- **A Claude session is now split across the days it ran.** Before, a session that ran from
+  Monday into Wednesday put all of its cost on Wednesday, so per-account and per-day figures
+  drifted from ccusage's daily totals. Each session's cost is now shared out by the work done on
+  each day, read from Claude Code's own transcripts (subagent files included), then fitted to
+  ccusage's daily totals. On my Mac, the days in the last 30 that were off by more than 5 cents
+  went from 17 to none. Range totals barely move. Per-account and per-day figures do, by design.
+  The transcripts are read once and cached in `session-days-cache.json` in the data folder, so
+  later refreshes only read what was added.
+- **The Accounts page is gone. Its content is on each tool tab.** Every tab has a Limits section
+  with one line per plan or account, and "Show details" opens the full card as before (plan
+  history, credits, reset times). An old link to `?tab=accounts` opens Overview. Accounts are
+  renamed in one place, Settings, Account names.
+- **One daily chart instead of two.** The Overview chart has a By agent, By account and Totals
+  switch (By token type in Tokens mode), and remembers your choice. On a tab with one account,
+  widgets that would show a single series are hidden. "What's covered" only shows on Overview.
+  The Grok Bot charts say "% of weekly limit, not priced", because that is what they are.
+- **Days.** Account names match the tabs. Under 30 days there is a stacked bar chart per day
+  instead of the heatmap. Each row has a coloured amount per account and tool, and opens to show
+  that day by agent and model. "Show day" still jumps to the day.
+- **Projects.** One colour per account, the same one used everywhere else, and an inline bar for
+  each project's share. Codex, OpenCode and Grok Bot don't record which project folder they
+  ran in, so a note under the table names any of them with usage in the range, and its amount.
+- **Weekly report.** All seven days are shown, including quiet ones. Claude Code in By agent is
+  split by account. An empty plan limits card is one line. Real spend for a past week now comes
+  only from plan readings taken that week: a Claude account under its limit counts as covered,
+  one that hit its limit or has no readings that week counts as not known. It used to borrow
+  today's plan status, which made old weeks look fully covered. "How the week's spend was
+  counted" lists the reason for each tool.
+- **Settings.** Links to each section stay at the top as you scroll, and the Save bar stays at
+  the bottom. Sources with no data are one line, not a row each. Personal Claude's status reads
+  "live, 2 days old" as it does on Overview, rather than "live". The Grok manual note no longer
+  shows as a stale source next to the Grok CLI. Its plan still decides whether Grok CLI usage
+  counts as covered, so it's shown on the Grok CLI row. Every seat price uses the same currency
+  picker, with the account's billing currency marked.
+- **OpenCode backends that need a decision.** When OpenCode has backends whose billing can't be
+  worked out, the closed OpenCode row on Overview says how many and links to Settings.
 
 ## Version 1.8.6
 
@@ -620,8 +655,8 @@ match a manual plan note you've saved, the UI flags it rather than silently pref
   The card shows the plan name, weekly percentage, reset time (local, with a countdown), extra
   credits, and a short history of the percentage. Overview also shows usage by day, derived
   from positive increases in that history within the same weekly window, and a today figure
-  when you are looking at a single day. On a 30-day or all-time range, and on the Accounts
-  card, a "Grok Bot by week" chart shows the highest weekly share reached in each weekly
+  when you are looking at a single day. On a 30-day or all-time range, and in the
+  Grok tab's Limits section, a "Grok Bot by week" chart shows the highest weekly share reached in each weekly
   window. History is kept for 400 days. Readings from the last 14 days are stored in full
   (still dropping unchanged samples within 30 minutes); older readings are downsampled to
   one per hour, plus each window's last reading before reset, so the file stays modest. A
@@ -636,7 +671,7 @@ match a manual plan note you've saved, the UI flags it rather than silently pref
   JSON snapshot (or a pasted usage report) to `http://127.0.0.1:8787/api/grokbot`, or write
   the file directly if the server is down. Several Grok Bot accounts each keep their own
   history, keyed by the account id in the cache filename.
-- **Plan usage over time** (on the Accounts page) — a chart of the 5h/weekly/30-day window
+- **Plan usage over time** (in each tool tab's Limits section, under Show details) — a chart of the 5h/weekly/30-day window
   percentage, not just the current reading. Claude's history accumulates going forward from the
   status line; Codex's is backfilled for real from its own rollout files, which already carry a
   rate-limit sample on nearly every reply.

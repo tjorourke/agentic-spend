@@ -11,8 +11,8 @@ whose plan is unknown, or whose plan has no public price, shows "set seat
 price".
 
 The API-equivalent figure is ccusage's own cost for that account's sessions
-(LiteLLM list prices, in US dollars), month to date, attributed by each
-session's last-active day. It is not converted: when the seat is billed in
+(LiteLLM list prices, in US dollars), month to date, with each
+session split across the days it ran. It is not converted: when the seat is billed in
 another currency we show both amounts side by side rather than inventing an
 exchange rate.
 """
@@ -187,7 +187,7 @@ def team_value(max_usage, account_sessions, prices, today=None, detections=None,
     """One entry per subscription account: each Claude account with a plan
     reading, plus every other tool plan detection knows about (Codex, Grok,
     OpenCode, other ccusage sources). Month to date. Claude accounts are
-    attributed by session last-active day; other tools use ccusage's daily
+    attributed per day, each session split across the days it ran; other tools use ccusage's daily
     per-agent cost (one account each)."""
     today = today or datetime.date.today()
     start = start or today.replace(day=1)
@@ -211,7 +211,7 @@ def team_value(max_usage, account_sessions, prices, today=None, detections=None,
             period = (s.get("period") or "")[:10]
             if month_start <= period <= today_s:
                 api += float(s.get("totalCost") or 0.0)
-                sessions += 1
+                sessions += 1 if s.get("sessions") is None else s["sessions"]
         out.append(_value_entry(uuid, mu.get("label"), "claude", api, sessions, month_start, today_s,
                                 currencies.get(uuid), (prices or {}).get(uuid), det.get(uuid), table,
                                 region_currency=region_currency, fraction=fraction,
