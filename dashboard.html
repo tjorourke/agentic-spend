@@ -2309,7 +2309,7 @@ function dayForAgent(day, agentFilter) {
 // Same {period, value:{totalCost, modelBreakdowns, agentsPresent}} shape as the
 // tool filter below, so every existing render (chart, models table, days table/
 // heatmap) works unchanged whether filtering by tool or by one Claude account —
-// this is what brings Accounts data into the rest of the pages.
+// this is what brings per-account data into the rest of the pages.
 function rowsForFilter(days, accountSessions, filterValue) {
   if (typeof filterValue === 'string' && filterValue.startsWith('account:')) {
     // accountSessions is session-level (several rows can share a period, e.g.
@@ -4275,7 +4275,7 @@ function renderDigest() {
 
 // Background prefetch (1.8.2): once the Overview has painted, fetch what the
 // other tabs would fetch on open (Weekly report, Settings) at idle priority,
-// so switching tabs is instant. Projects and Accounts render from /api/usage,
+// so switching tabs is instant. Projects and the Limits sections render from /api/usage,
 // which the Overview already loaded. One request in flight per endpoint:
 // loadDigest and loadAppSettings both guard against overlap. ?prefetch=0 turns
 // it off (used to measure the difference).
