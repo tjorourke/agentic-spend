@@ -256,7 +256,7 @@ class WeeklyReportTests(unittest.TestCase):
         p["sources"] = [{"tool": "opencode", "kind": "backends", "opencodeBackends": {
             "daily": {"2026-11-18": {"m": {"google": 0.5, "sub": 0.5}}},
             "providers": {"google": {"realSpend": True}, "sub": {"realSpend": False}}}}]
-        self.assertAlmostEqual(digest.real_spend(p, datetime.date(2026, 11, 16), datetime.date(2026, 11, 22)), 15.0)
+        self.assertAlmostEqual(digest.week_spend(p, datetime.date(2026, 11, 16), datetime.date(2026, 11, 22), {})["real"], 15.0)
 
 
 # ---------------------------------------------------------------- dashboard JS

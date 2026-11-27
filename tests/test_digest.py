@@ -60,9 +60,12 @@ class DigestTests(unittest.TestCase):
         d = digest.build_digest(payload(), today=datetime.date(2026, 11, 26), tz=UTC)
         self.assertEqual(d["weekStart"], "2026-11-16")
         self.assertEqual(d["spend"]["list"], 16.0)
-        # Claude covered (no credits used); opencode has no plan, so it is real.
+        # No Claude plan reading that week, so its $10 is "not known" (1.8.7:
+        # today's plan status is never applied to a past week); opencode has
+        # no plan, so it is real.
         self.assertEqual(d["spend"]["real"], 6.0)
-        self.assertEqual(d["spend"]["covered"], 10.0)
+        self.assertEqual(d["spend"]["unknown"], 10.0)
+        self.assertEqual(d["spend"]["covered"], 0.0)
         self.assertEqual(d["spend"]["previousList"], 5.0)
         self.assertEqual(d["spend"]["changePct"], 220.0)
         self.assertEqual(d["tokens"]["total"], 300)
