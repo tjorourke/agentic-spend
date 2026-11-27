@@ -211,6 +211,9 @@
   #limitsRows .limit-detail { padding: 0.6rem 0.9rem 0.9rem 2rem; }
   #limitsRows .limit-detail:not(.account-card) { display: block; }
   #limitsRows .limit-detail .card-head h2 { font-size: 0.85rem; }
+  .day-pill { display: inline-flex; align-items: center; gap: 0.3rem; margin: 0.1rem 0.25rem 0.1rem 0; }
+  .day-pill .swatch { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+  .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
   .h2-unit { font-size: 0.74rem; font-weight: 400; color: var(--muted); margin-left: 0.35rem; }
   /* one look for every real action button: filled purple primary, outlined secondary */
   .btn, .btn-primary {
@@ -1018,6 +1021,11 @@
 
   <section id="view-days" class="view">
     <div class="card">
+      <div id="dayChartWrap" hidden>
+        <div class="stack-legend" id="dayChartLegend"></div>
+        <svg id="dayChart" role="img" aria-label="Usage value by day, stacked by account and tool"></svg>
+        <div class="muted" style="font-size:0.78rem; margin:0.3rem 0 0.6rem;">Click a bar to show that day on every page. Ranges of 30 days or more show a calendar instead.</div>
+      </div>
       <div id="dayHeatmap" class="day-heatmap"></div>
       <div class="toolbar">
         <span class="muted" id="dayCount"></span>
@@ -1025,12 +1033,14 @@
       <table id="dailyTable">
         <thead><tr>
           <th data-k="period" aria-sort="none"><button type="button" class="th-sort">Date <span class="chev">&#9662;</span></button></th>
-          <th data-k="agents" aria-sort="none"><button type="button" class="th-sort">Agents <span class="chev">&#9662;</span></button></th>
+          <th data-k="agents" aria-sort="none"><button type="button" class="th-sort">Accounts and tools <span class="chev">&#9662;</span></button></th>
           <th class="right" data-k="tokens" aria-sort="none"><button type="button" class="th-sort">Tokens <span class="chev">&#9662;</span></button></th>
           <th class="right" data-k="totalCost" aria-sort="none" title="USD list price"><button type="button" class="th-sort">Usage value <span class="chev">&#9662;</span></button></th>
+          <th class="right"><span class="sr-only">Show the day</span></th>
         </tr></thead>
         <tbody></tbody>
       </table>
+      <div class="muted" style="font-size:0.78rem; margin-top:0.5rem;">Click a row for its split by account, tool and model. "Show day" sets every page to that day.</div>
     </div>
   </section>
 
@@ -4611,6 +4621,114 @@ function renderSettingsPage() {
 const DH_WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const DH_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
+// 1.8.7: one day's usage split by account (Claude, Grok CLI) and tool, with
+// the same names and colours as the tabs. Claude and Grok sessions carry the
+// account; their parts are scaled to that day's ccusage figure for the tool,
+// and anything the sessions don't cover is Unassigned.
+function daySplitParts(day, sessions, filterValue) {
+  const parts = {};
+  const add = (name, cost, tv) => {
+    const p = parts[name] || (parts[name] = { name, cost: 0, tok: zeroTok() });
+    p.cost += cost || 0;
+    if (tv) addTok(p.tok, tv);
+  };
+  const daySessions = (sessions || []).filter(r => r.period === day.period);
+  if (String(filterValue).startsWith('account:')) {
+    const id = String(filterValue).slice('account:'.length);
+    daySessions.filter(r => r.accountUuid === id).forEach(r => {
+      const tv = zeroTok();
+      (r.modelBreakdowns || []).forEach(mb => addTok(tv, tokVec(mb)));
+      add(accountBucketName(r), r.totalCost, tv);
+    });
+  } else {
+    (day.agents || []).forEach(sub => {
+      if (filterValue && filterValue !== 'all' && sub.agent !== filterValue) return;
+      const subTok = zeroTok();
+      (sub.modelBreakdowns || []).forEach(mb => addTok(subTok, tokVec(mb)));
+      if (sub.agent !== 'claude' && sub.agent !== 'grok') { add(AGENT_BUCKET_NAMES[sub.agent] || sub.agent, sub.totalCost, subTok); return; }
+      const mine = daySessions.filter(r => (sub.agent === 'grok') === isGrokCliSession(r));
+      const byName = {};
+      mine.forEach(r => { byName[accountBucketName(r)] = (byName[accountBucketName(r)] || 0) + (r.totalCost || 0); });
+      const sum = Object.values(byName).reduce((a, b) => a + b, 0);
+      const total = sub.totalCost || 0;
+      if (sum <= 0) { add(sub.agent === 'grok' ? 'Grok' : 'Unassigned', total, subTok); return; }
+      // A few cents between the session split and the day's figure is
+      // rounding; spread it rather than show a tiny Unassigned part.
+      const scale = (sum >= total || total - sum <= Math.max(0.05, 0.01 * total)) ? total / sum : 1;
+      Object.entries(byName).forEach(([n, c]) => {
+        const share = total > 0 ? (c * scale) / total : 0;
+        const tv = zeroTok();
+        addTok(tv, subTok, share);
+        add(n, c * scale, tv);
+      });
+      const rest = total - sum * scale;
+      if (rest > 0.005) {
+        const tv = zeroTok();
+        addTok(tv, subTok, total > 0 ? rest / total : 0);
+        add(sub.agent === 'grok' ? 'Grok' : 'Unassigned', rest, tv);
+      }
+    });
+  }
+  return Object.values(parts).filter(p => p.cost > 0.0049 || tokIO(p.tok) > 0)
+    .sort((a, b) => b.cost - a.cost).map(p => ({ ...p, colour: seriesColour(p.name) }));
+}
+function drawDayChart(rows, cutoff, windowEnd) {
+  const svg = document.getElementById('dayChart');
+  const legend = document.getElementById('dayChartLegend');
+  if (!svg) return;
+  const filled = fillCalendarDays(rows, cutoff, windowEnd, period => ({ period, parts: [] }));
+  const names = [];
+  const totals = {};
+  filled.forEach(r => r.parts.forEach(p => { if (!(p.name in totals)) names.push(p.name); totals[p.name] = (totals[p.name] || 0) + p.cost; }));
+  names.sort((a, b) => totals[b] - totals[a]);
+  legend.innerHTML = names.map(n => `<span><span class="swatch" style="background:${seriesColour(n)}"></span>${escHtml(n)} <span class="tnum muted">${fmt(totals[n])}</span></span>`).join('');
+  const W = (svg.parentElement && svg.parentElement.clientWidth - 10) || 900, H = 170, padL = 52, padB = 22, padT = 8;
+  sizeSvg(svg, W, H);
+  const max = Math.max(0, ...filled.map(r => r.parts.reduce((a, p) => a + p.cost, 0))) || 1;
+  const bw = (W - padL - 8) / Math.max(1, filled.length);
+  let out = '';
+  for (let g = 0; g <= 2; g++) {
+    const v = max * g / 2, yy = H - padB - (H - padB - padT) * g / 2;
+    out += `<line x1="${padL}" x2="${W - 4}" y1="${yy}" y2="${yy}" stroke="var(--border)"/><text x="${padL - 6}" y="${yy + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${escHtml(fmt(v))}</text>`;
+  }
+  filled.forEach((r, i) => {
+    let y0 = H - padB;
+    const x = padL + i * bw + bw * 0.15, w = bw * 0.7;
+    const total = r.parts.reduce((a, p) => a + p.cost, 0);
+    const tip = `${r.period}: ${fmt(total)}` + names.map(n => { const p = r.parts.find(q => q.name === n); return p && p.cost > 0 ? `\n${n} ${fmt(p.cost)}` : ''; }).join('');
+    out += `<g class="day-bar" data-period="${r.period}"><title>${escHtml(tip)}</title>`;
+    names.forEach(n => {
+      const p = r.parts.find(q => q.name === n);
+      if (!p || !(p.cost > 0)) return;
+      const h = (H - padB - padT) * p.cost / max;
+      y0 -= h;
+      out += `<rect x="${x}" y="${y0}" width="${w}" height="${Math.max(h, 0.5)}" fill="${seriesColour(n)}" rx="2"/>`;
+    });
+    out += `<rect x="${padL + i * bw}" y="${padT}" width="${bw}" height="${H - padB - padT}" fill="transparent"/></g>`;
+    out += `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle" font-size="10" fill="var(--muted)">${r.period.slice(5)}</text>`;
+  });
+  svg.innerHTML = out;
+  labelSvg(svg, `Usage value by day, ${cutoff} to ${windowEnd}, stacked by account and tool`);
+  svg.querySelectorAll('.day-bar').forEach(g => makePickable(g, `Show ${g.dataset.period}`, () => setSingleDay(g.dataset.period)));
+}
+const expandedDays = new Set();
+function dayDetailHtml(r) {
+  const partRows = r.parts.map(p => `<tr><td><span class="swatch" style="background:${p.colour};"></span> ${escHtml(p.name)}</td><td class="right tnum" title="${escAttr(tokTitle(p.tok))}">${fmtTok(Math.round(tokIO(p.tok)))}</td><td class="right tnum">${fmt(p.cost)}</td></tr>`).join('');
+  const models = {};
+  (r.models || []).forEach(mb => {
+    const m = models[mb.modelName] || (models[mb.modelName] = { cost: 0, tok: zeroTok() });
+    m.cost += mb.cost || 0;
+    addTok(m.tok, tokVec(mb));
+  });
+  const modelRows = Object.entries(models).sort((a, b) => b[1].cost - a[1].cost)
+    .map(([n, m]) => `<tr><td class="model-name">${escHtml(n)}</td><td class="right tnum" title="${escAttr(tokTitle(m.tok))}">${fmtTok(Math.round(tokIO(m.tok)))}</td><td class="right tnum">${fmt(m.cost)}</td></tr>`).join('');
+  const grok = r.grokBotPct > 0 ? `<div class="muted" style="margin-top:0.4rem;">Grok Bot ${escHtml(signedPct(r.grokBotPct))}% of its weekly limit (not priced)</div>` : '';
+  return `<div class="proj-detail-grid">
+    <div class="proj-detail-col"><div class="proj-detail-title">Accounts and tools</div><table class="mini-table"><thead><tr><th>Name</th><th class="right">Tokens</th><th class="right">Usage value</th></tr></thead><tbody>${partRows || '<tr><td colspan="3" class="muted">None</td></tr>'}</tbody></table>${grok}</div>
+    <div class="proj-detail-col"><div class="proj-detail-title">Models</div><table class="mini-table"><thead><tr><th>Model</th><th class="right">Tokens</th><th class="right">Usage value</th></tr></thead><tbody>${modelRows || '<tr><td colspan="3" class="muted">None</td></tr>'}</tbody></table></div>
+  </div>`;
+}
+
 function renderDayHeatmap(windowed, cutoff, windowEnd, grokByDate) {
   const box = document.getElementById('dayHeatmap');
   const byPeriod = {};
@@ -6100,7 +6218,7 @@ function update() {
   const builtKey = [...agents].join(',') + '|' + claudeAccounts.map(a => a.id + ':' + (a.label || '')).join(',') + '|' + grokAccounts.map(a => a.accountUuid + ':' + (a.label || '')).join(',');
   if (sel.options.length <= 1 || sel.dataset.built !== builtKey) {
     const prev = agent;
-    const toolOptions = [...agents].sort().map(a => `<option value="${escAttr(a)}">${escHtml(a)}</option>`).join('');
+    const toolOptions = [...agents].sort().map(a => `<option value="${escAttr(a)}">${escHtml(agentName(a))}</option>`).join('');
     const acctOptions = claudeAccounts.map(a => `<option value="account:${escAttr(a.id)}">${escHtml(a.label)}</option>`).join('');
     const grokOptions = grokAccounts.map(a => `<option value="account:${escAttr(a.accountUuid)}">${escHtml(a.label)}</option>`).join('');
     sel.innerHTML = '<option value="all">All agents</option>'
@@ -6345,33 +6463,47 @@ function update() {
   if (showGrokBotUsage(agent)) {
     grokBotDaysInRange(cutoff, windowEnd).forEach(d => { grokByDate[d.date] = d.usedPct || 0; });
   }
-  if (tab === 'days') renderDayHeatmap(windowed, cutoff, windowEnd, grokByDate);
+  const dayCalendarDays = inclusiveDayCount(cutoff, windowEnd);
+  const dayParts = {};
+  if (tab === 'days') {
+    days.filter(d => d.period >= cutoff && d.period <= windowEnd).forEach(d => { dayParts[d.period] = daySplitParts(d, data.accountSessions, agent); });
+    const useChart = dayCalendarDays < 30;
+    document.getElementById('dayChartWrap').hidden = !useChart;
+    document.getElementById('dayHeatmap').hidden = useChart;
+    if (useChart) drawDayChart(Object.entries(dayParts).map(([period, parts]) => ({ period, parts })), cutoff, windowEnd);
+    else renderDayHeatmap(windowed, cutoff, windowEnd, grokByDate);
+  }
   const totalTokensOf = v => (v ? v.modelBreakdowns.reduce((s, mb) => s + (mb.inputTokens || 0) + (mb.outputTokens || 0) + (mb.cacheReadTokens || 0) + (mb.cacheCreationTokens || 0), 0) : 0);
   let dailyRows = windowed
     .map(d => ({
-      period: d.period, agents: d.value.agentsPresent.join(','), totalCost: d.value.totalCost, agentsPresent: d.value.agentsPresent,
+      period: d.period, totalCost: d.value.totalCost, agentsPresent: d.value.agentsPresent,
+      parts: dayParts[d.period] || [], models: d.value.modelBreakdowns || [],
       tokens: realTokensOf(d.value), totalTokens: totalTokensOf(d.value),
       grokBotPct: grokByDate[d.period] || 0,
     }));
+  dailyRows.forEach(r => { r.agents = r.parts.map(p => p.name).join(','); });
   const seenDays = new Set(dailyRows.map(r => r.period));
   Object.keys(grokByDate).forEach(date => {
     if ((grokByDate[date] || 0) > 0 && !seenDays.has(date) && date >= cutoff && date <= windowEnd) {
-      dailyRows.push({ period: date, agents: '', totalCost: 0, agentsPresent: [], tokens: 0, totalTokens: 0, grokBotPct: grokByDate[date] });
+      dailyRows.push({ period: date, agents: '', totalCost: 0, agentsPresent: [], parts: [], models: [], tokens: 0, totalTokens: 0, grokBotPct: grokByDate[date] });
     }
   });
   dailyRows.sort((a, b) => dailySort.dir * (a[dailySort.k] > b[dailySort.k] ? 1 : a[dailySort.k] < b[dailySort.k] ? -1 : 0));
   markSort('dailyTable', dailySort);
   document.getElementById('dayCount').textContent = `${dailyRows.length} of ${Math.max(dailyRows.length, windowed.length)}`;
   document.querySelector('#dailyTable tbody').innerHTML = dailyRows.map(r => {
-    const pills = r.agentsPresent.map(a => `<span class="pill">${escHtml(a)}</span>`).join('');
+    const pills = r.parts.map(p => `<span class="pill day-pill" title="${escAttr(p.name + ': ' + fmt(p.cost) + ' · ' + fmtTok(Math.round(tokIO(p.tok))) + ' tokens')}"><span class="swatch" style="background:${p.colour};"></span>${escHtml(p.name)} <span class="tnum">${fmt(p.cost)}</span></span>`).join('');
     const grokNote = (r.grokBotPct > 0)
       ? `<span class="muted">Grok Bot ${escHtml(signedPct(r.grokBotPct))}% of weekly limit</span>`
       : '';
     const tooltip = `real (input+output): ${fmtTok(r.tokens)}\ntotal incl. cache: ${fmtTok(r.totalTokens)}` + (r.grokBotPct > 0 ? `\nGrok Bot ${signedPct(r.grokBotPct)}% of weekly limit (not priced)` : '');
-    return `<tr class="day-row" role="button" data-period="${r.period}" tabindex="0" title="Show ${r.period}"><td class="tnum">${r.period}</td><td>${pills}${pills && grokNote ? ' ' : ''}${grokNote}</td>
+    const open = expandedDays.has(r.period);
+    return `<tr class="day-row${open ? ' open' : ''}" role="button" data-period="${r.period}" tabindex="0" aria-expanded="${open}" title="Show the split for ${r.period}"><td class="tnum"><span class="chev-toggle" aria-hidden="true">${open ? '&#9662;' : '&#9656;'}</span> ${r.period}</td><td>${pills}${pills && grokNote ? ' ' : ''}${grokNote}</td>
       <td class="right tnum" title="${tooltip}">${fmtTok(r.tokens)}</td>
-      <td class="right tnum">${fmt(r.totalCost)}</td></tr>`;
-  }).join('') || '<tr><td colspan="4" class="muted">No matching dates.</td></tr>';
+      <td class="right tnum">${fmt(r.totalCost)}</td>
+      <td class="right"><button type="button" class="text-btn day-show" data-show="${r.period}">Show day</button></td></tr>
+      <tr class="day-detail" ${open ? '' : 'hidden'}><td colspan="5">${dayDetailHtml(r)}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="muted">No matching dates.</td></tr>';
 
   // ---- settings ----
   if (tab === 'settings') {
@@ -6540,16 +6672,28 @@ document.getElementById('dayHeatmap').addEventListener('keydown', (e) => {
   setSingleDay(cell.dataset.period);
 });
 const dailyBody = document.querySelector('#dailyTable tbody');
+function toggleDayRow(tr) {
+  const key = tr.dataset.period;
+  if (expandedDays.has(key)) expandedDays.delete(key); else expandedDays.add(key);
+  const open = expandedDays.has(key);
+  tr.classList.toggle('open', open);
+  tr.setAttribute('aria-expanded', String(open));
+  tr.querySelector('.chev-toggle').innerHTML = open ? '&#9662;' : '&#9656;';
+  if (tr.nextElementSibling) tr.nextElementSibling.hidden = !open;
+}
 dailyBody.addEventListener('click', (e) => {
+  const show = e.target.closest('button[data-show]');
+  if (show) { e.stopPropagation(); setSingleDay(show.dataset.show); return; }
   const tr = e.target.closest('tr[data-period]');
-  if (tr) setSingleDay(tr.dataset.period);
+  if (tr) toggleDayRow(tr);
 });
 dailyBody.addEventListener('keydown', (e) => {
   if (e.key !== 'Enter' && e.key !== ' ') return;
+  if (e.target.closest('button')) return;
   const tr = e.target.closest('tr[data-period]');
   if (!tr) return;
   e.preventDefault();
-  setSingleDay(tr.dataset.period);
+  toggleDayRow(tr);
 });
 
 window.addEventListener('popstate', () => {
