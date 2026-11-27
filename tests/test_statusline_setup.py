@@ -211,6 +211,7 @@ class LiveFileWriteTests(unittest.TestCase):
                 json.dump({"oauthAccount": {"accountUuid": "uuid-1", "emailAddress": "a@example.com"}}, f)
             payload = json.dumps({"rate_limits": {"five_hour": {"used_percentage": 12, "resets_at": 1}, "seven_day": {"used_percentage": 9, "resets_at": 2}}})
             env = {**os.environ, "HOME": home, "AGENTIC_SPEND_DATA_DIR": os.path.join(home, "data")}
+            env.pop("CLAUDE_CONFIG_DIR", None)
             script = os.path.abspath(os.path.join(ROOT, "statusline.py"))
             r = subprocess.run([sys.executable, "-I", script], input=payload, text=True, capture_output=True, env=env, timeout=20)
             self.assertEqual(r.returncode, 0, r.stderr)

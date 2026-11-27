@@ -30,7 +30,6 @@ import login_item
 import notify
 import provider_usage
 import source_detection
-import statusline_setup
 import ccusage_bin
 import ccusage_sources
 import desktop_sources
@@ -41,6 +40,7 @@ import plan_prices
 import pricing_region
 import opencode_backends
 import token_sources
+import statusline_multi as statusline_setup  # statusline_setup, for every Claude config directory
 
 PORT = int(os.environ.get("AGENTIC_SPEND_PORT", "8787"))
 _LABEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,79}$")

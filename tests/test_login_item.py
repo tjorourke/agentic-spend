@@ -68,7 +68,8 @@ class ResolveLauncherTests(unittest.TestCase):
 
 class PlistTests(unittest.TestCase):
     def test_plist_shape(self):
-        pl = login_item.build_plist(["/opt/homebrew/bin/agentic-spend", "serve"], home="/Users/test")
+        pl = login_item.build_plist(["/opt/homebrew/bin/agentic-spend", "serve"], home="/Users/test", claude_config_dir="")
+        self.assertNotIn("CLAUDE_CONFIG_DIR", pl["EnvironmentVariables"])
         self.assertEqual(pl["Label"], "com.agenticspend.server")
         self.assertIs(pl["RunAtLoad"], True)
         self.assertIs(pl["KeepAlive"], False)
@@ -77,6 +78,13 @@ class PlistTests(unittest.TestCase):
         # Round-trips through plistlib (what launchd reads).
         data = plistlib.dumps(pl)
         self.assertEqual(plistlib.loads(data)["ProgramArguments"], ["/opt/homebrew/bin/agentic-spend", "serve"])
+
+
+    def test_plist_carries_claude_config_dirs(self):
+        pl = login_item.build_plist(["/opt/homebrew/bin/agentic-spend", "serve"], home="/Users/test",
+                                    claude_config_dir="/Users/test/.claude,/Users/test/.claude-work")
+        self.assertEqual(pl["EnvironmentVariables"]["CLAUDE_CONFIG_DIR"],
+                         "/Users/test/.claude,/Users/test/.claude-work")
 
 
 class OnOffTests(unittest.TestCase):

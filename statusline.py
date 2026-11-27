@@ -33,7 +33,25 @@ import subprocess
 import sys
 
 LIVE_DIR = os.path.expanduser("~/.claude/cc-usage-live")
-CLAUDE_CONFIG = os.path.expanduser("~/.claude.json")
+
+
+def _claude_config_path(env=None):
+    """~/.claude.json, or the one inside CLAUDE_CONFIG_DIR when the session
+    that runs this hook was started with it (Claude Code then keeps its
+    .claude.json in that directory)."""
+    env = os.environ if env is None else env
+    home_file = os.path.expanduser("~/.claude.json")
+    first = (env.get("CLAUDE_CONFIG_DIR") or "").split(",")[0].strip()
+    if first:
+        first = os.path.abspath(os.path.expanduser(first))
+        inside = os.path.join(first, ".claude.json")
+        is_default = first == os.path.expanduser("~/.claude")
+        if os.path.isfile(inside) and not (is_default and os.path.isfile(home_file)):
+            return inside
+    return home_file
+
+
+CLAUDE_CONFIG = _claude_config_path()
 WRAP_COMMAND = os.environ.get("AGENTIC_SPEND_WRAP_STATUSLINE")
 # Set on the wrapped command's environment. If an older, stacked install of
 # this script sits underneath us, it sees the flag and skips its own write,

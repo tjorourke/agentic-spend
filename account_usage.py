@@ -27,6 +27,7 @@ import os
 import subprocess
 
 import ccusage_bin
+import claude_dirs
 import data_dir
 
 CLAUDE_PROJECTS = os.path.expanduser("~/.claude/projects")
@@ -124,10 +125,37 @@ def delete_plan(agent):
     return raw
 
 
+def _claude_configs():
+    """Every .claude.json to read: one per Claude config directory. A test (or
+    anything else) that points CLAUDE_CONFIG somewhere gets just that file."""
+    if CLAUDE_CONFIG != os.path.expanduser("~/.claude.json"):
+        return [CLAUDE_CONFIG]
+    return claude_dirs.config_jsons()
+
+
+def _claude_transcripts():
+    """Session transcripts under every Claude config directory."""
+    if CLAUDE_PROJECTS != os.path.expanduser("~/.claude/projects"):
+        roots = [CLAUDE_PROJECTS]
+    else:
+        roots = claude_dirs.projects_dirs()
+    paths = []
+    for root in roots:
+        paths.extend(glob.glob(os.path.join(root, "*", "*.jsonl")))
+    return paths
+
+
 def seed_labels_from_current_account(labels):
-    """Auto-label whichever account is currently logged in, from ~/.claude.json."""
+    """Auto-label whichever account is currently logged in, from ~/.claude.json
+    (one per Claude config directory)."""
+    for config in _claude_configs():
+        _seed_label_from(config, labels)
+    return labels
+
+
+def _seed_label_from(config, labels):
     try:
-        with open(CLAUDE_CONFIG) as f:
+        with open(config) as f:
             cfg = json.load(f)
         oauth = cfg.get("oauthAccount") or {}
         uuid = oauth.get("accountUuid")
@@ -371,8 +399,7 @@ def claude_last_activity(session_account_map=None):
     if session_account_map is None:
         session_account_map, _ = build_session_account_map()
     latest = {}
-    pattern = os.path.join(CLAUDE_PROJECTS, "*", "*.jsonl")
-    for path in glob.glob(pattern):
+    for path in _claude_transcripts():
         session_id = os.path.splitext(os.path.basename(path))[0]
         uuid = session_account_map.get(session_id)
         if not uuid or uuid == "unknown-session":
@@ -463,10 +490,20 @@ def get_max_usage_snapshots(now=None, last_activity=None, history=None):
     merged on top of, not instead of, the cached snapshot.
     """
     now = parse_when(now) or datetime.datetime.now(datetime.timezone.utc)
-    current = _capture_current_max_usage()
     snapshots = _load_usage_snapshots()
-    if current and current.get("accountUuid"):
+    captured = set()
+    for config in _claude_configs():
+        current = _capture_current_max_usage(config)
+        if not (current and current.get("accountUuid")):
+            continue
+        # The same account can be signed in under two config directories:
+        # keep whichever reading is newer.
+        seen = snapshots.get(current["accountUuid"]) if current["accountUuid"] in captured else None
+        if seen and (seen.get("fetchedAt") or "") > (current.get("fetchedAt") or ""):
+            continue
         snapshots[current["accountUuid"]] = current
+        captured.add(current["accountUuid"])
+    if captured:
         _save_usage_snapshots(snapshots)
 
     live_by_uuid = _load_live_usage()
@@ -555,7 +592,7 @@ def get_usage_history():
     return samples
 
 
-def _capture_current_max_usage():
+def _capture_current_max_usage(config=None):
     """Read the real plan-limit usage Claude Code already caches locally, for
     whichever account is currently logged in.
 
@@ -569,7 +606,7 @@ def _capture_current_max_usage():
     cachedUsageUtilization — written whenever the client last checked in.
     """
     try:
-        with open(CLAUDE_CONFIG) as f:
+        with open(config or CLAUDE_CONFIG) as f:
             cfg = json.load(f)
     except Exception:
         return None
@@ -625,8 +662,7 @@ def build_session_account_map():
     covers both instead of opening every transcript twice."""
     accounts = {}
     projects = {}
-    pattern = os.path.join(CLAUDE_PROJECTS, "*", "*.jsonl")
-    for path in glob.glob(pattern):
+    for path in _claude_transcripts():
         session_id = os.path.splitext(os.path.basename(path))[0]
         have_account = session_id in accounts
         have_project = session_id in projects

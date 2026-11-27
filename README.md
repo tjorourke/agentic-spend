@@ -445,6 +445,24 @@ Code already pipes to it on stdin. Limitation: it only updates while that accoun
 session is active and getting replies; an idle/switched-away account falls back to the cached
 snapshot (or nothing, if neither exists).
 
+## More than one Claude config directory
+
+Claude Code keeps everything in `~/.claude` (with `~/.claude.json` beside it) unless
+`CLAUDE_CONFIG_DIR` points somewhere else, which is how some people keep a work and a personal
+profile apart. ccusage already accepts a comma-separated list there. Agentic Spend now reads the
+same list, so both look at the same transcripts:
+
+```bash
+CLAUDE_CONFIG_DIR="$HOME/.claude,$HOME/.claude-work" agentic-spend
+```
+
+With that set, the session-to-account map, token sources, plan detection and the cached plan
+snapshot cover every directory listed, and "Live Claude usage" wires the status line hook into each
+directory's `settings.json` (a status line you already had is wrapped and backed up per directory).
+The hook reads the `.claude.json` of the session it runs in. `agentic-spend login on` copies the
+variable into the LaunchAgent, so a server started at login reads the same directories. Unset,
+nothing changes: only `~/.claude` is read.
+
 ## Live Codex usage (automatic, no setup)
 
 Same trust tier as Claude — fully official and documented, shown automatically whenever `codex`

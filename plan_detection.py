@@ -22,6 +22,7 @@ import glob
 import json
 import os
 
+import claude_dirs
 import data_dir
 
 CLAUDE_CONFIG = os.path.expanduser("~/.claude.json")
@@ -73,9 +74,16 @@ def scan_claude_profiles(config=CLAUDE_CONFIG, backups=None, profiles_path=None,
     except (OSError, ValueError):
         known = {}
     files = []
-    for pat in (backups if backups is not None else CLAUDE_BACKUPS):
-        files.extend(glob.glob(pat))
-    files.append(config)
+    if backups is None and config == CLAUDE_CONFIG:
+        # Defaults: every Claude config directory (CLAUDE_CONFIG_DIR), not
+        # only ~/.claude. One directory gives the same files as before.
+        for pat in claude_dirs.backup_globs() or CLAUDE_BACKUPS:
+            files.extend(glob.glob(pat))
+        files.extend(claude_dirs.config_jsons())
+    else:
+        for pat in (backups if backups is not None else CLAUDE_BACKUPS):
+            files.extend(glob.glob(pat))
+        files.append(config)
     changed = False
     for path in files:
         try:
