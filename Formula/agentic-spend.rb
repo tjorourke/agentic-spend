@@ -117,6 +117,10 @@ class AgenticSpend < Formula
         System Settings > Privacy & Security > Open Anyway
       If its icon still does not appear: System Settings > Menu Bar > Allow in the
       Menu Bar > Agentic Spend (switch it on, or off and on again).
+
+      If Homebrew stops with "untrusted tap" (newer Homebrew versions), trust the
+      tap once and run the command again:
+        brew trust tjorourke/agentic-spend
     EOS
   end
 
@@ -124,7 +128,7 @@ class AgenticSpend < Formula
     modules = %w[server account_usage provider_usage statusline_setup data_dir token_sources grok_usage
                  grokbot_usage source_detection insights notify digest login_item ccusage_bin
                  ccusage_sources seat_prices pacing model_mix plan_prices plan_detection pricing_region
-                 opencode_backends]
+                 opencode_backends desktop_sources]
     system "python3", "-c",
            "import sys; sys.path.insert(0, '#{libexec}'); import #{modules.join(", ")}"
     assert_match "usage: agentic-spend", shell_output("#{bin}/agentic-spend --help")

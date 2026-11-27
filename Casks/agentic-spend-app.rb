@@ -39,6 +39,9 @@ cask "agentic-spend-app" do
     then brew install --cask agentic-spend-app and approve it again (step 2).
     The app stays open and shows these steps when its icon is hidden.
 
+    If Homebrew stops with "untrusted tap" on an install or upgrade, trust the
+    tap once and run the command again: brew trust tjorourke/agentic-spend
+
     It reads usage through the agentic-spend formula, which bundles the
     ccusage binary (MIT; notice in THIRD_PARTY_NOTICES.md in the formula's libexec).
   EOS

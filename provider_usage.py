@@ -188,7 +188,10 @@ def get_codex_live_snapshot():
     "hasCredits", "fetchedAt"} or None if codex isn't installed/reachable."""
     result = fetch_codex_rate_limits()
     if not result:
-        return None
+        # 1.8.4: no codex binary (Codex desktop or IDE users) or the
+        # app-server didn't answer. Fall back to the newest rate_limits
+        # sample Codex itself wrote into its session logs.
+        return codex_snapshot_from_sessions()
     rl = result.get("rateLimits") or {}
     primary = rl.get("primary") or {}
     secondary = rl.get("secondary")
@@ -199,6 +202,7 @@ def get_codex_live_snapshot():
 
     return {
         "label": "Codex",
+        "source": "app-server",
         "planType": rl.get("planType"),
         "ordinaryUsageAllowed": result.get("ordinaryUsageAllowed"),
         "primary": {
@@ -218,6 +222,78 @@ def get_codex_live_snapshot():
 
 
 CODEX_SESSIONS_DIR = os.path.expanduser("~/.codex/sessions")
+
+
+def _codex_window(w):
+    if not isinstance(w, dict) or w.get("used_percent") is None:
+        return None
+    return {
+        "percent": w.get("used_percent"),
+        "windowMins": w.get("window_minutes"),
+        "resetsAt": _codex_epoch_to_iso(w.get("resets_at")),
+    }
+
+
+def _latest_rate_limits_in(path):
+    """(timestamp, rate_limits) of the last token_count line in one rollout
+    file that carries a rate-limit reading, or None. Only rate-limit fields
+    are kept; message content is never looked at beyond the line filter."""
+    found = None
+    try:
+        with open(path, "r", errors="ignore") as f:
+            for line in f:
+                if '"token_count"' not in line or '"rate_limits"' not in line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue
+                payload = rec.get("payload") or {}
+                if payload.get("type") != "token_count":
+                    continue
+                rl = payload.get("rate_limits")
+                if isinstance(rl, dict) and _codex_window(rl.get("primary")):
+                    found = (rec.get("timestamp"), rl)
+    except OSError:
+        return None
+    return found
+
+
+def codex_snapshot_from_sessions(sessions_dir=None, max_files=30):
+    """Same shape as get_codex_live_snapshot(), built from the newest
+    rate_limits sample in ~/.codex/sessions, with source "session-log" and
+    fetchedAt set to when Codex wrote that reading (not now), so the UI never
+    calls it live. None when there is no such sample."""
+    root = sessions_dir or CODEX_SESSIONS_DIR
+    try:
+        paths = glob.glob(os.path.join(root, "**", "rollout-*.jsonl"), recursive=True)
+    except OSError:
+        return None
+    def mtime(p):
+        try:
+            return os.stat(p).st_mtime
+        except OSError:
+            return 0
+    best = None
+    for path in sorted(paths, key=mtime, reverse=True)[:max_files]:
+        hit = _latest_rate_limits_in(path)
+        if hit and (best is None or (hit[0] or "") > (best[0] or "")):
+            best = hit
+    if not best:
+        return None
+    at, rl = best
+    credits = rl.get("credits") or {}
+    return {
+        "label": "Codex",
+        "source": "session-log",
+        "planType": rl.get("plan_type"),
+        "ordinaryUsageAllowed": None,
+        "primary": _codex_window(rl.get("primary")),
+        "secondary": _codex_window(rl.get("secondary")),
+        "creditsBalance": credits.get("balance"),
+        "hasCredits": credits.get("has_credits"),
+        "fetchedAt": at,
+    }
 _codex_history_file_cache = {}  # path -> ((mtime, size), [samples from that file])
 
 
