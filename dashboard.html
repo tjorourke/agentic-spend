@@ -218,6 +218,14 @@
   .report-empty-row { padding: 0.6rem 1.1rem; font-size: 0.85rem; }
   .report-notes summary { cursor: pointer; }
   .report-notes summary::marker { color: var(--muted); }
+  .settings-nav { position: sticky; top: 56px; z-index: 6; display: flex; flex-wrap: wrap; gap: 0.3rem 0.9rem; padding: 0.55rem 0.9rem; margin-bottom: 0.8rem;
+    background: var(--card); border: 1px solid var(--border); border-radius: 8px; font-size: 0.8rem; }
+  .settings-nav:empty { display: none; }
+  .settings-nav a { color: var(--accent); text-decoration: none; white-space: nowrap; }
+  .settings-nav a:hover { text-decoration: underline; }
+  .settings-anchor { scroll-margin-top: 120px; }
+  .settings-save-bar { box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.06); }
+  .plan-row-flag { padding: 0 0.7rem 0.45rem 2rem; font-size: 0.8rem; }
   .h2-unit { font-size: 0.74rem; font-weight: 400; color: var(--muted); margin-left: 0.35rem; }
   /* one look for every real action button: filled purple primary, outlined secondary */
   .btn, .btn-primary {
@@ -1080,6 +1088,7 @@
   </section>
 
   <section id="view-settings" class="view">
+    <nav class="settings-nav" id="settingsNav" aria-label="Settings sections"></nav>
     <div class="card" id="settingsBody"></div>
     <div class="card settings-app" id="settingsApp" style="margin-top: 1rem;"></div>
     <div class="settings-save-bar" id="settingsSaveBar">
@@ -3191,7 +3200,7 @@ function labelFormHtml(accountUuid, currentLabel, unnamed) {
 function accountNamesSectionHtml() {
   const rows = nameableAccounts();
   const intro = `<div class="muted" style="font-weight:600; color:var(--text); margin:0.9rem 0 0.3rem; border-top:1px solid var(--border); padding-top:0.9rem;">Account names</div>
-    <div class="muted" style="margin-bottom:0.5rem;">Names are saved on this machine only, in account-labels.json. An account with no name yet can be named here or on its Accounts card.</div>`;
+    <div class="muted" style="margin-bottom:0.5rem;">Names are saved on this machine only, in account-labels.json. Rename any account here and the new name shows on every page.</div>`;
   if (!rows.length) return intro + '<div class="muted" style="margin-bottom:0.9rem;">No Claude accounts found on this machine yet.</div>';
   const body = rows.map(a => {
     const unnamed = isUnlabelledAccount(a);
@@ -3558,6 +3567,7 @@ function opencodeBackendRow(s, estimate, split) {
       <b>${escHtml(info.label)}</b> <span class="pill ${pill}">${escHtml(info.billingLabel)}${info.setInSettings ? ' (set in Settings)' : ''}</span>
       <span class="muted">${escHtml(modelList)}</span> <span class="tnum">${fmt(c)}</span></div>`;
   }).join('');
+  const unknownCount = Object.values(ob.providers || {}).filter(pr => pr.realSpend == null).length;
   const chip = anyUnknown ? srcChip('CHECK', 'manual', 'At least one backend could not be classified automatically. Pick its billing in Settings → OpenCode backends.')
     : srcChip('DETECTED', 'live', "Provider and billing read from OpenCode's own history and auth.json.");
   const real = split.real + split.unknown;
@@ -3565,6 +3575,7 @@ function opencodeBackendRow(s, estimate, split) {
   return { cls, html: `
     ${chip}
     <span class="src-label">OpenCode</span>
+    ${unknownCount ? `<span class="needs-choice" data-count="${unknownCount}" hidden></span>` : ''}
     <span class="src-extra">${lines}${anyUnknown ? '<button type="button" class="text-btn" data-goto-settings>Set billing in Settings</button>' : ''}</span>
     <span class="src-amount tnum">${fmt(real)}${split.covered > 0.005 ? ` <span class="muted">+ ${fmt(split.covered)} covered</span>` : ''}</span>
   `, title: `OpenCode spend split by the backend each model call went to, USD list price for this range. Pay-as-you-go and cloud billing count as real spend; subscriptions, company keys and free tiers do not.` };
@@ -3827,11 +3838,23 @@ const KIND_BADGE = {
   'none': { bg: 'var(--neutral-bg)', fg: 'var(--muted)', text: 'no data' },
 };
 
+// 1.8.7: the status says how fresh the reading is, in the same words as the
+// Overview's plan rows ("live 18:56", "live, 2 days old").
+function sourceBadge(s) {
+  const b = KIND_BADGE[s.kind] || KIND_BADGE.none;
+  const mu = s.maxUsage;
+  if (s.tool === 'claude' && mu && (mu.liveLabel || mu.live)) {
+    const text = mu.liveLabel || liveAgeLabel(mu.fetchedAt);
+    const stale = snapshotAge(mu).stale;
+    return stale ? { bg: 'var(--neutral-bg)', fg: 'var(--text)', text } : { ...b, text };
+  }
+  return b;
+}
 function sourcesSummaryTableHtml(sources) {
   const rows = (sources || []).map(s => {
-    const b = KIND_BADGE[s.kind] || KIND_BADGE.none;
+    const b = sourceBadge(s);
     return `<tr>
-      <td>${escHtml(s.label)}</td>
+      <td>${escHtml(s.label)}${s.planNote ? `<div class="muted" style="font-size:0.75rem;">${escHtml(s.planNote)}</div>` : ''}</td>
       <td class="muted">${escHtml(s.tool)}${s.provider ? ' · ' + escHtml(s.provider) : ''}</td>
       <td><span class="pill" style="background:${b.bg}; color:${b.fg};">${b.text}</span></td>
       <td class="muted">${s.asOf ? new Date(s.asOf).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'}</td>
@@ -3914,9 +3937,11 @@ function seatPriceSectionHtml() {
     const key = tv.key || tv.accountUuid;
     const cur = tv.billingCurrency;
     const user = tv.userSeat;
-    const curHtml = cur
-      ? `<span class="muted" title="This account's billing currency, from its own usage-credit reading.">${escHtml(cur)}</span><input type="hidden" data-seat-currency="${escAttr(key)}" value="${escAttr(cur)}">`
-      : `<select class="settings-field" data-seat-currency="${escAttr(key)}">${['USD', 'GBP', 'EUR'].map(c => `<option${(user ? user.currency : ((tv.seat && tv.seat.currency) || ((data && data.pricingRegion && data.pricingRegion.currency) || 'USD'))) === c ? ' selected' : ''}>${c}</option>`).join('')}</select>`;
+    // 1.8.7: the same picker on every row. An account that reports its own
+    // billing currency has it selected and marked.
+    const chosen = user ? user.currency : (cur || (tv.seat && tv.seat.currency) || ((data && data.pricingRegion && data.pricingRegion.currency) || 'USD'));
+    const curList = ['USD', 'GBP', 'EUR'].concat(cur && !['USD', 'GBP', 'EUR'].includes(cur) ? [cur] : []);
+    const curHtml = `<select class="settings-field" data-seat-currency="${escAttr(key)}"${cur ? ` title="This account bills in ${escAttr(cur)}, from its own usage-credit reading."` : ''}>${curList.map(c => `<option value="${c}"${chosen === c ? ' selected' : ''}>${c}${c === cur ? ' (billing)' : ''}</option>`).join('')}</select>`;
     const plan = tv.plan || {};
     const planHtml = `${escHtml(plan.planLabel || 'unknown plan')}${plan.evidence && plan.evidence.length ? ` <span class="muted" title="${escAttr('Read from local files: ' + plan.evidence.join('; '))}">(?)</span>` : ''}`;
     return `<tr>
@@ -3979,10 +4004,25 @@ function settingsSourcesHtml(sources) {
     html += sourcesSummaryTableHtml(catalog);
     return html;
   }
+  // A Grok manual note is superseded by the Grok CLI's own reading. Its data
+  // still decides whether Grok CLI usage counts as covered, so it is shown
+  // on the Grok CLI row rather than as a stale row of its own.
+  const grokCli = foundRows.find(s => s.kind === 'local-live');
+  const shown = foundRows.filter(s => !(grokCli && s.tool === 'grok' && s.kind === 'manual')).map(s => {
+    if (s !== grokCli) return s;
+    const note = foundRows.find(x => x.tool === 'grok' && x.kind === 'manual');
+    const plan = note && ((data && data.plans && data.plans.grok) || {});
+    return plan && (plan.plan || plan.coveredByPlan)
+      ? { ...s, planNote: `Plan from your manual note: ${plan.plan || 'covered by plan'}${plan.asOf ? ', ' + plan.asOf : ''}` } : s;
+  });
+  // Sources with nothing to show go on one quiet line, not a row each.
+  const quiet = shown.filter(s => s.kind === 'none');
+  const loud = shown.filter(s => s.kind !== 'none');
   if (!found.length) {
     html += `<p class="muted">No supported agents found on ${escHtml(here())}.</p>`;
   } else {
-    html += sourcesSummaryTableHtml(foundRows);
+    html += sourcesSummaryTableHtml(loud);
+    if (quiet.length) html += `<div class="muted" style="font-size:0.78rem; margin:-0.5rem 0 0.9rem;">No data yet: ${quiet.map(s => escHtml(s.label)).join(', ')}.</div>`;
   }
   html += ccusageSourcesHtml();
   if (missing.length) {
@@ -4506,8 +4546,31 @@ async function saveSettingsForm() {
   }
 }
 
+// 1.8.7: links to each Settings section, kept in view while you scroll.
+function slugify(t) { return String(t).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40); }
+function buildSettingsNav() {
+  const nav = document.getElementById('settingsNav');
+  if (!nav) return;
+  const heads = [...document.querySelectorAll('#settingsBody .plan-form > div.muted[style*="font-weight:600"], #settingsBody .plan-form > div > div.muted[style*="font-weight:600"], #view-settings h2')];
+  const items = [];
+  heads.forEach(h => {
+    const text = (h.childNodes[0] && h.childNodes[0].nodeType === 3 ? h.childNodes[0].textContent : h.textContent).replace(/\(\?\)/g, '').trim();
+    if (!text || items.some(i => i.text === text)) return;
+    if (!h.id) h.id = 'set-' + slugify(text);
+    h.classList.add('settings-anchor');
+    items.push({ id: h.id, text });
+  });
+  nav.innerHTML = items.map(i => `<a href="#${escAttr(i.id)}" data-settings-jump="${escAttr(i.id)}">${escHtml(i.text)}</a>`).join('');
+  nav.querySelectorAll('[data-settings-jump]').forEach(a => { a.onclick = e => {
+    e.preventDefault();
+    const el = document.getElementById(a.dataset.settingsJump);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }; });
+}
 function renderSettingsPage() {
   renderSettingsApp(false);
+  setTimeout(buildSettingsNav, 0);
+  setTimeout(buildSettingsNav, 800);
   if (!lastPlansCtx) return;
   // A background refresh must never wipe changes that have not been saved.
   if (settingsDirty && document.getElementById('settingsBody').childElementCount) return;
@@ -6090,6 +6153,17 @@ function collapsePlanRows(box) {
     };
     row.classList.add('plan-row');
     row.appendChild(btn);
+    // A choice only you can make (OpenCode backends with unknown billing)
+    // stays visible on the closed row.
+    const need = detail.querySelector('.needs-choice');
+    if (need) {
+      const n = Number(need.dataset.count) || 1;
+      const flag = document.createElement('div');
+      flag.className = 'plan-row-flag';
+      flag.innerHTML = `<button type="button" class="text-btn" data-goto-settings>${n} backend${n === 1 ? '' : 's'} need${n === 1 ? 's' : ''} you to choose who pays. Choose in Settings ›</button>`;
+      flag.querySelector('button').onclick = () => { setTab('settings'); setTimeout(() => { const el = document.querySelector('[data-oc-provider]'); if (el) el.scrollIntoView({ block: 'center' }); }, 300); };
+      row.appendChild(flag);
+    }
     row.appendChild(detail);
   });
 }
